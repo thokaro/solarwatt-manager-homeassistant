@@ -32,7 +32,7 @@ class SOLARWATTDiagnosticsRefreshButton(CoordinatorEntity, ButtonEntity):
             identifiers={(DOMAIN, host)},
             name=device_name,
             manufacturer="SOLARWATT",
-            model="Manager diagnostics",
+            model="Manager flex - rail",
             configuration_url=f"http://{host}",
         )
 
