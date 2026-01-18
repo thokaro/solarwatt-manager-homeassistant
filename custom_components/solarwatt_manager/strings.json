@@ -16,14 +16,14 @@
     "step": {
       "user": {
         "title": "Connect SOLARWATT",
-        "description": "Enter IP/host and login credentials. Optional: item names as a comma-separated list.",
+        "description": "Enter IP/host and login credentials.",
         "data": {
           "host": "Host / IP",
           "username": "Username",
           "password": "Password",
-          "item_names": "Item names (comma-separated, optional)",
           "scan_interval": "Update interval (seconds)",
-          "name_prefix": "Name prefix (optional)"
+          "name_prefix": "Name prefix (optional)",
+          "enable_all_sensors": "Enable all sensors by default"
         }
       }
     }
@@ -36,9 +36,9 @@
       "init": {
         "title": "Options",
         "data": {
-          "item_names": "Item names (comma-separated)",
           "scan_interval": "Update interval (seconds)",
-          "name_prefix": "Name prefix (optional)"
+          "name_prefix": "Name prefix (optional)",
+          "enable_all_sensors": "Enable all sensors by default"
         }
       }
     }

@@ -69,6 +69,14 @@ After restarting Home Assistant:
 3. Search for **SOLARWATT Manager**
 4. Enter the required connection details
 
+### Options
+
+You can adjust these in the integration options:
+
+* **Update interval (seconds)** – polling interval
+* **Name prefix (optional)** – prefix for entity names
+* **Enable all sensors by default** – if off, only the core sensors (PV, grid, battery, consumption) are enabled by default
+
 ---
 
 ## 🔋 Energy Dashboard

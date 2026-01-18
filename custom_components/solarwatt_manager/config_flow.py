@@ -10,13 +10,14 @@ from .const import (
     CONF_HOST,
     CONF_USERNAME,
     CONF_PASSWORD,
-    CONF_ITEM_NAMES,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
     MAX_SCAN_INTERVAL,
     CONF_NAME_PREFIX,
     DEFAULT_NAME_PREFIX,
+    CONF_ENABLE_ALL_SENSORS,
+    DEFAULT_ENABLE_ALL_SENSORS,
 )
 from .coordinator import (
     SOLARWATTClient,
@@ -54,9 +55,9 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_PASSWORD: user_input[CONF_PASSWORD],
                     },
                     options={
-                        CONF_ITEM_NAMES: user_input.get(CONF_ITEM_NAMES, ""),
                         CONF_SCAN_INTERVAL: user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
                         CONF_NAME_PREFIX: user_input.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
+                        CONF_ENABLE_ALL_SENSORS: user_input.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS),
                     },
                 )
 
@@ -65,9 +66,9 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_HOST): str,
                 vol.Required(CONF_USERNAME, default="installer"): str,
                 vol.Required(CONF_PASSWORD): str,
-                vol.Optional(CONF_ITEM_NAMES, default=""): str,
                 vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.Coerce(int),
                 vol.Optional(CONF_NAME_PREFIX, default=""): str,
+                vol.Optional(CONF_ENABLE_ALL_SENSORS, default=DEFAULT_ENABLE_ALL_SENSORS): bool,
             }
         )
 
@@ -186,10 +187,6 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         return vol.Schema(
             {
                 vol.Optional(
-                    CONF_ITEM_NAMES,
-                    default=user_input.get(CONF_ITEM_NAMES, ""),
-                ): str,
-                vol.Optional(
                     CONF_SCAN_INTERVAL,
                     default=user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
                 ): vol.Coerce(int),
@@ -197,6 +194,10 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                     CONF_NAME_PREFIX,
                     default=user_input.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
                 ): str,
+                vol.Optional(
+                    CONF_ENABLE_ALL_SENSORS,
+                    default=user_input.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS),
+                ): bool,
             }
         )
 

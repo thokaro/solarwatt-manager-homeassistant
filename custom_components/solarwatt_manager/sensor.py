@@ -9,7 +9,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_NAME_PREFIX, DOMAIN
+from .const import CONF_ENABLE_ALL_SENSORS, CONF_NAME_PREFIX, DEFAULT_ENABLE_ALL_SENSORS, DOMAIN
 from .naming import is_enabled_by_default, normalize_item_name
 from .coordinator import guess_ha_meta
 
@@ -24,13 +24,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
     prefix = (entry.options.get(CONF_NAME_PREFIX) or "").strip()
+    enable_all = entry.options.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS)
 
     entities = []
     for item_name in coordinator.data.keys():
         it = coordinator.data[item_name]
         if (it.oh_type or "").startswith("Switch"):
             continue
-        entities.append(SOLARWATTItemSensor(coordinator, entry.entry_id, item_name, device_name=entry.title, prefix=prefix))
+        entities.append(
+            SOLARWATTItemSensor(
+                coordinator,
+                entry.entry_id,
+                item_name,
+                device_name=entry.title,
+                prefix=prefix,
+                enable_all=enable_all,
+            )
+        )
 
     async_add_entities(entities)
 
@@ -38,7 +48,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = False
 
-    def __init__(self, coordinator, entry_id: str, item_name: str, device_name: str = "SOLARWATT Manager", prefix: str = ""):
+    def __init__(
+        self,
+        coordinator,
+        entry_id: str,
+        item_name: str,
+        device_name: str = "SOLARWATT Manager",
+        prefix: str = "",
+        enable_all: bool = False,
+    ):
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._item_name = item_name
@@ -48,7 +66,7 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._prefix = prefix
 
         self._attr_unique_id = f"{entry_id}_{clean_item_name}"
-        self._attr_entity_registry_enabled_default = is_enabled_by_default(self._item_name)
+        self._attr_entity_registry_enabled_default = enable_all or is_enabled_by_default(self._item_name)
 
         # Group all sensors under one device for a cleaner HA UI.
         host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id

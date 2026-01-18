@@ -567,37 +567,6 @@ class SOLARWATTClient:
         except Exception as e:
             raise SolarwattConnectionError(f"Error for item {item_name}: {e}") from e
 
-    async def async_send_command(self, item_name: str, command: str) -> None:
-        if not item_name or not isinstance(item_name, str):
-            raise ValueError("item_name must be a non-empty string")
-        if command is None or not isinstance(command, str):
-            raise ValueError("command must be a string")
-        await self._ensure_session()
-        url = f"{self.items_url}/{item_name}"
-        headers = {"Content-Type": "text/plain"}
-        headers.update(self._auth_headers())
-        try:
-            async with self._session.post(url, data=command, headers=headers, timeout=5) as resp:
-                if resp.status == 401:
-                    await self.async_login()
-                    async with self._session.post(url, data=command, headers=headers, timeout=5) as resp2:
-                        resp2.raise_for_status()
-                        return
-                resp.raise_for_status()
-        except SolarwattError:
-            raise
-        except ClientResponseError as e:
-            if e.status in (401, 403):
-                raise SolarwattAuthError(f"HTTP {e.status} for command {item_name}") from e
-            if e.status == 404:
-                raise SolarwattNotManagerError("Items endpoint not found") from e
-            raise SolarwattConnectionError(f"HTTP error {e.status} for command {item_name}") from e
-        except (ClientError, asyncio.TimeoutError) as e:
-            raise SolarwattConnectionError(f"Connection error for command {item_name}: {e}") from e
-        except Exception as e:
-            raise SolarwattConnectionError(f"Command failed for {item_name}: {e}") from e
-
-
 class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     def __init__(self, hass: HomeAssistant, entry, client: SOLARWATTClient):
         self.entry = entry
@@ -617,17 +586,9 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         )
 
     async def _async_update_data(self) -> dict[str, SOLARWATTItem]:
-        raw_names = (self.entry.options.get("item_names") or "").strip()
-        names = [n.strip() for n in raw_names.split(",") if n.strip()]
-
         # Best practice for Home Assistant: do a single poll per update interval and
         # let all entities read from the same snapshot.
         items = await self.client.async_get_items()
-        by_name: dict[str, dict[str, Any]] = {}
-        for it in items:
-            n = it.get("name")
-            if n:
-                by_name[n] = it
 
         def _to_item(name: str, it: dict[str, Any]) -> SOLARWATTItem:
             return SOLARWATTItem(
@@ -641,28 +602,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                 group_names=it.get("groupNames"),
             )
 
-        # If no explicit list is configured, expose everything we received.
-        if not names:
-            out_all: dict[str, SOLARWATTItem] = {}
-            for idx, it in enumerate(items):
-                n = it.get("name", f"unknown_{idx}")
-                out_all[n] = _to_item(n, it)
-            return out_all
-
-        # If an explicit list is configured, filter locally (still 1 HTTP request).
-        out: dict[str, SOLARWATTItem] = {}
-        missing: list[str] = []
-        for name in names:
-            it = by_name.get(name)
-            if it is None:
-                missing.append(name)
-                continue
-            out[name] = _to_item(name, it)
-
-        # Fallback: if some items were not present in /rest/items, try fetching them
-        # individually (should be rare; keeps backward compatibility).
-        for name in missing:
-            it = await self.client.async_get_item(name)
-            out[name] = _to_item(name, it)
-
-        return out
+        out_all: dict[str, SOLARWATTItem] = {}
+        for idx, it in enumerate(items):
+            n = it.get("name", f"unknown_{idx}")
+            out_all[n] = _to_item(n, it)
+        return out_all
