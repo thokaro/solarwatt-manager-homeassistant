@@ -1,0 +1,31 @@
+{
+  "title": "SOLARWATT Manager",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect SOLARWATT",
+        "description": "Enter IP/host and login credentials. Optional: item names as a comma-separated list.",
+        "data": {
+          "host": "Host / IP",
+          "username": "Username",
+          "password": "Password",
+          "item_names": "Item names (comma-separated, optional)",
+          "scan_interval": "Update interval (seconds)",
+          "name_prefix": "Name prefix (optional)"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "item_names": "Item names (comma-separated)",
+          "scan_interval": "Update interval (seconds)",
+          "name_prefix": "Name prefix (optional)"
+        }
+      }
+    }
+  }
+}
