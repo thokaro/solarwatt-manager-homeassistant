@@ -1,6 +1,18 @@
 {
   "title": "SOLARWATT Manager",
   "config": {
+    "error": {
+      "invalid_host": "Ungültiger Host oder IP-Adresse.",
+      "invalid_username": "Ungültiger Benutzername.",
+      "invalid_password": "Ungültiges Passwort.",
+      "invalid_scan_interval": "Das Update-Intervall muss zwischen 5 und 3600 Sekunden liegen.",
+      "invalid_input": "Ungültige Eingabe.",
+      "invalid_auth": "Benutzername oder Passwort ungültig.",
+      "not_solarwatt": "Der Host scheint kein SOLARWATT Manager zu sein.",
+      "cannot_connect": "Kann keine Verbindung zum SOLARWATT Manager herstellen.",
+      "connection_failed": "Verbindung zum SOLARWATT Manager fehlgeschlagen.",
+      "unknown_error": "Unbekannter Fehler aufgetreten."
+    },
     "step": {
       "user": {
         "title": "SOLARWATT verbinden",
@@ -11,12 +23,15 @@
           "password": "Passwort",
           "item_names": "Item-Namen (Komma-separiert, optional)",
           "scan_interval": "Update-Intervall (Sekunden)",
-          "name_prefix": "Namens-Prefix (optional)"
+          "name_prefix": "Namens-Prefix der Entität-IDs (optional)"
         }
       }
     }
   },
   "options": {
+    "error": {
+      "invalid_scan_interval": "Das Update-Intervall muss zwischen 5 und 3600 Sekunden liegen."
+    },
     "step": {
       "init": {
         "title": "Optionen",

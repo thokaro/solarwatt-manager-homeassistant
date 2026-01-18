@@ -9,11 +9,16 @@ from functools import lru_cache
 # Add more rules by appending (pattern, replacement).
 # Patterns are applied in order.
 NORMALIZATION_RULES: list[tuple[str, str]] = [
-    # foxesshybrid_battery_<ID>_... -> foxess_...
-    (r"^foxesshybrid_battery_[^_]+_", "foxess_"),
-
     # kiwigrid_location_standard_<ID>_harmonized_... -> kiwigrid_...
     (r"^kiwigrid_location_standard_[^_]+_harmonized_", "kiwigrid_"),
+    # foxesshybrid_battery_<ID>_... -> foxess_...
+    (r"^foxesshybrid_battery_[^_]+_", "foxess_"),
+    (r"^foxesshybrid_inverter_[^_]+_", "foxessinv_"),
+    (r"^foxesshybrid_meter_[^_]+_", "foxessmeter_"),
+    (r"^keba_wallbox_[^_]+_", "keba_"),
+    (r"^mystrom_switch_[^_]+_", "mystrom_"),
+    (r"^modbus_sunspec_sma_inverter_[^_]+_", "sma_"),
+    (r"^pvplant_standard_[^_]+_", "pvplant_"),
 ]
 
 

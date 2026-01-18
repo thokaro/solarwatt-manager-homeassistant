@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import timedelta
 import re
@@ -8,7 +9,7 @@ from typing import Any, Optional
 
 import logging
 
-from aiohttp import ClientResponseError, CookieJar, ClientSession
+from aiohttp import ClientError, ClientResponseError, CookieJar, ClientSession
 from aiohttp.client_exceptions import ContentTypeError
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
@@ -27,6 +28,26 @@ from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, MIN_SCAN_INTERVAL,
 
 
 _NUM_RE = re.compile(r"^\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([^\d\s].*)?\s*$")
+
+
+class SolarwattError(UpdateFailed):
+    """Base error for SOLARWATT client failures."""
+
+
+class SolarwattAuthError(SolarwattError):
+    """Authentication failed."""
+
+
+class SolarwattConnectionError(SolarwattError):
+    """Connection or transport error."""
+
+
+class SolarwattNotManagerError(SolarwattError):
+    """Host does not look like a SOLARWATT Manager."""
+
+
+class SolarwattProtocolError(SolarwattError):
+    """Unexpected response format or protocol mismatch."""
 
 
 @dataclass
@@ -335,7 +356,11 @@ class SOLARWATTClient:
                         f"Login failed with status {resp.status}. "
                         f"Response: {text[:200]}. Host: {self.host}"
                     )
-                    raise UpdateFailed(f"Login fehlgeschlagen ({resp.status}): {text[:200]}")
+                    if resp.status in (401, 403):
+                        raise SolarwattAuthError(f"Login failed ({resp.status}): {text[:200]}")
+                    if resp.status == 404:
+                        raise SolarwattNotManagerError(f"Login endpoint not found ({resp.status})")
+                    raise SolarwattConnectionError(f"Login failed ({resp.status}): {text[:200]}")
 
                 # Extract kiwisessionid explicitly (works even if cookie domain is odd)
                 try:
@@ -385,22 +410,44 @@ class SOLARWATTClient:
                     f"Cookies={self._cookie_debug()}, Host={self.host}"
                 )
                 self._log.error(error_msg)
-                raise UpdateFailed(error_msg)
+                raise SolarwattAuthError(error_msg)
 
             self._last_login = time.time()
             self._log.debug(f"Successfully logged in to {self.host}")
         except Exception as e:
-            if isinstance(e, UpdateFailed):
+            if isinstance(e, SolarwattError):
                 raise
+            if isinstance(e, (ClientError, asyncio.TimeoutError)):
+                self._log.error(f"Login connection error for {self.host}: {str(e)}")
+                raise SolarwattConnectionError(f"Login connection error: {str(e)}") from e
             self._log.error(f"Login error for {self.host}: {str(e)}")
-            raise UpdateFailed(f"Login error: {str(e)}") from e
+            raise SolarwattConnectionError(f"Login error: {str(e)}") from e
+
+    async def async_probe_manager(self) -> None:
+        """Check whether the host looks like a SOLARWATT Manager.
+
+        Raises:
+            SolarwattNotManagerError: if /logon.html is missing or unreachable.
+            SolarwattConnectionError: on unexpected response codes.
+        """
+        url = f"{self.base}/logon.html"
+        try:
+            async with self._session.get(url, timeout=5, allow_redirects=True) as resp:
+                if resp.status == 404:
+                    raise SolarwattNotManagerError("logon.html not found")
+                if 200 <= resp.status < 400:
+                    return
+                raise SolarwattConnectionError(f"Unexpected probe status: {resp.status}")
+        except (ClientError, asyncio.TimeoutError) as e:
+            self._log.debug(f"Probe failed for {self.host}: {e}")
+            raise SolarwattNotManagerError(f"Probe failed: {e}") from e
 
     async def _ensure_json(self, resp, where: str) -> Any:
         """Parse JSON with better diagnostics."""
         ct = (resp.headers.get("Content-Type") or "").lower()
         if "json" not in ct:
             snippet = await self._read_snippet(resp)
-            raise UpdateFailed(
+            raise SolarwattProtocolError(
                 f"Antwort ist kein JSON bei {where}. Status={resp.status}, Content-Type={ct or '<none>'}, "
                 f"Cookies={self._cookie_debug()}, Snippet={snippet}"
             )
@@ -414,14 +461,16 @@ class SOLARWATTClient:
         """Test connection to SOLARWATT Manager.
         
         Raises:
-            UpdateFailed: If connection cannot be established or login fails
+            SolarwattError: If connection cannot be established or login fails
         """
         try:
             await self.async_login()
             # Try to fetch one item to verify API access
             await self.async_get_items()
+        except SolarwattError:
+            raise
         except Exception as e:
-            raise UpdateFailed(f"Cannot connect to SOLARWATT Manager: {str(e)}")
+            raise SolarwattConnectionError(f"Cannot connect to SOLARWATT Manager: {str(e)}") from e
 
     async def async_get_items(self) -> list[dict[str, Any]]:
         await self._ensure_session()
@@ -459,17 +508,26 @@ class SOLARWATTClient:
                 f"Content-Type error fetching items from {self.host}: {str(e)}. "
                 "Usually indicates HTML login page instead of JSON response."
             )
-            raise UpdateFailed(
+            raise SolarwattProtocolError(
                 "Antwort ist kein JSON (Content-Type stimmt nicht). "
                 "SOLARWATT liefert dann meist eine HTML-Loginseite. "
                 "Prüfe Host, Port und Login-Daten."
             ) from e
+        except SolarwattError:
+            raise
         except ClientResponseError as e:
             self._log.error(f"HTTP error {e.status} fetching items from {self.host}")
-            raise UpdateFailed(f"HTTP Fehler: {e.status}") from e
+            if e.status in (401, 403):
+                raise SolarwattAuthError(f"HTTP {e.status} fetching items") from e
+            if e.status == 404:
+                raise SolarwattNotManagerError("Items endpoint not found") from e
+            raise SolarwattConnectionError(f"HTTP error {e.status}") from e
+        except (ClientError, asyncio.TimeoutError) as e:
+            self._log.exception(f"Connection error fetching items from {self.host}: {e}")
+            raise SolarwattConnectionError(str(e)) from e
         except Exception as e:
             self._log.exception(f"Unexpected error fetching items from {self.host}: {e}")
-            raise UpdateFailed(str(e)) from e
+            raise SolarwattConnectionError(str(e)) from e
 
     async def async_get_item(self, item_name: str) -> dict[str, Any]:
         if not item_name or not isinstance(item_name, str):
@@ -493,13 +551,21 @@ class SOLARWATTClient:
 
                 return await self._ensure_json(resp, f"GET /rest/items/{item_name}")
         except ContentTypeError as e:
-            raise UpdateFailed(
+            raise SolarwattProtocolError(
                 f"Antwort für Item {item_name} ist kein JSON (Content-Type stimmt nicht). Prüfe Proxy/URL/Login."
             ) from e
+        except SolarwattError:
+            raise
         except ClientResponseError as e:
-            raise UpdateFailed(f"HTTP Fehler {e.status} bei Item {item_name}") from e
+            if e.status in (401, 403):
+                raise SolarwattAuthError(f"HTTP {e.status} for item {item_name}") from e
+            if e.status == 404:
+                raise SolarwattNotManagerError("Items endpoint not found") from e
+            raise SolarwattConnectionError(f"HTTP error {e.status} for item {item_name}") from e
+        except (ClientError, asyncio.TimeoutError) as e:
+            raise SolarwattConnectionError(f"Connection error for item {item_name}: {e}") from e
         except Exception as e:
-            raise UpdateFailed(f"Fehler bei Item {item_name}: {e}") from e
+            raise SolarwattConnectionError(f"Error for item {item_name}: {e}") from e
 
     async def async_send_command(self, item_name: str, command: str) -> None:
         if not item_name or not isinstance(item_name, str):
@@ -518,8 +584,18 @@ class SOLARWATTClient:
                         resp2.raise_for_status()
                         return
                 resp.raise_for_status()
+        except SolarwattError:
+            raise
+        except ClientResponseError as e:
+            if e.status in (401, 403):
+                raise SolarwattAuthError(f"HTTP {e.status} for command {item_name}") from e
+            if e.status == 404:
+                raise SolarwattNotManagerError("Items endpoint not found") from e
+            raise SolarwattConnectionError(f"HTTP error {e.status} for command {item_name}") from e
+        except (ClientError, asyncio.TimeoutError) as e:
+            raise SolarwattConnectionError(f"Connection error for command {item_name}: {e}") from e
         except Exception as e:
-            raise UpdateFailed(f"Command fehlgeschlagen für {item_name}: {e}") from e
+            raise SolarwattConnectionError(f"Command failed for {item_name}: {e}") from e
 
 
 class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):

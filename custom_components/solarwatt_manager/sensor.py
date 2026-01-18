@@ -2,20 +2,15 @@ from __future__ import annotations
 
 import re
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .naming import clean_item_key, normalize_item_name, is_enabled_by_default
-
-from .const import DOMAIN, CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX
+from .const import CONF_NAME_PREFIX, DOMAIN
+from .naming import is_enabled_by_default, normalize_item_name
 from .coordinator import guess_ha_meta
 
 
@@ -40,11 +35,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(entities)
 
 
-class SOLARWATTItemSensor(SensorEntity):
+class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = False
 
     def __init__(self, coordinator, entry_id: str, item_name: str, device_name: str = "SOLARWATT Manager", prefix: str = ""):
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self._entry_id = entry_id
         self._item_name = item_name
 
@@ -62,6 +57,7 @@ class SOLARWATTItemSensor(SensorEntity):
             name=device_name,
             manufacturer="SOLARWATT",
             model="Manager flex / rail",
+            configuration_url=f"http://{host}",
         )
         item = (self.coordinator.data or {}).get(item_name)
 
@@ -78,10 +74,6 @@ class SOLARWATTItemSensor(SensorEntity):
             self._attr_icon = meta.get("icon")
 
     @property
-    def available(self) -> bool:
-        return self.coordinator.last_update_success
-
-    @property
     def native_value(self):
         item = (self.coordinator.data or {}).get(self._item_name)
         if not item:
@@ -90,8 +82,3 @@ class SOLARWATTItemSensor(SensorEntity):
         if isinstance(val, str):
             return val.lstrip("#")
         return val
-
-    async def async_update(self):
-        await self.coordinator.async_request_refresh()
-
-

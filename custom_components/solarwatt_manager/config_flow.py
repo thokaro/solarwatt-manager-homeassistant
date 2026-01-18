@@ -5,8 +5,6 @@ import logging
 
 from homeassistant import config_entries
 from homeassistant.core import callback
-from homeassistant.helpers.update_coordinator import UpdateFailed
-
 from .const import (
     DOMAIN,
     CONF_HOST,
@@ -20,7 +18,13 @@ from .const import (
     CONF_NAME_PREFIX,
     DEFAULT_NAME_PREFIX,
 )
-from .coordinator import SOLARWATTClient
+from .coordinator import (
+    SOLARWATTClient,
+    SolarwattAuthError,
+    SolarwattConnectionError,
+    SolarwattNotManagerError,
+    SolarwattProtocolError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,25 +80,25 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Validate host
         host = (user_input.get(CONF_HOST) or "").strip()
         if not host:
-            errors[CONF_HOST] = "invalid_host"
-        
+            errors["base"] = "invalid_host"
+
         # Validate username
         username = (user_input.get(CONF_USERNAME) or "").strip()
         if not username:
-            errors[CONF_USERNAME] = "invalid_username"
-        
+            errors["base"] = "invalid_username"
+
         # Validate password
         password = (user_input.get(CONF_PASSWORD) or "").strip()
         if not password:
-            errors[CONF_PASSWORD] = "invalid_password"
+            errors["base"] = "invalid_password"
         
         # Validate scan interval
         try:
             scan = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
             if scan < MIN_SCAN_INTERVAL or scan > MAX_SCAN_INTERVAL:
-                errors[CONF_SCAN_INTERVAL] = "invalid_scan_interval"
+                errors["base"] = "invalid_scan_interval"
         except (ValueError, TypeError):
-            errors[CONF_SCAN_INTERVAL] = "invalid_scan_interval"
+            errors["base"] = "invalid_scan_interval"
         
         return errors
 
@@ -119,6 +123,7 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             
             client = SOLARWATTClient(self.hass, host=host, username=username, password=password)
             try:
+                await client.async_probe_manager()
                 await client.async_validate_connection()
             finally:
                 await client.async_close()
@@ -126,15 +131,18 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Invalid input (empty strings, etc.)
             _LOGGER.error(f"Invalid input for SOLARWATT Manager: {str(e)}")
             errors["base"] = "invalid_input"
-        except UpdateFailed as e:
-            # Connection failed
-            _LOGGER.error(f"Failed to connect to SOLARWATT Manager: {str(e)}")
-            if "login" in str(e).lower() or "401" in str(e).lower():
-                errors[CONF_PASSWORD] = "invalid_auth"
-            elif "cannot connect" in str(e).lower() or "refused" in str(e).lower():
-                errors[CONF_HOST] = "cannot_connect"
-            else:
-                errors["base"] = "connection_failed"
+        except SolarwattNotManagerError as e:
+            _LOGGER.error(f"Host is not a SOLARWATT Manager: {str(e)}")
+            errors["base"] = "not_solarwatt"
+        except SolarwattAuthError as e:
+            _LOGGER.error(f"Invalid SOLARWATT credentials: {str(e)}")
+            errors["base"] = "invalid_auth"
+        except SolarwattConnectionError as e:
+            _LOGGER.error(f"Connection error to SOLARWATT Manager: {str(e)}")
+            errors["base"] = "cannot_connect"
+        except SolarwattProtocolError as e:
+            _LOGGER.error(f"Unexpected SOLARWATT response: {str(e)}")
+            errors["base"] = "connection_failed"
         except Exception as e:
             # Unexpected error
             _LOGGER.exception(f"Unexpected error testing SOLARWATT connection: {e}")
