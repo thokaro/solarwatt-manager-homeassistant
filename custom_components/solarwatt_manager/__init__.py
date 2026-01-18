@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from .coordinator import SOLARWATTCoordinator, SOLARWATTClient
 
-PLATFORMS: list[str] = ["sensor"]
+PLATFORMS: list[str] = ["sensor", "button"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -18,6 +18,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = SOLARWATTCoordinator(hass, entry, client)
     await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_refresh_things()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 

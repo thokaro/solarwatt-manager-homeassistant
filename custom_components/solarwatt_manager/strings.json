@@ -42,5 +42,12 @@
         }
       }
     }
+  },
+  "entity": {
+    "button": {
+      "diagnostics_refresh": {
+        "name": "Refresh diagnostics data"
+      }
+    }
   }
 }

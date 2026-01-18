@@ -272,6 +272,7 @@ class SOLARWATTClient:
         self.base = f"http://{host}"
         self.login_url = f"{self.base}/auth/login"
         self.items_url = f"{self.base}/rest/items"
+        self.things_url = f"{self.base}/rest/things"
 
         # Use a dedicated session with CookieJar(unsafe=True) so cookies from IP
         # hosts are accepted. This is REQUIRED for SOLARWATT Manager when accessed
@@ -529,6 +530,50 @@ class SOLARWATTClient:
             self._log.exception(f"Unexpected error fetching items from {self.host}: {e}")
             raise SolarwattConnectionError(str(e)) from e
 
+    async def async_get_things(self) -> list[dict[str, Any]]:
+        await self._ensure_session()
+        try:
+            async with self._session.get(self.things_url, timeout=5, headers=self._auth_headers()) as resp:
+                if resp.status == 401:
+                    await self.async_login()
+                    async with self._session.get(
+                        self.things_url,
+                        timeout=5,
+                        headers=self._auth_headers(),
+                    ) as resp2:
+                        resp2.raise_for_status()
+                        return await self._ensure_json(resp2, "GET /rest/things (nach 401)")
+
+                resp.raise_for_status()
+
+                ct = (resp.headers.get("Content-Type") or "").lower()
+                if "text/html" in ct:
+                    await self.async_login()
+                    async with self._session.get(
+                        self.things_url,
+                        timeout=5,
+                        headers=self._auth_headers(),
+                    ) as resp2:
+                        resp2.raise_for_status()
+                        return await self._ensure_json(resp2, "GET /rest/things (nach HTML)")
+                return await self._ensure_json(resp, "GET /rest/things")
+        except ContentTypeError as e:
+            raise SolarwattProtocolError(
+                "Antwort für /rest/things ist kein JSON (Content-Type stimmt nicht)."
+            ) from e
+        except SolarwattError:
+            raise
+        except ClientResponseError as e:
+            if e.status in (401, 403):
+                raise SolarwattAuthError("HTTP error fetching things") from e
+            if e.status == 404:
+                raise SolarwattProtocolError("Things endpoint not found") from e
+            raise SolarwattConnectionError(f"HTTP error {e.status}") from e
+        except (ClientError, asyncio.TimeoutError) as e:
+            raise SolarwattConnectionError(f"Connection error fetching things: {e}") from e
+        except Exception as e:
+            raise SolarwattConnectionError(f"Error fetching things: {e}") from e
+
     async def async_get_item(self, item_name: str) -> dict[str, Any]:
         if not item_name or not isinstance(item_name, str):
             raise ValueError("item_name must be a non-empty string")
@@ -571,6 +616,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     def __init__(self, hass: HomeAssistant, entry, client: SOLARWATTClient):
         self.entry = entry
         self.client = client
+        self.things: dict[str, dict[str, Any]] = {}
 
         scan = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         # Validate scan interval: min MIN_SCAN_INTERVAL (5s), max MAX_SCAN_INTERVAL (1h)
@@ -607,3 +653,20 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             n = it.get("name", f"unknown_{idx}")
             out_all[n] = _to_item(n, it)
         return out_all
+
+    async def async_refresh_things(self) -> None:
+        try:
+            things = await self.client.async_get_things()
+        except SolarwattError as err:
+            self.logger.debug("Diagnostics: unable to fetch /rest/things: %s", err)
+            return
+        except Exception as err:
+            self.logger.debug("Diagnostics: unexpected error fetching /rest/things: %s", err, exc_info=True)
+            return
+
+        out: dict[str, dict[str, Any]] = {}
+        for idx, thing in enumerate(things or []):
+            uid = thing.get("UID") or thing.get("uid") or f"unknown_{idx}"
+            out[uid] = thing
+        self.things = out
+        self.async_update_listeners()

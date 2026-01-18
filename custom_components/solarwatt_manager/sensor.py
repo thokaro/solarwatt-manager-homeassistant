@@ -6,6 +6,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -39,6 +40,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 device_name=entry.title,
                 prefix=prefix,
                 enable_all=enable_all,
+            )
+        )
+
+    for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
+        entities.append(
+            SOLARWATTThingSensor(
+                coordinator,
+                entry.entry_id,
+                thing_uid,
+                thing,
+                device_name=entry.title,
             )
         )
 
@@ -100,3 +112,53 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         if isinstance(val, str):
             return val.lstrip("#")
         return val
+
+
+class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):
+    _attr_has_entity_name = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = True
+
+    def __init__(
+        self,
+        coordinator,
+        entry_id: str,
+        thing_uid: str,
+        thing: dict,
+        device_name: str = "SOLARWATT Manager",
+    ):
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._thing_uid = thing_uid
+        self._attr_unique_id = f"{entry_id}_thing_{thing_uid}"
+
+        label = (thing.get("label") or thing_uid or "").strip()
+        self._attr_name = label or thing_uid
+
+        host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, host)},
+            name=device_name,
+            manufacturer="SOLARWATT",
+            model="Manager diagnostics",
+            configuration_url=f"http://{host}",
+        )
+
+    def _thing(self) -> dict | None:
+        return (getattr(self.coordinator, "things", {}) or {}).get(self._thing_uid)
+
+    @property
+    def native_value(self):
+        thing = self._thing()
+        if not thing:
+            return None
+        status = (thing.get("statusInfo") or {}).get("status")
+        return status or None
+
+    @property
+    def extra_state_attributes(self):
+        thing = self._thing()
+        if not thing:
+            return {}
+        props = thing.get("properties")
+        return props if isinstance(props, dict) else {}
