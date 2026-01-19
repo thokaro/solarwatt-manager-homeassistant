@@ -23,12 +23,7 @@ NORMALIZATION_RULES: list[tuple[str, str]] = [
     (r"^batteryflex_battery_[^_]+_batteryChannelGroup_", "batteryflex_"),
     (r"^batteryflex_battery_[^_]+_", "batteryflex_"),
     # Shorten KACO device block while preserving known suffix groups.
-    (
-        r"^sunspecnext_inverter_KACO_.*?_(?=(harmonized_|inverter_|limitable_))",
-        "kacoinv_",
-    ),
-    (r"^sunspecnext_inverter_KACO_.*", "kacoinv_"),
-
+    (r"^sunspecnext_inverter_KACO_.*?_(?=(harmonized_|inverter_|limitable_|pv_power_production_))", "kacoinv_",),
 ]
 
 
