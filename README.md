@@ -16,7 +16,7 @@ Note: If you want to control settings like workmode, maximum charge current or d
 * Energy Dashboard ready (correct `device_class` & `state_class`)
 * Automatic unit normalization (Wh → kWh)
 * Entity names are normalized and installation-specific IDs are removed.
-* Diagnostics data from /rest/things with devices and their full attributes exposed as diagnostic entities
+* Diagnostics data from /rest/things with devices and their "properties" exposed as diagnostic entities
 * Stable `unique_id`s (safe for long‑term statistics)
 * Works with Home Assistant statistics & history
 
