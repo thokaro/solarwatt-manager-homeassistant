@@ -19,6 +19,16 @@ NORMALIZATION_RULES: list[tuple[str, str]] = [
     (r"^mystrom_switch_[^_]+_", "mystrom_"),
     (r"^modbus_sunspec_sma_inverter_[^_]+_", "sma_"),
     (r"^pvplant_standard_[^_]+_", "pvplant_"),
+    (r"^batteryflex_battery_[^_]+_harmonized_", "batteryflex_"),
+    (r"^batteryflex_battery_[^_]+_batteryChannelGroup_", "batteryflex_"),
+    (r"^batteryflex_battery_[^_]+_", "batteryflex_"),
+    # Shorten KACO device block while preserving known suffix groups.
+    (
+        r"^sunspecnext_inverter_KACO_.*?_(?=(harmonized_|inverter_|limitable_))",
+        "kacoinv_",
+    ),
+    (r"^sunspecnext_inverter_KACO_.*", "kacoinv_"),
+
 ]
 
 
@@ -73,7 +83,34 @@ DEFAULT_ENABLED_GROUPS: list[tuple[str, list[str]]] = [
             "battery_bms_1_temperature",
         ],
     ),
+    (
+        r"batteryflex_battery_[^_]+_harmonized_",
+        [
+            "power_in",
+            "power_out",
+            "work_in",
+            "work_out",
+        ],
+    ),
+    (
+        r"batteryflex_battery_[^_]+_batteryChannelGroup_",
+        [
+            "batteryStateOfCharge",
+            "backupSoc",
+            "batteryModeString",
+            "batteryChargeCurrent",
+            "batteryDischargeCurrent",
+            "batteryVoltage",
+            "batteryCurrent",
+            "batteryEnergyIn",
+            "batteryEnergyOut",
+            "batteryPower",
+            "batteryStateOfHealth",
+        ],
+    ),
+
 ]
+
 
 DEFAULT_ENABLED_PATTERNS: list[str] = [
     rf"^{prefix}{suffix}$"
