@@ -96,7 +96,7 @@ meters:
     usage: grid
     uri: http://homeassistant.local:8123/
     power: sensor.kiwigrid_power_grid_evcc
-    energy: sensor.pulse_gesamtbezug # optional (kWh, kumulativ)
+    energy: sensor.vision_kiwigrid_work_consumed_from_grid_total
 
   - name: pv
     type: template
