@@ -1,5 +1,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
+[![HACS Category](https://img.shields.io/badge/HACS-Integration-41BDF5.svg)](https://hacs.xyz/docs/categories/integration/)
 [![Version](https://img.shields.io/github/v/release/thokaro/solarwatt-manager-homeassistant)](https://github.com/thokaro/solarwatt-manager-homeassistant/releases)
+[![License](https://img.shields.io/github/license/thokaro/solarwatt-manager-homeassistant)](LICENSE)
 
 
 # SOLARWATT Manager – Home Assistant Integration
@@ -97,6 +99,14 @@ All energy sensors:
 * report values in `kWh`
 
 This guarantees compatibility with Home Assistant long‑term statistics.
+
+---
+
+## 🚗 evcc Sensors
+
+If you want to use the sensors with **evcc**, see the dedicated guide:
+
+* [README-evvc-guide-german.md](README-evvc-guide-german.md)
 
 ---
 
