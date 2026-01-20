@@ -68,11 +68,11 @@ DEFAULT_ENABLED_GROUPS: list[tuple[str, list[str]]] = [
     (
         r"foxesshybrid_battery_[^_]+_",
         [
+            "battery_bms_soc",
             "battery_bms_power",
+            "battery_mode", 
             "battery_work_in_total",
-            "battery_work_out_total",
-            "battery_mode",
-            "battery_bms_1_soc",
+            "battery_work_out_total",                       
             "battery_bms_1_voltage",
             "battery_bms_1_current",
             "battery_bms_1_temperature",

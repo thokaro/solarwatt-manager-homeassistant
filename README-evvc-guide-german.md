@@ -113,7 +113,7 @@ meters:
     uri: http://homeassistant.local:8123/
     power: sensor.foxess_battery_bms_power_evcc
     energy: sensor.vision_kiwigrid_work_consumed_from_storage_total
-    soc: sensor.vision_foxess_battery_bms_1_soc
+    soc: sensor.vision_foxess_battery_bms_soc
 ```
 
 ---
