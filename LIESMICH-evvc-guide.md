@@ -61,14 +61,14 @@ Die Entitäts-IDs können bei euch natürlich abweichen.
 ### Zustand (Template)
 
 ```jinja2
-{{ states('sensor.vision_kiwigrid_power_buffered') | int
-   - states('sensor.vision_kiwigrid_power_consumed_from_storage') | int }}
+{{ states('sensor.vision_kiwigrid_power_consumed_from_storage') | int
+   - states('sensor.vision_kiwigrid_power_buffered') | int }}
 ```
 
 Setzt sich wie folgt zusammen:
 
-- `sensor.vision_kiwigrid_power_buffered` = Batterieladung (Pufferung)
 - `sensor.vision_kiwigrid_power_consumed_from_storage` = Batterieentladung (Verbrauch aus dem Speicher)
+- `sensor.vision_kiwigrid_power_buffered` = Batterieladung (Pufferung)
 
 ### Einstellungen
 
@@ -83,8 +83,8 @@ Setzt sich wie folgt zusammen:
 
 **Ergebnis:**
 
-- positiver Wert → Batterie lädt  
-- negativer Wert → Batterie entlädt  
+- positiver Wert → Batterie entlädt  
+- negativer Wert → Batterie lädt  
 
 ---
 
