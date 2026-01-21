@@ -106,9 +106,9 @@ This guarantees compatibility with Home Assistant long‑term statistics.
 
 ## 🚗 evcc Sensors
 
-If you want to use the sensors with **evcc**, see the dedicated guide:
+If you want to use sensors from this integration in **evcc**, please refer to the instructions (in german).
 
-* [README-evvc-guide-german.md](README-evvc-guide-german.md)
+* [LIESMICH-evvc-guide.md](LIESMICH-evvc-guide.md)
 
 ---
 
