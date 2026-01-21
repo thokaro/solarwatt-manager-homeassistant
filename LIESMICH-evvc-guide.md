@@ -17,7 +17,7 @@ Da der SOLARWATT Manager einige Leistungswerte nicht direkt im von evcc erwartet
   - negativer Wert = Einspeisung  
 
 - **Batterieleistung (Battery)**  
-  Die vom Batteriemanagementsystem gelieferte Leistung hat ein **invertiertes Vorzeichen** und muss für evcc korrigiert werden 🔋.
+  Die Batterieleistung wird aus **zwei Sensoren** gebildet: Pufferung und Verbrauch aus dem Speicher 🔋. 
 
 ---
 
@@ -61,15 +61,21 @@ Die Entitäts-IDs können bei euch natürlich abweichen.
 ### Zustand (Template)
 
 ```jinja2
-{{ -1 * states('sensor.vision_foxess_battery_bms_power') | int }}
+{{ states('sensor.vision_kiwigrid_power_buffered') | int
+   - states('sensor.vision_kiwigrid_power_consumed_from_storage') | int }}
 ```
+
+Setzt sich wie folgt zusammen:
+
+- `sensor.vision_kiwigrid_power_buffered` = Batterieladung (Pufferung)
+- `sensor.vision_kiwigrid_power_consumed_from_storage` = Batterieentladung (Verbrauch aus dem Speicher)
 
 ### Einstellungen
 
 | Feld | Wert |
 |------|------|
-| Name | FoxEss Battery BMS Power EVCC |
-| Entitäts-ID | `sensor.foxess_battery_bms_power_evcc` |
+| Name | Kiwigrid Power Battery EVCC |
+| Entitäts-ID | `sensor.kiwigrid_power_battery_evcc` |
 | Maßeinheit | `W` |
 | Geräteklasse | Leistung |
 | Zustandsklasse | – |
@@ -77,8 +83,8 @@ Die Entitäts-IDs können bei euch natürlich abweichen.
 
 **Ergebnis:**
 
-- positiver Wert → Batterie entlädt  
-- negativer Wert → Batterie lädt  
+- positiver Wert → Batterie lädt  
+- negativer Wert → Batterie entlädt  
 
 ---
 
@@ -111,7 +117,7 @@ meters:
     template: homeassistant
     usage: battery
     uri: http://homeassistant.local:8123/
-    power: sensor.foxess_battery_bms_power_evcc
+    power: sensor.kiwigrid_power_battery_evcc
     energy: sensor.vision_kiwigrid_work_consumed_from_storage_total
     soc: sensor.vision_foxess_battery_bms_soc
 ```
