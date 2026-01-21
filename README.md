@@ -1,6 +1,6 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![HACS Category](https://img.shields.io/badge/HACS-Integration-41BDF5.svg)](https://hacs.xyz/docs/categories/integration/)
 [![Version](https://img.shields.io/github/v/release/thokaro/solarwatt-manager-homeassistant)](https://github.com/thokaro/solarwatt-manager-homeassistant/releases)
+[![HACS Category](https://img.shields.io/badge/HACS-Integration-41BDF5.svg)](https://hacs.xyz/docs/categories/integration/)
+[![Platform](https://img.shields.io/badge/Platform-Home%20Assistant-41BDF5.svg)](https://www.home-assistant.io/)
 [![License](https://img.shields.io/github/license/thokaro/solarwatt-manager-homeassistant)](LICENSE)
 
 
@@ -9,6 +9,8 @@
 This custom integration connects a **SOLARWATT Manager** like FLEX or Rail to **Home Assistant** and provides energy- and power-related sensors.
 
 Note for user with **vision** components: If you want to control settings like workmode, maximum charge current or discharge current try https://github.com/nathanmarlor/foxess_modbus
+
+⚠️ **EnergyManager pro** is not supported by this integration, use https://github.com/Mas2112/solarwatt-energymanager-homeassistant instead.
 
 ---
 
