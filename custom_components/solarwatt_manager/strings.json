@@ -5,7 +5,7 @@
       "invalid_host": "Invalid host or IP address.",
       "invalid_username": "Invalid username.",
       "invalid_password": "Invalid password.",
-      "invalid_scan_interval": "Scan interval must be between 5 and 3600 seconds.",
+      "invalid_scan_interval": "Scan interval must be between 10 and 3600 seconds.",
       "invalid_input": "Invalid input.",
       "invalid_auth": "Invalid username or password.",
       "not_solarwatt": "Host does not appear to be a SOLARWATT Manager.",
@@ -30,7 +30,7 @@
   },
   "options": {
     "error": {
-      "invalid_scan_interval": "Scan interval must be between 5 and 3600 seconds."
+      "invalid_scan_interval": "Scan interval must be between 10 and 3600 seconds."
     },
     "step": {
       "init": {

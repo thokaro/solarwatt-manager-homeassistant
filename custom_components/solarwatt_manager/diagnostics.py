@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
@@ -39,6 +40,27 @@ def _num_value(item: Any) -> float | None:
     return None
 
 
+def _item_payload(item: Any) -> dict[str, Any]:
+    """Build a compact diagnostics payload for a SOLARWATTItem."""
+    parsed = getattr(item, "parsed", None)
+    raw = getattr(item, "raw", None)
+    pattern = None
+    if isinstance(raw, dict):
+        pattern = (raw.get("stateDescription") or {}).get("pattern")
+    return {
+        "type": getattr(item, "oh_type", None),
+        "label": getattr(item, "label", None),
+        "category": getattr(item, "category", None),
+        "editable": getattr(item, "editable", None),
+        "group_names": getattr(item, "group_names", None),
+        "raw_state": raw.get("state") if isinstance(raw, dict) else None,
+        "state_pattern": pattern,
+        "parsed_value": getattr(parsed, "value", None),
+        "unit": getattr(parsed, "unit", None),
+        "timestamp_ms": getattr(parsed, "timestamp_ms", None),
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
@@ -66,21 +88,50 @@ async def async_get_config_entry_diagnostics(
     interval = getattr(coordinator, "update_interval", None)
     update_interval_seconds = int(interval.total_seconds()) if interval else None
 
-    sample: dict[str, Any] = {}
+    item_payloads: dict[str, Any] = {}
+    item_keys: list[str] = []
     numeric_count = 0
-    for k, it in list(items.items())[:50]:
+    type_counts: Counter[str] = Counter()
+    category_counts: Counter[str] = Counter()
+    unit_counts: Counter[str] = Counter()
+    editable_counts: Counter[str] = Counter()
+    missing_label_count = 0
+    null_value_count = 0
+    non_numeric_count = 0
+
+    for k, it in items.items():
         k_clean = (k or "").lstrip("#")
-        v = _num_value(it)
-        if v is not None:
+        payload = _item_payload(it)
+        item_payloads[k_clean] = payload
+        item_keys.append(k_clean)
+
+        if _num_value(it) is not None:
             numeric_count += 1
-        parsed = getattr(it, "parsed", None)
-        sample[k_clean] = {
-            "type": getattr(it, "oh_type", None),
-            "label": getattr(it, "label", None),
-            "parsed_value": getattr(parsed, "value", None),
-            "unit": getattr(parsed, "unit", None),
-            "timestamp_ms": getattr(parsed, "timestamp_ms", None),
-        }
+
+        type_counts[payload.get("type") or "unknown"] += 1
+        category_counts[payload.get("category") or "unknown"] += 1
+        unit_counts[payload.get("unit") or "none"] += 1
+
+        editable = payload.get("editable")
+        if editable is True:
+            editable_counts["true"] += 1
+        elif editable is False:
+            editable_counts["false"] += 1
+        else:
+            editable_counts["unknown"] += 1
+
+        if not payload.get("label"):
+            missing_label_count += 1
+
+        val = payload.get("parsed_value")
+        if val is None:
+            null_value_count += 1
+        elif not isinstance(val, (int, float)):
+            non_numeric_count += 1
+
+    item_pairs = list(item_payloads.items())
+    sample = dict(item_pairs[:50])
+    sample_tail = dict(item_pairs[-50:]) if len(item_pairs) > 50 else {}
 
     # Highlight the most common problems to speed up support.
     N = 20
@@ -103,6 +154,20 @@ async def async_get_config_entry_diagnostics(
             problem_items.append({"name": k_clean, "issue": "missing unit"})
             continue
 
+    things = getattr(coordinator, "things", None) or {}
+    things_compact: dict[str, Any] = {}
+    for uid, thing in things.items():
+        status_info = thing.get("statusInfo") or {}
+        things_compact[uid] = {
+            "label": thing.get("label"),
+            "thing_type_uid": thing.get("thingTypeUID") or thing.get("thingTypeUid"),
+            "bridge_uid": thing.get("bridgeUID") or thing.get("bridgeUid"),
+            "status": status_info.get("status"),
+            "status_detail": status_info.get("statusDetail"),
+            "properties": thing.get("properties"),
+            "channels_count": len(thing.get("channels") or []),
+        }
+
     data: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "entry": {
@@ -120,6 +185,19 @@ async def async_get_config_entry_diagnostics(
             "numeric_items": numeric_count,
             "last_exception": repr(getattr(coordinator, "last_exception", None)) if getattr(coordinator, "last_exception", None) else None,
         },
+        "data_keys": item_keys,
+        "data_stats": _redact(
+            {
+                "types": dict(type_counts),
+                "categories": dict(category_counts),
+                "units": dict(unit_counts),
+                "editable": dict(editable_counts),
+                "missing_label": missing_label_count,
+                "null_value": null_value_count,
+                "non_numeric_value": non_numeric_count,
+            }
+        ),
+        "data_items_compact": _redact(item_payloads),
         "problem_items": _redact(
             {
                 "problem_items_top_20": problem_items[:N],
@@ -127,6 +205,13 @@ async def async_get_config_entry_diagnostics(
             }
         ),
         "data_sample_first_50": _redact(sample),
+        "data_sample_last_50": _redact(sample_tail) if sample_tail else None,
+        "things": _redact(
+            {
+                "things_count": len(things_compact),
+                "things_compact": things_compact,
+            }
+        ),
     }
 
     return data

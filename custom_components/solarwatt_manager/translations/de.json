@@ -5,7 +5,7 @@
       "invalid_host": "Ungültiger Host oder IP-Adresse.",
       "invalid_username": "Ungültiger Benutzername.",
       "invalid_password": "Ungültiges Passwort.",
-      "invalid_scan_interval": "Das Update-Intervall muss zwischen 5 und 3600 Sekunden liegen.",
+      "invalid_scan_interval": "Das Update-Intervall muss zwischen 10 und 3600 Sekunden liegen.",
       "invalid_input": "Ungültige Eingabe.",
       "invalid_auth": "Benutzername oder Passwort ungültig.",
       "not_solarwatt": "Der Host scheint kein SOLARWATT Manager zu sein.",
@@ -30,7 +30,7 @@
   },
   "options": {
     "error": {
-      "invalid_scan_interval": "Das Update-Intervall muss zwischen 5 und 3600 Sekunden liegen."
+      "invalid_scan_interval": "Das Update-Intervall muss zwischen 10 und 3600 Sekunden liegen."
     },
     "step": {
       "init": {

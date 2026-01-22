@@ -6,6 +6,7 @@ from datetime import timedelta
 import re
 import time
 from typing import Any, Optional
+import unicodedata
 
 import logging
 
@@ -20,6 +21,7 @@ from homeassistant.const import (
     UnitOfFrequency,
     UnitOfPower,
     UnitOfTemperature,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -28,6 +30,63 @@ from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, MIN_SCAN_INTERVAL,
 
 
 _NUM_RE = re.compile(r"^\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([^\d\s].*)?\s*$")
+_PATTERN_UNIT_RE = re.compile(r"%[-+0-9.]*[a-zA-Z]")
+_UNIT_ALIASES = {
+    "A·h": "Ah",
+    "kW·h": "kWh",
+    "W·h": "Wh",
+    "Ohm": "Ω",
+    "mOhm": "mΩ",
+}
+
+
+def _extract_unit_from_pattern(pattern: str | None) -> str | None:
+    if not pattern:
+        return None
+    if "%unit%" in pattern:
+        return None
+    cleaned = _PATTERN_UNIT_RE.sub("", pattern).strip()
+    if not cleaned:
+        return None
+    parts = cleaned.split()
+    return parts[-1] if parts else None
+
+
+def _normalize_unit(unit: str | None) -> str | None:
+    if not unit:
+        return None
+    unit = unicodedata.normalize("NFKC", unit).strip()
+    unit = unit.replace("·", "")
+    unit = unit.replace("µ", "u").replace("μ", "u")
+    unit = unit.replace("\\u00b0", "°")
+    unit = _UNIT_ALIASES.get(unit, unit)
+    return unit or None
+
+
+def _convert_milli_unit(value: float, unit: str | None) -> tuple[float, str | None]:
+    if unit == "mA":
+        return value / 1000.0, "A"
+    if unit == "mV":
+        return value / 1000.0, "V"
+    if unit == "mW":
+        return value / 1000.0, "W"
+    if unit == "mWh":
+        return value / 1000.0, "Wh"
+    if unit == "mHz":
+        return value / 1000.0, "Hz"
+    if unit == "mΩ":
+        return value / 1000.0, "Ω"
+    if unit == "uA":
+        return value / 1_000_000.0, "A"
+    if unit == "uV":
+        return value / 1_000_000.0, "V"
+    if unit == "uW":
+        return value / 1_000_000.0, "W"
+    if unit == "uWh":
+        return value / 1_000_000.0, "Wh"
+    if unit == "uHz":
+        return value / 1_000_000.0, "Hz"
+    return value, unit
 
 
 class SolarwattError(UpdateFailed):
@@ -69,11 +128,11 @@ class SOLARWATTItem:
     group_names: Optional[list[str]] = None
 
 
-def parse_state(state: Any) -> ParsedState:
+def parse_state(state: Any, pattern: str | None = None) -> ParsedState:
     if state is None:
         return ParsedState(value=None)
 
-    s = str(state).strip()
+    s = unicodedata.normalize("NFKC", str(state).strip())
 
     if s == "NULL":
         return ParsedState(value=None)
@@ -92,7 +151,7 @@ def parse_state(state: Any) -> ParsedState:
                 ts = int(left)
             except ValueError:
                 ts = None
-        ps = parse_state(right)
+        ps = parse_state(right, pattern)
         ps.timestamp_ms = ts
         return ps
 
@@ -101,13 +160,16 @@ def parse_state(state: Any) -> ParsedState:
     if m:
         num_s = m.group(1)
         unit = (m.group(2) or "").strip() or None
+        if unit is None:
+            unit = _extract_unit_from_pattern(pattern)
+        unit = _normalize_unit(unit)
         try:
             val = float(num_s)
 
             # ---- Einheiten normalisieren ----
             # SOLARWATT/OpenHAB liefert teils Ws, Wh, kWh, kW, °C, etc.
             if unit:
-                unit = unit.replace("\\u00b0", "°")  # falls als Escape reinkommt
+                val, unit = _convert_milli_unit(val, unit)
 
             # Ws -> Wh (für HA besser)
             if unit == "Ws":
@@ -152,6 +214,8 @@ def guess_ha_meta(oh_type: str | None, parsed: ParsedState, item_name: str | Non
     """
     unit = parsed.unit if parsed else None
     name_l = (item_name or "").lower()
+    duration_name = name_l.endswith("seconds") or name_l.endswith("sec")
+    temperature_name = "temperature" in name_l or "temperatur" in name_l
 
     # Map string units to HA constants where possible (helps Energy Dashboard & statistics)
     unit_map: dict[str, Any] = {
@@ -164,29 +228,42 @@ def guess_ha_meta(oh_type: str | None, parsed: ParsedState, item_name: str | Non
         "Hz": UnitOfFrequency.HERTZ,
         "°C": UnitOfTemperature.CELSIUS,
         "%": PERCENTAGE,
+        "s": UnitOfTime.SECONDS,
+        "sec": UnitOfTime.SECONDS,
     }
 
     meta: dict[str, Any] = {"suggested_unit": unit_map.get(unit, unit)}
 
-    # --- Fallbacks rein aus Einheit/Name ---
-    if unit in ("W", "kW"):
-        meta.update({"device_class": SensorDeviceClass.POWER, "state_class": SensorStateClass.MEASUREMENT})
-    elif unit in ("kWh", "Wh"):
-        # Wh is normalized to kWh in parse_state, but keep this safe.
-        meta.update({"device_class": SensorDeviceClass.ENERGY, "state_class": SensorStateClass.TOTAL_INCREASING})
-    elif unit in ("V",):
-        meta.update({"device_class": SensorDeviceClass.VOLTAGE, "state_class": SensorStateClass.MEASUREMENT})
-    elif unit in ("A",):
-        meta.update({"device_class": SensorDeviceClass.CURRENT, "state_class": SensorStateClass.MEASUREMENT})
-    elif unit in ("Hz",):
-        meta.update({"device_class": SensorDeviceClass.FREQUENCY, "state_class": SensorStateClass.MEASUREMENT})
-    elif unit in ("°C",):
+    if duration_name:
+        meta.update({"device_class": SensorDeviceClass.DURATION, "state_class": SensorStateClass.MEASUREMENT})
+        if unit is None:
+            meta["suggested_unit"] = UnitOfTime.SECONDS
+    elif temperature_name:
         meta.update({"device_class": SensorDeviceClass.TEMPERATURE, "state_class": SensorStateClass.MEASUREMENT})
-    elif unit == "%":
-        meta.update({"state_class": SensorStateClass.MEASUREMENT})
-        # SOC/Prozentwerte werden oft als Battery angezeigt
-        if any(k in name_l for k in ("soc", "stateofcharge", "battery", "akku")):
-            meta["device_class"] = SensorDeviceClass.BATTERY
+        if unit is None:
+            meta["suggested_unit"] = UnitOfTemperature.CELSIUS
+    else:
+        # --- Fallbacks rein aus Einheit/Name ---
+        if unit in ("W", "kW"):
+            meta.update({"device_class": SensorDeviceClass.POWER, "state_class": SensorStateClass.MEASUREMENT})
+        elif unit in ("kWh", "Wh"):
+            # Wh is normalized to kWh in parse_state, but keep this safe.
+            meta.update({"device_class": SensorDeviceClass.ENERGY, "state_class": SensorStateClass.TOTAL_INCREASING})
+        elif unit in ("V",):
+            meta.update({"device_class": SensorDeviceClass.VOLTAGE, "state_class": SensorStateClass.MEASUREMENT})
+        elif unit in ("A",):
+            meta.update({"device_class": SensorDeviceClass.CURRENT, "state_class": SensorStateClass.MEASUREMENT})
+        elif unit in ("Hz",):
+            meta.update({"device_class": SensorDeviceClass.FREQUENCY, "state_class": SensorStateClass.MEASUREMENT})
+        elif unit in ("°C",):
+            meta.update({"device_class": SensorDeviceClass.TEMPERATURE, "state_class": SensorStateClass.MEASUREMENT})
+        elif unit == "%":
+            meta.update({"state_class": SensorStateClass.MEASUREMENT})
+            # SOC/Prozentwerte werden oft als Battery angezeigt
+            if any(k in name_l for k in ("soc", "stateofcharge", "battery", "akku")):
+                meta["device_class"] = SensorDeviceClass.BATTERY
+        elif unit in ("Ω",):
+            meta.update({"state_class": SensorStateClass.MEASUREMENT})
 
     # Icons (nur Vorschläge)
     if "icon" not in meta:
@@ -200,7 +277,7 @@ def guess_ha_meta(oh_type: str | None, parsed: ParsedState, item_name: str | Non
             meta["icon"] = "mdi:home-lightning-bolt"
 
     # Wenn kein OpenHAB-Typ da ist, bleiben wir bei den Fallbacks.
-    if not oh_type:
+    if not oh_type or duration_name:
         return meta
 
     if oh_type.startswith("Number:Power"):
@@ -619,7 +696,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.things: dict[str, dict[str, Any]] = {}
 
         scan = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-        # Validate scan interval: min MIN_SCAN_INTERVAL (5s), max MAX_SCAN_INTERVAL (1h)
+        # Validate scan interval: min MIN_SCAN_INTERVAL (10s), max MAX_SCAN_INTERVAL (1h)
         if not isinstance(scan, int) or scan < MIN_SCAN_INTERVAL:
             scan = DEFAULT_SCAN_INTERVAL
         if scan > MAX_SCAN_INTERVAL:
@@ -637,10 +714,11 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         items = await self.client.async_get_items()
 
         def _to_item(name: str, it: dict[str, Any]) -> SOLARWATTItem:
+            pattern = (it.get("stateDescription") or {}).get("pattern")
             return SOLARWATTItem(
                 name=name,
                 raw=it,
-                parsed=parse_state(it.get("state")),
+                parsed=parse_state(it.get("state"), pattern),
                 oh_type=it.get("type"),
                 editable=bool(it.get("editable")),
                 label=it.get("label"),
