@@ -137,6 +137,31 @@ def normalize_item_name(raw: str) -> str:
     return name
 
 
+def format_display_name(name: str) -> str:
+    """Format a human-friendly display name (Title Case with exceptions)."""
+    if not name:
+        return name
+
+    def _format_token(token: str) -> str:
+        if not token:
+            return token
+        if token.isdigit():
+            return token
+
+        lower = token.lower()
+        for key, replacement in (("bms", "BMS"), ("soc", "SoC"), ("soh", "SoH")):
+            if lower == key or (lower.startswith(key) and lower[len(key):].isdigit()):
+                return replacement + token[len(key):]
+
+        if token != token.lower():
+            return token
+
+        return token.capitalize()
+
+    parts = re.split(r"([^A-Za-z0-9]+)", name)
+    return "".join(_format_token(part) if idx % 2 == 0 else part for idx, part in enumerate(parts))
+
+
 def is_enabled_by_default(item_name: str) -> bool:
     """Return True if raw OpenHAB item name matches DEFAULT_ENABLED_PATTERNS."""
     key = clean_item_key(item_name)

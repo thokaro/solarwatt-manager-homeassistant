@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_ENABLE_ALL_SENSORS, CONF_NAME_PREFIX, DEFAULT_ENABLE_ALL_SENSORS, DOMAIN
-from .naming import is_enabled_by_default, normalize_item_name
+from .naming import format_display_name, is_enabled_by_default, normalize_item_name
 from .coordinator import guess_ha_meta
 
 
@@ -94,7 +94,8 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         # Use the OpenHAB/SOLARWATT item name (as requested), strip leading '#',
         # and optionally prefix it.
         base_name = clean_item_name.replace("harmonized_", "").replace("_", " ").strip()
-        self._attr_name = f"{prefix} {base_name}".strip() if prefix else base_name
+        display_name = format_display_name(base_name)
+        self._attr_name = f"{prefix} {display_name}".strip() if prefix else display_name
 
         if item:
             meta = guess_ha_meta(getattr(item, "oh_type", None), getattr(item, "parsed", None), item_name)
