@@ -20,6 +20,7 @@ Note for user with **vision** components: If you want to control settings like w
 * Energy Dashboard ready (correct `device_class` & `state_class`)
 * Automatic unit normalization (Wh → kWh)
 * Entity names are normalized and installation-specific IDs are removed.
+* Human‑friendly display names (Title Case; BMS/SoC/SoH preserved)
 * Diagnostics data from /rest/things with devices and their "properties" exposed as diagnostic entities
 * Stable `unique_id`s (safe for long‑term statistics)
 * Works with Home Assistant statistics & history
@@ -80,27 +81,13 @@ You can adjust these in the integration options:
 
 * **Update interval (seconds)** – polling interval
 * **Name prefix (optional)** – prefix for entity names
-* **Enable all sensors by default** – if off, only the core sensors (PV, grid, battery, consumption) are enabled by default
+* **Enable all sensors by default** – if off, only the core sensors (PV, grid, battery, consumption) are enabled by default; if on, all sensors are enabled regardless of the core list
 
 ---
 
 ## 🔋 Energy Dashboard
 
-The following sensor types are prepared for use in the Energy Dashboard:
-
-* **PV Production (kWh)**
-* **Grid Consumption (kWh)**
-* **Grid Feed-in (kWh)**
-* **Battery Charging / Discharging (kWh)**
-* **Household Consumption (kWh)**
-
-All energy sensors:
-
-* use `device_class: energy`
-* use `state_class: total_increasing`
-* report values in `kWh`
-
-This guarantees compatibility with Home Assistant long‑term statistics.
+Energy sensors are provided in kWh and prepared for the Energy Dashboard (`device_class: energy`, `state_class: total_increasing`). Which sensors you use depends on your setup.
 
 ---
 
@@ -119,6 +106,8 @@ If you want to use sensors from this integration in **evcc**, please refer to th
 
   * remove technical prefixes (e.g. `harmonized`)
   * replace underscores (`_`) with spaces
+  * Title Case formatting with exceptions for `BMS`, `SoC`, and `SoH`
+
 
 This keeps entities readable without breaking existing statistics.
 
@@ -131,12 +120,19 @@ This keeps entities readable without breaking existing statistics.
 ```
 custom_components/
 └─ solarwatt_manager/
-   ├─ __init__.py
-   ├─ manifest.json
-   ├─ sensor.py
-   ├─ coordinator.py
-   ├─ config_flow.py
+   ├─ __init__.py        # integration setup
+   ├─ button.py          # diagnostics refresh button
+   ├─ const.py           # constants & defaults
+   ├─ manifest.json      # integration metadata
+   ├─ sensor.py          # entity definitions
+   ├─ coordinator.py     # polling + data parsing
+   ├─ config_flow.py     # UI config flow
+   ├─ diagnostics.py     # diagnostics output
+   ├─ naming.py          # name normalization/formatting
+   ├─ strings.json       # UI strings
+   ├─ icon.png
    └─ translations/
+      └─ de.json          # German translations
 ```
 
 ### Versioning
@@ -147,7 +143,7 @@ The integration version is defined in:
 custom_components/solarwatt_manager/manifest.json
 ```
 
-GitHub releases should follow semantic versioning:
+See `CHANGELOG.md` for release notes. GitHub releases should follow semantic versioning:
 
 ```
 vX.Y.Z
