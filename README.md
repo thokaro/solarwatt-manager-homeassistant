@@ -28,7 +28,18 @@ Note for user with **vision** components: If you want to control settings like w
 
 ## 📦 Installation
 
-### Option 1: Installation via HACS (recommended)
+### Option 1: One‑click via My Home Assistant (HACS)
+
+1. Make sure **HACS** is installed in your Home Assistant instance
+2. Click the button below and follow the prompts:
+
+[![Open your Home Assistant instance and add this repository.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=thokaro&repository=solarwatt-manager-homeassistant&category=integration)
+
+3. Restart Home Assistant
+
+---
+
+### Option 2: Installation via HACS (manual)
 
 1. Make sure **HACS** is installed in your Home Assistant instance
 2. Go to **HACS → Integrations**
@@ -46,7 +57,7 @@ https://github.com/thokaro/solarwatt-manager-homeassistant
 
 ---
 
-### Option 2: Manual Installation
+### Option 3: Manual Installation
 
 1. Download or clone this repository
 2. Copy the folder:
