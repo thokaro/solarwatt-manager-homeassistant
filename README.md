@@ -81,6 +81,7 @@ You can adjust these in the integration options:
 
 * **Update interval (seconds)** – polling interval
 * **Name prefix (optional)** – prefix for entity names
+* **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
 * **Enable all sensors by default** – if off, only the core sensors (PV, grid, battery, consumption) are enabled by default; if on, all sensors are enabled regardless of the core list
 
 ---
@@ -106,7 +107,7 @@ If you want to use sensors from this integration in **evcc**, please refer to th
 
   * remove technical prefixes (e.g. `harmonized`)
   * replace underscores (`_`) with spaces
-  * Title Case formatting with exceptions for `BMS`, `SoC`, and `SoH`
+  * Title Case formatting with exceptions for common acronyms/brands (e.g. `BMS`, `SoC`, `SoH`, `AC`, `DC`, `PV`, `MPPT`, `SMA`, `KEBA`, `SunSpec`, `Modbus`, `FoxESS`)
 
 
 This keeps entities readable without breaking existing statistics.
