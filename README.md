@@ -1,7 +1,6 @@
 [![Version](https://img.shields.io/github/v/release/thokaro/solarwatt-manager-homeassistant)](https://github.com/thokaro/solarwatt-manager-homeassistant/releases)
 [![HACS Category](https://img.shields.io/badge/HACS-Integration-41BDF5.svg)](https://hacs.xyz/docs/categories/integration/)
 [![Platform](https://img.shields.io/badge/Platform-Home%20Assistant-41BDF5.svg)](https://www.home-assistant.io/)
-[![License](https://img.shields.io/github/license/thokaro/solarwatt-manager-homeassistant)](LICENSE)
 
 
 # SOLARWATT Manager – Home Assistant Integration
