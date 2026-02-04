@@ -143,10 +143,10 @@ The integration version is defined in:
 custom_components/solarwatt_manager/manifest.json
 ```
 
-See `CHANGELOG.md` for release notes. GitHub releases should follow semantic versioning:
+See `CHANGELOG.md` for release notes. GitHub releases follow calendar-based versioning:
 
 ```
-vX.Y.Z
+YYYY.M.PATCH
 ```
 
 ---

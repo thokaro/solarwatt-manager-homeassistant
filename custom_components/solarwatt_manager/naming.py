@@ -18,6 +18,10 @@ NORMALIZATION_RULES: list[tuple[str, str]] = [
     (r"^keba_wallbox_[^_]+_", "keba_"),
     (r"^mystrom_switch_[^_]+_", "mystrom_"),
     (r"^modbus_sunspec_sma_inverter_[^_]+_", "sma_"),
+    (r"^modbus_sunspec_fronius_inverter_[^_]+_", "fronius_"),
+    (r"^myreserveethernet_myreserve_[^_]+_", "myreserve_"),
+    (r"^myreserveethernet_acs_[^_]+_0_", "acs_"),
+    (r"^myreserveethernet_acs_[^_]+_", "acs_"),
     (r"^pvplant_standard_[^_]+_", "pvplant_"),
     (r"^batteryflex_battery_[^_]+_harmonized_", "batteryflex_"),
     (r"^batteryflex_battery_[^_]+_batteryChannelGroup_", "batteryflex_"),
@@ -103,6 +107,34 @@ DEFAULT_ENABLED_GROUPS: list[tuple[str, list[str]]] = [
             "batteryStateOfHealth",
         ],
     ),
+    (
+        r"myreserveethernet_acs_[^_]+_0_",
+        [
+            "metering_produced_power",
+            "metering_consumed_power",
+            "acs_pgrid",
+            "harmonized_work_out_total",
+            "harmonized_work_in_total",
+            "acs_power",            
+            "harmonized_power_out",
+            "harmonized_power_in",
+            "harmonized_work_out",
+            "harmonized_work_in",
+        ],
+    ),
+        (
+        r"myreserveethernet_myreserve_[^_]+_",
+        [
+            "harmonized_power_out",
+            "harmonized_power_in",
+            "harmonized_work_in",
+            "harmonized_work_out",
+            "sdata_group_soc",
+            "harmonized_work_out_total",
+            "harmonized_work_in_total",
+            "fdata_group_batteryModeString",
+        ],
+    ),
 
 ]
 
@@ -149,7 +181,23 @@ def format_display_name(name: str) -> str:
             return token
 
         lower = token.lower()
-        for key, replacement in (("bms", "BMS"), ("soc", "SoC"), ("soh", "SoH")):
+        for key, replacement in (
+            ("bms", "BMS"),
+            ("soc", "SoC"),
+            ("soh", "SoH"),
+            ("ac", "AC"),
+            ("dc", "DC"),
+            ("pv", "PV"),
+            ("mppt", "MPPT"),
+            ("acs", "ACS"),
+            ("sma", "SMA"),
+            ("keba", "KEBA"),
+            ("sunspec", "SunSpec"),
+            ("inv", "INV"),
+            ("modbus", "Modbus"),
+            ("foxess", "FoxESS"),
+            ("foxessinv", "FoxESSInv"),
+        ):
             if lower == key or (lower.startswith(key) and lower[len(key):].isdigit()):
                 return replacement + token[len(key):]
 

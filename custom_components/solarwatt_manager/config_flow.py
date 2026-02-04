@@ -18,6 +18,9 @@ from .const import (
     DEFAULT_NAME_PREFIX,
     CONF_ENABLE_ALL_SENSORS,
     DEFAULT_ENABLE_ALL_SENSORS,
+    CONF_ENERGY_DELTA_KWH,
+    DEFAULT_ENERGY_DELTA_KWH,
+    MIN_ENERGY_DELTA_KWH,
 )
 from .coordinator import (
     SOLARWATTClient,
@@ -58,6 +61,7 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_SCAN_INTERVAL: user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
                         CONF_NAME_PREFIX: user_input.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
                         CONF_ENABLE_ALL_SENSORS: user_input.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS),
+                        CONF_ENERGY_DELTA_KWH: user_input.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH),
                     },
                 )
 
@@ -67,6 +71,7 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_USERNAME, default="installer"): str,
                 vol.Required(CONF_PASSWORD): str,
                 vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.Coerce(int),
+                vol.Optional(CONF_ENERGY_DELTA_KWH, default=DEFAULT_ENERGY_DELTA_KWH): vol.Coerce(float),
                 vol.Optional(CONF_NAME_PREFIX, default=""): str,
                 vol.Optional(CONF_ENABLE_ALL_SENSORS, default=DEFAULT_ENABLE_ALL_SENSORS): bool,
             }
@@ -100,6 +105,14 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_scan_interval"
         except (ValueError, TypeError):
             errors["base"] = "invalid_scan_interval"
+
+        # Validate energy delta
+        try:
+            delta = float(user_input.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH))
+            if delta < MIN_ENERGY_DELTA_KWH:
+                errors["base"] = "invalid_energy_delta_kwh"
+        except (ValueError, TypeError):
+            errors["base"] = "invalid_energy_delta_kwh"
         
         return errors
 
@@ -191,6 +204,10 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                     default=user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
                 ): vol.Coerce(int),
                 vol.Optional(
+                    CONF_ENERGY_DELTA_KWH,
+                    default=user_input.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH),
+                ): vol.Coerce(float),
+                vol.Optional(
                     CONF_NAME_PREFIX,
                     default=user_input.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
                 ): str,
@@ -212,5 +229,13 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                 errors[CONF_SCAN_INTERVAL] = "invalid_scan_interval"
         except (ValueError, TypeError):
             errors[CONF_SCAN_INTERVAL] = "invalid_scan_interval"
-        
+
+        # Validate energy delta
+        try:
+            delta = float(user_input.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH))
+            if delta < MIN_ENERGY_DELTA_KWH:
+                errors[CONF_ENERGY_DELTA_KWH] = "invalid_energy_delta_kwh"
+        except (ValueError, TypeError):
+            errors[CONF_ENERGY_DELTA_KWH] = "invalid_energy_delta_kwh"
+
         return errors

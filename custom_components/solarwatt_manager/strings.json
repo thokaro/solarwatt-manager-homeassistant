@@ -6,6 +6,7 @@
       "invalid_username": "Invalid username.",
       "invalid_password": "Invalid password.",
       "invalid_scan_interval": "Scan interval must be between 10 and 3600 seconds.",
+      "invalid_energy_delta_kwh": "Energy delta must be 0 or greater (kWh).",
       "invalid_input": "Invalid input.",
       "invalid_auth": "Invalid username or password.",
       "not_solarwatt": "Host does not appear to be a SOLARWATT Manager.",
@@ -22,6 +23,7 @@
           "username": "Username",
           "password": "Password",
           "scan_interval": "Update interval (seconds)",
+          "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "name_prefix": "Name prefix (optional)",
           "enable_all_sensors": "Enable all sensors by default"
         }
@@ -30,13 +32,15 @@
   },
   "options": {
     "error": {
-      "invalid_scan_interval": "Scan interval must be between 10 and 3600 seconds."
+      "invalid_scan_interval": "Scan interval must be between 10 and 3600 seconds.",
+      "invalid_energy_delta_kwh": "Energy delta must be 0 or greater (kWh)."
     },
     "step": {
       "init": {
         "title": "Options",
         "data": {
           "scan_interval": "Update interval (seconds)",
+          "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "name_prefix": "Name prefix (optional)",
           "enable_all_sensors": "Enable all sensors by default"
         }

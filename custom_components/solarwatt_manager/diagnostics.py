@@ -7,8 +7,9 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN
+from .const import CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH, DOMAIN
 
 
 def _redact(obj: Any) -> Any:
@@ -70,6 +71,7 @@ async def async_get_config_entry_diagnostics(
     """
     coordinator = hass.data[DOMAIN][entry.entry_id]
     dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
 
     device = None
     host = getattr(getattr(coordinator, "client", None), "host", None) or entry.entry_id
@@ -87,6 +89,28 @@ async def async_get_config_entry_diagnostics(
 
     interval = getattr(coordinator, "update_interval", None)
     update_interval_seconds = int(interval.total_seconds()) if interval else None
+    energy_delta_kwh = entry.options.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH)
+
+    energy_sensor_writes: dict[str, Any] = {}
+    for ent in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        state = hass.states.get(ent.entity_id)
+        if state is None:
+            continue
+        attrs = state.attributes or {}
+        device_class = attrs.get("device_class")
+        state_class = attrs.get("state_class")
+        if device_class != "energy" and state_class != "total_increasing":
+            continue
+        last_updated = state.last_updated.isoformat() if state.last_updated else None
+        last_changed = state.last_changed.isoformat() if state.last_changed else None
+        energy_sensor_writes[ent.entity_id] = {
+            "name": state.name,
+            "device_class": device_class,
+            "state_class": state_class,
+            "unit": attrs.get("unit_of_measurement"),
+            "last_updated": last_updated,
+            "last_changed": last_changed,
+        }
 
     item_payloads: dict[str, Any] = {}
     item_keys: list[str] = []
@@ -184,6 +208,10 @@ async def async_get_config_entry_diagnostics(
             "data_items": len(items),
             "numeric_items": numeric_count,
             "last_exception": repr(getattr(coordinator, "last_exception", None)) if getattr(coordinator, "last_exception", None) else None,
+        },
+        "energy_settings": {
+            "energy_delta_kwh": energy_delta_kwh,
+            "energy_sensors_last_write": _redact(energy_sensor_writes),
         },
         "data_keys": item_keys,
         "data_stats": _redact(

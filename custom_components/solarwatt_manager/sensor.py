@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 
-from homeassistant.components.sensor import SensorEntity
+import math
+
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -10,7 +12,14 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_ENABLE_ALL_SENSORS, CONF_NAME_PREFIX, DEFAULT_ENABLE_ALL_SENSORS, DOMAIN
+from .const import (
+    CONF_ENABLE_ALL_SENSORS,
+    CONF_NAME_PREFIX,
+    CONF_ENERGY_DELTA_KWH,
+    DEFAULT_ENABLE_ALL_SENSORS,
+    DEFAULT_ENERGY_DELTA_KWH,
+    DOMAIN,
+)
 from .naming import format_display_name, is_enabled_by_default, normalize_item_name
 from .coordinator import guess_ha_meta
 
@@ -26,6 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     prefix = (entry.options.get(CONF_NAME_PREFIX) or "").strip()
     enable_all = entry.options.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS)
+    energy_delta_kwh = float(entry.options.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH))
 
     entities = []
     for item_name in coordinator.data.keys():
@@ -40,6 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 device_name=entry.title,
                 prefix=prefix,
                 enable_all=enable_all,
+                energy_delta_kwh=energy_delta_kwh,
             )
         )
 
@@ -68,10 +79,15 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         device_name: str = "SOLARWATT Manager",
         prefix: str = "",
         enable_all: bool = False,
+        energy_delta_kwh: float = DEFAULT_ENERGY_DELTA_KWH,
     ):
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._item_name = item_name
+        self._energy_delta_kwh = energy_delta_kwh
+        self._last_energy_value: float | None = None
+        self._last_update_success: bool | None = None
+        self._is_energy = False
 
         clean_item_name = normalize_item_name(item_name or "")
         self._clean_item_name = clean_item_name
@@ -103,6 +119,54 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = meta.get("state_class")
             self._attr_native_unit_of_measurement = meta.get("suggested_unit")
             self._attr_icon = meta.get("icon")
+            self._is_energy = (
+                self._attr_device_class == SensorDeviceClass.ENERGY
+                or self._attr_state_class == SensorStateClass.TOTAL_INCREASING
+            )
+
+    def _should_write_energy(self, value) -> bool:
+        if not self._is_energy or self._energy_delta_kwh <= 0:
+            return True
+        if value is None:
+            self._last_energy_value = None
+            return True
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            self._last_energy_value = None
+            return True
+        new_val = float(value)
+        if not math.isfinite(new_val):
+            self._last_energy_value = None
+            return True
+        if self._last_energy_value is None:
+            self._last_energy_value = new_val
+            return True
+        if new_val < self._last_energy_value:
+            self._last_energy_value = new_val
+            return True
+        if (new_val - self._last_energy_value) >= self._energy_delta_kwh:
+            self._last_energy_value = new_val
+            return True
+        return False
+
+    def _sync_energy_value(self, value) -> None:
+        if not self._is_energy:
+            return
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            self._last_energy_value = None
+            return
+        new_val = float(value)
+        self._last_energy_value = new_val if math.isfinite(new_val) else None
+
+    def _handle_coordinator_update(self) -> None:
+        update_success = getattr(self.coordinator, "last_update_success", None)
+        if update_success != self._last_update_success:
+            self._last_update_success = update_success
+            self._sync_energy_value(self.native_value)
+            super()._handle_coordinator_update()
+            return
+        if self._is_energy and not self._should_write_energy(self.native_value):
+            return
+        super()._handle_coordinator_update()
 
     @property
     def native_value(self):
