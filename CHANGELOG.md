@@ -4,7 +4,6 @@
 
 ### Notes
 - Switched to calendar-based versioning (format: `YYYY.M.PATCH`) to better align with the Home Assistant ecosystem.
-- No functional regressions compared to previous releases.
 
 ### Changes
 - Added an Energy Delta threshold (kWh) to reduce energy sensor writes; updates only when the delta is reached (0 = always).
