@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.2.1
+
+### Changes
+- Documentation: moved/renamed the evcc guide to `docs/evvc-guide-german.md` and linked it from the README.
+- Documentation: added a Kiwigrid items overview and refined item descriptions/translations.
+- Energy sensors: keep the last valid energy value when incoming data is invalid (NULL/unavailable); preserve delta-based updates.
+
 ## 2026.2.0
 
 ### Notes

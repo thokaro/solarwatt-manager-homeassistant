@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 import math
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
@@ -38,8 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     energy_delta_kwh = float(entry.options.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH))
 
     entities = []
-    for item_name in coordinator.data.keys():
-        it = coordinator.data[item_name]
+    for item_name, it in coordinator.data.items():
         if (it.oh_type or "").startswith("Switch"):
             continue
         entities.append(
@@ -82,7 +79,6 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         energy_delta_kwh: float = DEFAULT_ENERGY_DELTA_KWH,
     ):
         super().__init__(coordinator)
-        self._entry_id = entry_id
         self._item_name = item_name
         self._energy_delta_kwh = energy_delta_kwh
         self._last_energy_value: float | None = None
@@ -90,8 +86,6 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._is_energy = False
 
         clean_item_name = normalize_item_name(item_name or "")
-        self._clean_item_name = clean_item_name
-        self._prefix = prefix
 
         self._attr_unique_id = f"{entry_id}_{clean_item_name}"
         self._attr_entity_registry_enabled_default = enable_all or is_enabled_by_default(self._item_name)
@@ -124,26 +118,27 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
                 or self._attr_state_class == SensorStateClass.TOTAL_INCREASING
             )
 
+    def _is_invalid_energy_value(self, value) -> bool:
+        if value is None or isinstance(value, bool):
+            return True
+        try:
+            return not math.isfinite(float(value))
+        except (TypeError, ValueError):
+            return True
+
     def _should_write_energy(self, value) -> bool:
-        if not self._is_energy or self._energy_delta_kwh <= 0:
+        if not self._is_energy:
             return True
-        if value is None:
-            self._last_energy_value = None
-            return True
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            self._last_energy_value = None
-            return True
+        if self._is_invalid_energy_value(value):
+            # Keep last valid energy value instead of overwriting with NULL/unavailable.
+            return False
         new_val = float(value)
-        if not math.isfinite(new_val):
-            self._last_energy_value = None
-            return True
-        if self._last_energy_value is None:
-            self._last_energy_value = new_val
-            return True
-        if new_val < self._last_energy_value:
-            self._last_energy_value = new_val
-            return True
-        if (new_val - self._last_energy_value) >= self._energy_delta_kwh:
+        if (
+            self._energy_delta_kwh <= 0
+            or self._last_energy_value is None
+            or new_val < self._last_energy_value
+            or (new_val - self._last_energy_value) >= self._energy_delta_kwh
+        ):
             self._last_energy_value = new_val
             return True
         return False
@@ -151,8 +146,7 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
     def _sync_energy_value(self, value) -> None:
         if not self._is_energy:
             return
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            self._last_energy_value = None
+        if self._is_invalid_energy_value(value):
             return
         new_val = float(value)
         self._last_energy_value = new_val if math.isfinite(new_val) else None
@@ -174,6 +168,8 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         if not item:
             return None
         val = item.parsed.value
+        if self._is_energy and self._is_invalid_energy_value(val):
+            return self._last_energy_value
         if isinstance(val, str):
             return val.lstrip("#")
         return val
@@ -193,7 +189,6 @@ class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):
         device_name: str = "SOLARWATT Manager",
     ):
         super().__init__(coordinator)
-        self._entry_id = entry_id
         self._thing_uid = thing_uid
         self._attr_unique_id = f"{entry_id}_thing_{thing_uid}"
 

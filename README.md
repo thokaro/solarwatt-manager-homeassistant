@@ -107,7 +107,15 @@ Energy sensors are provided in kWh and prepared for the Energy Dashboard (`devic
 
 If you want to use sensors from this integration in **evcc**, please refer to the instructions (in german).
 
-* [LIESMICH-evvc-guide.md](LIESMICH-evvc-guide.md)
+* [evvc-guide-german.md](docs/evvc-guide-german.md)
+
+---
+
+## 📋 Kiwigrid Items
+
+Here you will find an overview of the most important Kiwigrid items.
+
+* [kiwigrid-items.md](docs/kiwigrid-items.md)
 
 ---
 
@@ -155,7 +163,7 @@ The integration version is defined in:
 custom_components/solarwatt_manager/manifest.json
 ```
 
-See `CHANGELOG.md` for release notes. GitHub releases follow calendar-based versioning:
+See `CHANGELOG.md` for release notes. GitHub releases follow calendar-based versioning 📅:
 
 ```
 YYYY.M.PATCH
