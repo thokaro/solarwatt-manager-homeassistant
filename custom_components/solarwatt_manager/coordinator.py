@@ -128,7 +128,7 @@ class SOLARWATTItem:
     group_names: Optional[list[str]] = None
 
 
-def parse_state(state: Any, pattern: str | None = None) -> ParsedState:
+def parse_state(state: Any, pattern: str | None = None, oh_type: str | None = None) -> ParsedState:
     if state is None:
         return ParsedState(value=None)
 
@@ -137,7 +137,9 @@ def parse_state(state: Any, pattern: str | None = None) -> ParsedState:
     if s == "NULL":
         return ParsedState(value=None)
 
-    if s in ("ON", "OFF"):
+    # Only coerce ON/OFF to bool for switch-like items. For String items
+    # such as battery_mode, keep the textual state.
+    if s in ("ON", "OFF") and (oh_type or "").startswith("Switch"):
         return ParsedState(value=(s == "ON"))
 
     # timestamp|value unit
@@ -151,7 +153,7 @@ def parse_state(state: Any, pattern: str | None = None) -> ParsedState:
                 ts = int(left)
             except ValueError:
                 ts = None
-        ps = parse_state(right, pattern)
+        ps = parse_state(right, pattern, oh_type)
         ps.timestamp_ms = ts
         return ps
 
@@ -505,7 +507,7 @@ class SOLARWATTClient:
         """Check whether the host looks like a SOLARWATT Manager.
 
         Raises:
-            SolarwattNotManagerError: if /logon.html is missing or unreachable.
+            SolarwattNotManagerError: if /logon.html is missing.
             SolarwattConnectionError: on unexpected response codes.
         """
         url = f"{self.base}/logon.html"
@@ -518,7 +520,7 @@ class SOLARWATTClient:
                 raise SolarwattConnectionError(f"Unexpected probe status: {resp.status}")
         except (ClientError, asyncio.TimeoutError) as e:
             self._log.debug(f"Probe failed for {self.host}: {e}")
-            raise SolarwattNotManagerError(f"Probe failed: {e}") from e
+            raise SolarwattConnectionError(f"Probe failed: {e}") from e
 
     async def _ensure_json(self, resp, where: str) -> Any:
         """Parse JSON with better diagnostics."""
@@ -718,7 +720,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             return SOLARWATTItem(
                 name=name,
                 raw=it,
-                parsed=parse_state(it.get("state"), pattern),
+                parsed=parse_state(it.get("state"), pattern, it.get("type")),
                 oh_type=it.get("type"),
                 editable=bool(it.get("editable")),
                 label=it.get("label"),

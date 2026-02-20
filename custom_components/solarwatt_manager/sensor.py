@@ -4,7 +4,7 @@ import math
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -36,6 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     energy_delta_kwh = float(entry.options.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH))
 
     entities = []
+    added_thing_uids: set[str] = set()
     for item_name, it in coordinator.data.items():
         if (it.oh_type or "").startswith("Switch"):
             continue
@@ -52,6 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         )
 
     for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
+        added_thing_uids.add(thing_uid)
         entities.append(
             SOLARWATTThingSensor(
                 coordinator,
@@ -63,6 +65,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         )
 
     async_add_entities(entities)
+
+    @callback
+    def _async_add_new_thing_entities() -> None:
+        new_entities: list[SOLARWATTThingSensor] = []
+        for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
+            if thing_uid in added_thing_uids:
+                continue
+            added_thing_uids.add(thing_uid)
+            new_entities.append(
+                SOLARWATTThingSensor(
+                    coordinator,
+                    entry.entry_id,
+                    thing_uid,
+                    thing,
+                    device_name=entry.title,
+                )
+            )
+        if new_entities:
+            async_add_entities(new_entities)
+
+    entry.async_on_unload(coordinator.async_add_listener(_async_add_new_thing_entities))
 
 
 class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):

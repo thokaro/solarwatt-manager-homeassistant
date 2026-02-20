@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.2.2
+
+### Changes
+- Setup robustness: ensure coordinator/client cleanup if config-entry initialization fails.
+- State parsing: keep textual `ON`/`OFF` values for non-switch items and pass OpenHAB item type through parsing.
+- Connectivity probing: map probe transport errors to connection errors instead of "not a manager".
+- Thing sensors: dynamically add newly discovered `/rest/things` entities after setup.
+
 ## 2026.2.1
 
 ### Changes

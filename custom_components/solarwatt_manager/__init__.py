@@ -15,14 +15,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data["password"]
 
     client = SOLARWATTClient(hass, host=host, username=username, password=password)
-
     coordinator = SOLARWATTCoordinator(hass, entry, client)
-    await coordinator.async_config_entry_first_refresh()
-    await coordinator.async_refresh_things()
+    coordinator_registered = False
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    try:
+        await coordinator.async_config_entry_first_refresh()
+        await coordinator.async_refresh_things()
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+        coordinator_registered = True
+
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        if coordinator_registered:
+            hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        await client.async_close()
+        raise
+
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     return True
 
