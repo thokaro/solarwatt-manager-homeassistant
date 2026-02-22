@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.2.3
+
+### Changes
+- Name normalization: `mystrom_switch_<ID>_...` now keeps the device ID and is normalized to `mystrom_<ID>_...` (avoids collisions when multiple myStrom devices are present).
+- Display names: added formatting replacements for `fronius` -> `Fronius` and `mystrom` -> `myStrom`.
+
 ## 2026.2.2
 
 ### Changes

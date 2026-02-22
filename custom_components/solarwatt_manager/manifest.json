@@ -1,7 +1,7 @@
 {
   "domain": "solarwatt_manager",
   "name": "SOLARWATT Manager",
-  "version": "2026.2.2",
+  "version": "2026.2.3",
   "documentation": "https://github.com/thokaro/solarwatt-manager-homeassistant",
   "issue_tracker": "https://github.com/thokaro/solarwatt-manager-homeassistant/issues",
   "config_flow": true,

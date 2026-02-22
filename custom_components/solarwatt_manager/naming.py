@@ -16,7 +16,7 @@ NORMALIZATION_RULES: list[tuple[str, str]] = [
     (r"^foxesshybrid_inverter_[^_]+_", "foxessinv_"),
     (r"^foxesshybrid_meter_[^_]+_", "foxessmeter_"),
     (r"^keba_wallbox_[^_]+_", "keba_"),
-    (r"^mystrom_switch_[^_]+_", "mystrom_"),
+    (r"^mystrom_switch_([^_]+)_", r"mystrom_\1_"),
     (r"^modbus_sunspec_sma_inverter_[^_]+_", "sma_"),
     (r"^modbus_sunspec_fronius_inverter_[^_]+_", "fronius_"),
     (r"^myreserveethernet_myreserve_[^_]+_", "myreserve_"),
@@ -191,12 +191,14 @@ def format_display_name(name: str) -> str:
             ("mppt", "MPPT"),
             ("acs", "ACS"),
             ("sma", "SMA"),
+            ("fronius", "Fronius"),
             ("keba", "KEBA"),
             ("sunspec", "SunSpec"),
             ("inv", "INV"),
             ("modbus", "Modbus"),
             ("foxess", "FoxESS"),
             ("foxessinv", "FoxESSInv"),
+            ("mystrom", "myStrom"),
         ):
             if lower == key or (lower.startswith(key) and lower[len(key):].isdigit()):
                 return replacement + token[len(key):]
