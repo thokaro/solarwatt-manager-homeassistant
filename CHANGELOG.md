@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.2.4
+
+### Changes
+- Name normalization: added `solarwattBattery_batteryflex_BatteryFlex_<ID>_...` rules so these BatteryFlex item names are normalized to `batteryflex_...` consistently.
+
 ## 2026.2.3
 
 ### Changes
