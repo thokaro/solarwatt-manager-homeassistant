@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026.3.0
+
+### Changes
+- HACS/HA validation: added GitHub workflow `.github/workflows/validate.yml` running `hacs/action` and `hassfest`.
+- HACS brand assets: added `brands/solarwatt_manager/icon.png` and `brands/solarwatt_manager/logo.png`.
+- Config flow: improved host validation/normalization (hostname/IPv4 with optional `:port`; rejects URL-style input with scheme/path/query/userinfo).
+- Config flow: expected user-input and connection issues are now logged as `warning` instead of `error`.
+- Discovery flow: the diagnostics button now triggers a full discovery refresh (`items` + `/rest/things`) and discovers new entities on demand.
+- Discovery behavior: new item/thing entities are checked on setup and when pressing the refresh button (not on every poll cycle).
+- Entity IDs: sensor `unique_id` switched to raw item key (without leading `#`) and migration was added for existing entities.
+- Manifest: added `integration_type` and aligned logger namespace to `custom_components.solarwatt_manager`.
+
 ## 2026.2.4
 
 ### Changes
