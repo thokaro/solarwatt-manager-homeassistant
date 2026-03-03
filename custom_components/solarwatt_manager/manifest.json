@@ -1,18 +1,18 @@
 {
   "domain": "solarwatt_manager",
   "name": "SOLARWATT Manager",
-  "version": "2026.2.4",
-  "documentation": "https://github.com/thokaro/solarwatt-manager-homeassistant",
-  "issue_tracker": "https://github.com/thokaro/solarwatt-manager-homeassistant/issues",
-  "config_flow": true,
-  "requirements": [],
   "codeowners": [
     "@thokaro"
   ],
+  "config_flow": true,
+  "documentation": "https://github.com/thokaro/solarwatt-manager-homeassistant",
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "quality_scale": "custom",
+  "issue_tracker": "https://github.com/thokaro/solarwatt-manager-homeassistant/issues",
   "loggers": [
     "custom_components.solarwatt_manager"
-  ]
+  ],
+  "quality_scale": "custom",
+  "requirements": [],
+  "version": "2026.2.4"
 }
