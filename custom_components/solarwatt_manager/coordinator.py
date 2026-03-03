@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 import re
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 import unicodedata
 
 import logging
@@ -696,6 +696,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.entry = entry
         self.client = client
         self.things: dict[str, dict[str, Any]] = {}
+        self._discovery_callbacks: set[Callable[[], None]] = set()
 
         scan = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         # Validate scan interval: min MIN_SCAN_INTERVAL (10s), max MAX_SCAN_INTERVAL (1h)
@@ -709,6 +710,28 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             name="solarwatt_items",
             update_interval=timedelta(seconds=int(scan)),
         )
+
+    def register_discovery_callback(self, callback: Callable[[], None]) -> Callable[[], None]:
+        """Register a callback that discovers new entities on demand."""
+        self._discovery_callbacks.add(callback)
+
+        def _remove() -> None:
+            self._discovery_callbacks.discard(callback)
+
+        return _remove
+
+    def _run_discovery_callbacks(self) -> None:
+        for callback in tuple(self._discovery_callbacks):
+            try:
+                callback()
+            except Exception:
+                self.logger.exception("Error running discovery callback")
+
+    async def async_refresh_discovery_data(self) -> None:
+        """Refresh items/things and run one-shot entity discovery."""
+        await self.async_request_refresh()
+        await self.async_refresh_things()
+        self._run_discovery_callbacks()
 
     async def _async_update_data(self) -> dict[str, SOLARWATTItem]:
         # Best practice for Home Assistant: do a single poll per update interval and

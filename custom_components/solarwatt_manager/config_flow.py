@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import voluptuous as vol
+import ipaddress
 import logging
+import re
+
+import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -31,15 +34,61 @@ from .coordinator import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_HOST_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
 class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+    @staticmethod
+    def _normalize_host(raw_host: str | None) -> str | None:
+        """Normalize and validate host input (hostname/IPv4, optional :port, no URL)."""
+        host = (raw_host or "").strip().lower()
+        if not host:
+            return None
+
+        if "://" in host:
+            return None
+        if any(ch in host for ch in ("/", "?", "#", "@")):
+            return None
+        if any(ch.isspace() for ch in host):
+            return None
+
+        host_part = host
+        port_part = None
+        if ":" in host:
+            if host.count(":") > 1:
+                return None
+            host_part, port_part = host.rsplit(":", 1)
+            if not host_part or not port_part or not port_part.isdigit():
+                return None
+
+        try:
+            ip = ipaddress.ip_address(host_part)
+        except ValueError:
+            ip = None
+
+        if ip is not None:
+            if ip.version != 4:
+                return None
+            return f"{host_part}:{port_part}" if port_part is not None else host_part
+
+        if len(host_part) > 253 or host_part.startswith(".") or host_part.endswith(".") or ".." in host_part:
+            return None
+
+        labels = host_part.split(".")
+        if any(not _HOST_LABEL_RE.fullmatch(label) for label in labels):
+            return None
+        return f"{host_part}:{port_part}" if port_part is not None else host_part
+
     async def async_step_user(self, user_input=None):
         errors = {}
 
         if user_input is not None:
+            host = self._normalize_host(user_input.get(CONF_HOST))
+            username = (user_input.get(CONF_USERNAME) or "").strip()
+            password = (user_input.get(CONF_PASSWORD) or "").strip()
+
             # Validate input
             errors = self._validate_input(user_input)
             if not errors:
@@ -47,23 +96,26 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors = await self._test_connection(user_input, errors)
             
             if not errors:
-                await self.async_set_unique_id(user_input[CONF_HOST])
-                self._abort_if_unique_id_configured()
+                if host is None:
+                    errors[CONF_HOST] = "invalid_host"
+                else:
+                    await self.async_set_unique_id(host)
+                    self._abort_if_unique_id_configured()
 
-                return self.async_create_entry(
-                    title=f"SOLARWATT ({user_input[CONF_HOST]})",
-                    data={
-                        CONF_HOST: user_input[CONF_HOST],
-                        CONF_USERNAME: user_input[CONF_USERNAME],
-                        CONF_PASSWORD: user_input[CONF_PASSWORD],
-                    },
-                    options={
-                        CONF_SCAN_INTERVAL: user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-                        CONF_NAME_PREFIX: user_input.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
-                        CONF_ENABLE_ALL_SENSORS: user_input.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS),
-                        CONF_ENERGY_DELTA_KWH: user_input.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH),
-                    },
-                )
+                    return self.async_create_entry(
+                        title=f"SOLARWATT ({host})",
+                        data={
+                            CONF_HOST: host,
+                            CONF_USERNAME: username,
+                            CONF_PASSWORD: password,
+                        },
+                        options={
+                            CONF_SCAN_INTERVAL: user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                            CONF_NAME_PREFIX: user_input.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
+                            CONF_ENABLE_ALL_SENSORS: user_input.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS),
+                            CONF_ENERGY_DELTA_KWH: user_input.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH),
+                        },
+                    )
 
         schema = vol.Schema(
             {
@@ -84,9 +136,9 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         
         # Validate host
-        host = (user_input.get(CONF_HOST) or "").strip()
-        if not host:
-            errors["base"] = "invalid_host"
+        host = self._normalize_host(user_input.get(CONF_HOST))
+        if host is None:
+            errors[CONF_HOST] = "invalid_host"
 
         # Validate username
         username = (user_input.get(CONF_USERNAME) or "").strip()
@@ -131,7 +183,10 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return errors
         
         try:
-            host = user_input.get(CONF_HOST, "").strip()
+            host = self._normalize_host(user_input.get(CONF_HOST))
+            if host is None:
+                errors[CONF_HOST] = "invalid_host"
+                return errors
             username = user_input.get(CONF_USERNAME, "").strip()
             password = user_input.get(CONF_PASSWORD, "").strip()
             
@@ -143,19 +198,19 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await client.async_close()
         except ValueError as e:
             # Invalid input (empty strings, etc.)
-            _LOGGER.error(f"Invalid input for SOLARWATT Manager: {str(e)}")
+            _LOGGER.warning("Invalid input for SOLARWATT Manager: %s", e)
             errors["base"] = "invalid_input"
         except SolarwattNotManagerError as e:
-            _LOGGER.error(f"Host is not a SOLARWATT Manager: {str(e)}")
+            _LOGGER.warning("Host is not a SOLARWATT Manager: %s", e)
             errors["base"] = "not_solarwatt"
         except SolarwattAuthError as e:
-            _LOGGER.error(f"Invalid SOLARWATT credentials: {str(e)}")
+            _LOGGER.warning("Invalid SOLARWATT credentials: %s", e)
             errors["base"] = "invalid_auth"
         except SolarwattConnectionError as e:
-            _LOGGER.error(f"Connection error to SOLARWATT Manager: {str(e)}")
+            _LOGGER.warning("Connection error to SOLARWATT Manager: %s", e)
             errors["base"] = "cannot_connect"
         except SolarwattProtocolError as e:
-            _LOGGER.error(f"Unexpected SOLARWATT response: {str(e)}")
+            _LOGGER.warning("Unexpected SOLARWATT response: %s", e)
             errors["base"] = "connection_failed"
         except Exception as e:
             # Unexpected error

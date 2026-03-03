@@ -37,4 +37,4 @@ class SOLARWATTDiagnosticsRefreshButton(CoordinatorEntity, ButtonEntity):
         )
 
     async def async_press(self) -> None:
-        await self.coordinator.async_refresh_things()
+        await self.coordinator.async_refresh_discovery_data()

@@ -50,7 +50,7 @@
   "entity": {
     "button": {
       "diagnostics_refresh": {
-        "name": "Diagnose Daten aktualisieren"
+        "name": "Daten aktualisieren"
       }
     }
   }

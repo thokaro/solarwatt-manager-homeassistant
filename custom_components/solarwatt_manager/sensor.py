@@ -18,7 +18,7 @@ from .const import (
     DEFAULT_ENERGY_DELTA_KWH,
     DOMAIN,
 )
-from .naming import format_display_name, is_enabled_by_default, normalize_item_name
+from .naming import clean_item_key, format_display_name, is_enabled_by_default, normalize_item_name
 from .coordinator import guess_ha_meta
 
 
@@ -36,10 +36,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     energy_delta_kwh = float(entry.options.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH))
 
     entities = []
+    added_item_names: set[str] = set()
     added_thing_uids: set[str] = set()
     for item_name, it in coordinator.data.items():
         if (it.oh_type or "").startswith("Switch"):
             continue
+        added_item_names.add(item_name)
         entities.append(
             SOLARWATTItemSensor(
                 coordinator,
@@ -67,8 +69,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(entities)
 
     @callback
-    def _async_add_new_thing_entities() -> None:
-        new_entities: list[SOLARWATTThingSensor] = []
+    def _async_discover_new_entities() -> None:
+        new_entities: list[SensorEntity] = []
+        for item_name, it in (coordinator.data or {}).items():
+            if (it.oh_type or "").startswith("Switch"):
+                continue
+            if item_name in added_item_names:
+                continue
+            added_item_names.add(item_name)
+            new_entities.append(
+                SOLARWATTItemSensor(
+                    coordinator,
+                    entry.entry_id,
+                    item_name,
+                    device_name=entry.title,
+                    prefix=prefix,
+                    enable_all=enable_all,
+                    energy_delta_kwh=energy_delta_kwh,
+                )
+            )
+
         for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
             if thing_uid in added_thing_uids:
                 continue
@@ -85,7 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if new_entities:
             async_add_entities(new_entities)
 
-    entry.async_on_unload(coordinator.async_add_listener(_async_add_new_thing_entities))
+    entry.async_on_unload(coordinator.register_discovery_callback(_async_discover_new_entities))
 
 
 class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
@@ -108,9 +128,10 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._last_update_success: bool | None = None
         self._is_energy = False
 
+        raw_item_key = clean_item_key(item_name or "")
         clean_item_name = normalize_item_name(item_name or "")
 
-        self._attr_unique_id = f"{entry_id}_{clean_item_name}"
+        self._attr_unique_id = f"{entry_id}_{raw_item_key}"
         self._attr_entity_registry_enabled_default = enable_all or is_enabled_by_default(self._item_name)
 
         # Group all sensors under one device for a cleaner HA UI.
