@@ -1,16 +1,26 @@
 # Changelog
 
+## 2026.3.1
+
+### Changes
+- HACS minimum Home Assistant version raised to `2024.6.0` because runtime data is now stored via `entry.runtime_data`.
+- Runtime data handling: migrated coordinator storage/access from `hass.data` to `entry.runtime_data` across setup, platforms, and diagnostics.
+- Branding: moved assets from `brands/solarwatt_manager/` to `custom_components/solarwatt_manager/brand/` and added `@2x` icon/logo variants.
+- Translations: replaced `strings.json` with `translations/en.json` and added `fr`, `it`, and `nl` translation files.
+- Entity metadata: unified device metadata via shared `build_device_info()` helper and aligned the model string.
+- Client cleanup: removed unused item-fetch path from the coordinator client.
+
 ## 2026.3.0
 
 ### Changes
-- HACS/HA validation: added GitHub workflow `.github/workflows/validate.yml` running `hacs/action` and `hassfest`.
-- HACS brand assets: added `brands/solarwatt_manager/icon.png` and `brands/solarwatt_manager/logo.png`.
-- Config flow: improved host validation/normalization (hostname/IPv4 with optional `:port`; rejects URL-style input with scheme/path/query/userinfo).
-- Config flow: expected user-input and connection issues are now logged as `warning` instead of `error`.
-- Discovery flow: the diagnostics button now triggers a full discovery refresh (`items` + `/rest/things`) and discovers new entities on demand.
-- Discovery behavior: new item/thing entities are checked on setup and when pressing the refresh button (not on every poll cycle).
-- Entity IDs: sensor `unique_id` switched to raw item key (without leading `#`) and migration was added for existing entities.
-- Manifest: added `integration_type` and aligned logger namespace to `custom_components.solarwatt_manager`.
+- Added GitHub validation workflow (`hacs/action` + `hassfest`) for HACS/Home Assistant checks.
+- Added HACS brand assets under `brands/solarwatt_manager/`.
+- Improved config-flow host validation/normalization (hostname/IPv4 with optional `:port`; URL-style input is rejected).
+- Changed expected input/connection logs in config flow from `error` to `warning`.
+- Updated discovery behavior: new item/thing entities are discovered on setup and when pressing the refresh button (not on every poll cycle).
+- The diagnostics button now triggers a full discovery refresh (`items` + `/rest/things`).
+- Switched sensor `unique_id` to raw item keys and added migration for existing entities.
+- Manifest updates: `integration_type` added and logger namespace aligned.
 
 ## 2026.2.4
 

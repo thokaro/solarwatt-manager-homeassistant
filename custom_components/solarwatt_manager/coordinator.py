@@ -361,7 +361,6 @@ class SOLARWATTClient:
         # We create our own ClientSession here intentionally (instead of HA's
         # shared session) to guarantee the cookie jar behavior.
         self._session = ClientSession(cookie_jar=CookieJar(unsafe=True))
-        self._own_session = True
 
         self.session_ttl = 900
         self._last_login = 0.0
@@ -397,7 +396,7 @@ class SOLARWATTClient:
             return "<unreadable>"
 
     async def async_close(self) -> None:
-        if self._own_session and not self._session.closed:
+        if not self._session.closed:
             await self._session.close()
 
     async def async_login(self) -> None:
@@ -416,7 +415,6 @@ class SOLARWATTClient:
         resp_status: int | None = None
         resp_headers: dict[str, str] = {}
         resp_ct: str = ""
-        resp_snippet: str = ""
 
         try:
             async with self._session.post(
@@ -465,10 +463,6 @@ class SOLARWATTClient:
                 # IMPORTANT: The login response may be HTML (SPA shell) even when
                 # login is successful. Treat login as successful **only** if we
                 # have a kiwisessionid afterwards.
-
-                # Capture a short snippet for diagnostics (only used on failure).
-                if "html" in resp_ct:
-                    resp_snippet = await self._read_snippet(resp)
 
             # If we got redirected, optionally follow once to warm up the session.
             # Not strictly required for /rest/items, but harmless.
@@ -652,44 +646,6 @@ class SOLARWATTClient:
             raise SolarwattConnectionError(f"Connection error fetching things: {e}") from e
         except Exception as e:
             raise SolarwattConnectionError(f"Error fetching things: {e}") from e
-
-    async def async_get_item(self, item_name: str) -> dict[str, Any]:
-        if not item_name or not isinstance(item_name, str):
-            raise ValueError("item_name must be a non-empty string")
-        await self._ensure_session()
-        url = f"{self.items_url}/{item_name}"
-        try:
-            async with self._session.get(url, timeout=5, headers=self._auth_headers()) as resp:
-                if resp.status == 401:
-                    await self.async_login()
-                    async with self._session.get(url, timeout=5, headers=self._auth_headers()) as resp2:
-                        resp2.raise_for_status()
-                        return await self._ensure_json(resp2, f"GET /rest/items/{item_name} (nach 401)")
-                resp.raise_for_status()
-                ct = (resp.headers.get("Content-Type") or "").lower()
-                if "text/html" in ct:
-                    await self.async_login()
-                    async with self._session.get(url, timeout=5, headers=self._auth_headers()) as resp2:
-                        resp2.raise_for_status()
-                        return await self._ensure_json(resp2, f"GET /rest/items/{item_name} (nach HTML)")
-
-                return await self._ensure_json(resp, f"GET /rest/items/{item_name}")
-        except ContentTypeError as e:
-            raise SolarwattProtocolError(
-                f"Antwort für Item {item_name} ist kein JSON (Content-Type stimmt nicht). Prüfe Proxy/URL/Login."
-            ) from e
-        except SolarwattError:
-            raise
-        except ClientResponseError as e:
-            if e.status in (401, 403):
-                raise SolarwattAuthError(f"HTTP {e.status} for item {item_name}") from e
-            if e.status == 404:
-                raise SolarwattNotManagerError("Items endpoint not found") from e
-            raise SolarwattConnectionError(f"HTTP error {e.status} for item {item_name}") from e
-        except (ClientError, asyncio.TimeoutError) as e:
-            raise SolarwattConnectionError(f"Connection error for item {item_name}: {e}") from e
-        except Exception as e:
-            raise SolarwattConnectionError(f"Error for item {item_name}: {e}") from e
 
 class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     def __init__(self, hass: HomeAssistant, entry, client: SOLARWATTClient):

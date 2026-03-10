@@ -1,0 +1,57 @@
+{
+  "title": "SOLARWATT Manager",
+  "config": {
+    "error": {
+      "invalid_host": "Host o indirizzo IP non valido.",
+      "invalid_username": "Nome utente non valido.",
+      "invalid_password": "Password non valida.",
+      "invalid_scan_interval": "L'intervallo di aggiornamento deve essere compreso tra 10 e 3600 secondi.",
+      "invalid_energy_delta_kwh": "Il delta energia deve essere maggiore o uguale a 0 (kWh).",
+      "invalid_input": "Input non valido.",
+      "invalid_auth": "Nome utente o password non validi.",
+      "not_solarwatt": "L'host non sembra essere un SOLARWATT Manager.",
+      "cannot_connect": "Impossibile connettersi al SOLARWATT Manager.",
+      "connection_failed": "Connessione al SOLARWATT Manager non riuscita.",
+      "unknown_error": "Si e verificato un errore sconosciuto."
+    },
+    "step": {
+      "user": {
+        "title": "Connetti SOLARWATT",
+        "description": "Inserisci IP/host e credenziali di accesso.",
+        "data": {
+          "host": "IP/Host",
+          "username": "Nome utente",
+          "password": "Password",
+          "scan_interval": "Intervallo di aggiornamento (secondi)",
+          "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
+          "name_prefix": "Prefisso nome (opzionale)",
+          "enable_all_sensors": "Abilita tutti i sensori per impostazione predefinita (anziche solo i sensori principali come PV, rete, batteria, consumo)"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "invalid_scan_interval": "L'intervallo di aggiornamento deve essere compreso tra 10 e 3600 secondi.",
+      "invalid_energy_delta_kwh": "Il delta energia deve essere maggiore o uguale a 0 (kWh)."
+    },
+    "step": {
+      "init": {
+        "title": "Opzioni",
+        "data": {
+          "scan_interval": "Intervallo di aggiornamento (secondi)",
+          "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
+          "name_prefix": "Prefisso nome (opzionale)",
+          "enable_all_sensors": "Abilita tutti i sensori per impostazione predefinita (anziche solo i sensori principali come PV, rete, batteria, consumo)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "diagnostics_refresh": {
+        "name": "Aggiorna dati"
+      }
+    }
+  }
+}

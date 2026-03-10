@@ -149,10 +149,13 @@ custom_components/
    ├─ config_flow.py     # UI config flow
    ├─ diagnostics.py     # diagnostics output
    ├─ naming.py          # name normalization/formatting
-   ├─ strings.json       # UI strings
    ├─ icon.png
    └─ translations/
-      └─ de.json          # German translations
+      ├─ de.json          # German translations
+      ├─ en.json          # English translations
+      ├─ fr.json          # French translations
+      ├─ it.json          # Italian translations
+      └─ nl.json          # Dutch translations
 ```
 
 ### Versioning

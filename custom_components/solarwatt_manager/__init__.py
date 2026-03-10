@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN
+from .const import DOMAIN, SOLARWATTConfigEntry
 from .coordinator import SOLARWATTCoordinator, SOLARWATTClient
 from .naming import clean_item_key, normalize_item_name
 
@@ -15,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _migrate_sensor_unique_ids(
-    hass: HomeAssistant, entry: ConfigEntry, coordinator: SOLARWATTCoordinator
+    hass: HomeAssistant, entry: SOLARWATTConfigEntry, coordinator: SOLARWATTCoordinator
 ) -> None:
     """Migrate sensor unique IDs from normalized item names to raw item names."""
     migration_map: dict[str, str] = {}
@@ -67,27 +66,27 @@ def _migrate_sensor_unique_ids(
         )
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) -> bool:
     host = str(entry.data["host"]).strip().lower()
     username = entry.data["username"]
     password = entry.data["password"]
 
     client = SOLARWATTClient(hass, host=host, username=username, password=password)
     coordinator = SOLARWATTCoordinator(hass, entry, client)
-    coordinator_registered = False
+    runtime_data_set = False
 
     try:
         await coordinator.async_config_entry_first_refresh()
         await coordinator.async_refresh_things()
         _migrate_sensor_unique_ids(hass, entry, coordinator)
 
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-        coordinator_registered = True
+        entry.runtime_data = coordinator
+        runtime_data_set = True
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:
-        if coordinator_registered:
-            hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        if runtime_data_set:
+            entry.runtime_data = None
         await client.async_close()
         raise
 
@@ -95,14 +94,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_entry_updated(hass: HomeAssistant, entry: SOLARWATTConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
+        coordinator = entry.runtime_data
         if coordinator:
             await coordinator.client.async_close()
+        entry.runtime_data = None
     return unload_ok

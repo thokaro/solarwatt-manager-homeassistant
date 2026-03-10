@@ -3,9 +3,7 @@ from __future__ import annotations
 import math
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -16,7 +14,8 @@ from .const import (
     CONF_ENERGY_DELTA_KWH,
     DEFAULT_ENABLE_ALL_SENSORS,
     DEFAULT_ENERGY_DELTA_KWH,
-    DOMAIN,
+    SOLARWATTConfigEntry,
+    build_device_info,
 )
 from .naming import clean_item_key, format_display_name, is_enabled_by_default, normalize_item_name
 from .coordinator import guess_ha_meta
@@ -28,8 +27,10 @@ from .coordinator import guess_ha_meta
 # item name can differ between installations, so we match with regex.
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+async def async_setup_entry(
+    hass: HomeAssistant, entry: SOLARWATTConfigEntry, async_add_entities: AddEntitiesCallback
+):
+    coordinator = entry.runtime_data
 
     prefix = (entry.options.get(CONF_NAME_PREFIX) or "").strip()
     enable_all = entry.options.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS)
@@ -136,13 +137,7 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
 
         # Group all sensors under one device for a cleaner HA UI.
         host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, host)},
-            name=device_name,
-            manufacturer="SOLARWATT",
-            model="Manager flex / rail",
-            configuration_url=f"http://{host}",
-        )
+        self._attr_device_info = build_device_info(host, device_name)
         item = (self.coordinator.data or {}).get(item_name)
 
         # Use the OpenHAB/SOLARWATT item name (as requested), strip leading '#',
@@ -240,13 +235,7 @@ class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = label or thing_uid
 
         host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, host)},
-            name=device_name,
-            manufacturer="SOLARWATT",
-            model="Manager flex - rail",
-            configuration_url=f"http://{host}",
-        )
+        self._attr_device_info = build_device_info(host, device_name)
 
     def _thing(self) -> dict | None:
         return (getattr(self.coordinator, "things", {}) or {}).get(self._thing_uid)

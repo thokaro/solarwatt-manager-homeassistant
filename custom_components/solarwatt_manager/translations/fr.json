@@ -1,0 +1,57 @@
+{
+  "title": "SOLARWATT Manager",
+  "config": {
+    "error": {
+      "invalid_host": "Hôte ou adresse IP invalide.",
+      "invalid_username": "Nom d'utilisateur invalide.",
+      "invalid_password": "Mot de passe invalide.",
+      "invalid_scan_interval": "L'intervalle de mise à jour doit être compris entre 10 et 3600 secondes.",
+      "invalid_energy_delta_kwh": "Le delta d'énergie doit être supérieur ou égal à 0 (kWh).",
+      "invalid_input": "Entrée invalide.",
+      "invalid_auth": "Nom d'utilisateur ou mot de passe invalide.",
+      "not_solarwatt": "L'hôte ne semble pas être un SOLARWATT Manager.",
+      "cannot_connect": "Impossible de se connecter au SOLARWATT Manager.",
+      "connection_failed": "Échec de la connexion au SOLARWATT Manager.",
+      "unknown_error": "Une erreur inconnue est survenue."
+    },
+    "step": {
+      "user": {
+        "title": "Connecter SOLARWATT",
+        "description": "Saisissez l'IP/l'hôte et les identifiants de connexion.",
+        "data": {
+          "host": "IP/Hôte",
+          "username": "Nom d'utilisateur",
+          "password": "Mot de passe",
+          "scan_interval": "Intervalle de mise à jour (secondes)",
+          "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
+          "name_prefix": "Préfixe de nom (optionnel)",
+          "enable_all_sensors": "Activer tous les capteurs par défaut (au lieu des capteurs principaux comme PV, réseau, batterie, consommation)"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "invalid_scan_interval": "L'intervalle de mise à jour doit être compris entre 10 et 3600 secondes.",
+      "invalid_energy_delta_kwh": "Le delta d'énergie doit être supérieur ou égal à 0 (kWh)."
+    },
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "scan_interval": "Intervalle de mise à jour (secondes)",
+          "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
+          "name_prefix": "Préfixe de nom (optionnel)",
+          "enable_all_sensors": "Activer tous les capteurs par défaut (au lieu des capteurs principaux comme PV, réseau, batterie, consommation)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "diagnostics_refresh": {
+        "name": "Mettre à jour les données"
+      }
+    }
+  }
+}

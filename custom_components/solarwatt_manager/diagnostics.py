@@ -4,12 +4,11 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH, DOMAIN
+from .const import CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH, DOMAIN, SOLARWATTConfigEntry
 
 
 def _redact(obj: Any) -> Any:
@@ -63,13 +62,13 @@ def _item_payload(item: Any) -> dict[str, Any]:
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
+    hass: HomeAssistant, entry: SOLARWATTConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry.
 
     No additional network calls are performed. This is a snapshot of the latest coordinator data.
     """
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
 

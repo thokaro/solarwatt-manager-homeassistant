@@ -1,0 +1,57 @@
+{
+  "title": "SOLARWATT Manager",
+  "config": {
+    "error": {
+      "invalid_host": "Ongeldige host of IP-adres.",
+      "invalid_username": "Ongeldige gebruikersnaam.",
+      "invalid_password": "Ongeldig wachtwoord.",
+      "invalid_scan_interval": "Update-interval moet tussen 10 en 3600 seconden liggen.",
+      "invalid_energy_delta_kwh": "Energie-delta moet 0 of hoger zijn (kWh).",
+      "invalid_input": "Ongeldige invoer.",
+      "invalid_auth": "Ongeldige gebruikersnaam of wachtwoord.",
+      "not_solarwatt": "Host lijkt geen SOLARWATT Manager te zijn.",
+      "cannot_connect": "Kan geen verbinding maken met de SOLARWATT Manager.",
+      "connection_failed": "Verbinding met SOLARWATT Manager mislukt.",
+      "unknown_error": "Er is een onbekende fout opgetreden."
+    },
+    "step": {
+      "user": {
+        "title": "Verbind SOLARWATT",
+        "description": "Voer IP/host en inloggegevens in.",
+        "data": {
+          "host": "IP/Host",
+          "username": "Gebruikersnaam",
+          "password": "Wachtwoord",
+          "scan_interval": "Update-interval (seconden)",
+          "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
+          "name_prefix": "Naamvoorvoegsel (optioneel)",
+          "enable_all_sensors": "Alle sensoren standaard inschakelen (in plaats van alleen kernsensoren zoals PV, net, batterij, verbruik)"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "invalid_scan_interval": "Update-interval moet tussen 10 en 3600 seconden liggen.",
+      "invalid_energy_delta_kwh": "Energie-delta moet 0 of hoger zijn (kWh)."
+    },
+    "step": {
+      "init": {
+        "title": "Opties",
+        "data": {
+          "scan_interval": "Update-interval (seconden)",
+          "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
+          "name_prefix": "Naamvoorvoegsel (optioneel)",
+          "enable_all_sensors": "Alle sensoren standaard inschakelen (in plaats van alleen kernsensoren zoals PV, net, batterij, verbruik)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "diagnostics_refresh": {
+        "name": "Gegevens bijwerken"
+      }
+    }
+  }
+}

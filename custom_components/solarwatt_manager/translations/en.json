@@ -17,15 +17,15 @@
     "step": {
       "user": {
         "title": "Connect SOLARWATT",
-        "description": "Enter IP/host and login credentials.",
+        "description": "Enter IP/Host and login credentials.",
         "data": {
-          "host": "Host / IP",
+          "host": "IP/Host",
           "username": "Username",
           "password": "Password",
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "name_prefix": "Name prefix (optional)",
-          "enable_all_sensors": "Enable all sensors by default"
+          "enable_all_sensors": "Enable all sensors by default (instead of only core sensors like PV, grid, battery, consumption)"
         }
       }
     }
@@ -42,7 +42,7 @@
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "name_prefix": "Name prefix (optional)",
-          "enable_all_sensors": "Enable all sensors by default"
+          "enable_all_sensors": "Enable all sensors by default (instead of only core sensors like PV, grid, battery, consumption)"
         }
       }
     }
