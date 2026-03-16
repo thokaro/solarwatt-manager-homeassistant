@@ -39,8 +39,8 @@ Die Entitäts-IDs können bei euch natürlich abweichen.
 
 | Feld | Wert |
 |------|------|
-| Name | Kiwigrid Power Grid EVCC |
-| Entitäts-ID | `sensor.kiwigrid_power_grid_evcc` |
+| Name | Kiwigrid evcc Power Grid |
+| Entitäts-ID | `sensor.kiwigrid_evcc_power_grid` |
 | Maßeinheit | `W` |
 | Geräteklasse | Leistung |
 | Zustandsklasse | – |
@@ -74,8 +74,8 @@ Setzt sich wie folgt zusammen:
 
 | Feld | Wert |
 |------|------|
-| Name | Kiwigrid Power Battery EVCC |
-| Entitäts-ID | `sensor.kiwigrid_power_battery_evcc` |
+| Name | Kiwigrid evcc Power Battery |
+| Entitäts-ID | `sensor.kiwigrid_evcc_power_battery` |
 | Maßeinheit | `W` |
 | Geräteklasse | Leistung |
 | Zustandsklasse | – |
@@ -101,7 +101,7 @@ meters:
     template: homeassistant
     usage: grid
     uri: http://homeassistant.local:8123/
-    power: sensor.kiwigrid_power_grid_evcc
+    power: sensor.kiwigrid_evcc_power_grid
     energy: sensor.vision_kiwigrid_work_consumed_from_grid_total
 
   - name: pv
@@ -117,7 +117,7 @@ meters:
     template: homeassistant
     usage: battery
     uri: http://homeassistant.local:8123/
-    power: sensor.kiwigrid_power_battery_evcc
+    power: sensor.kiwigrid_evcc_power_battery
     energy: sensor.vision_kiwigrid_work_consumed_from_storage_total
     soc: sensor.vision_foxess_battery_bms_soc
 ```
