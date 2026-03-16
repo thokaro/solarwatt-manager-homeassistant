@@ -25,7 +25,7 @@
           "scan_interval": "Update-interval (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
           "name_prefix": "Naamvoorvoegsel (optioneel)",
-          "enable_all_sensors": "Alle sensoren standaard inschakelen (in plaats van alleen kernsensoren zoals PV, net, batterij, verbruik)"
+          "enable_all_sensors": "Alle beschikbare sensoren inschakelen (anders worden de kernsensoren zoals PV, net, batterij en verbruik geactiveerd)"
         }
       }
     }
@@ -42,7 +42,7 @@
           "scan_interval": "Update-interval (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
           "name_prefix": "Naamvoorvoegsel (optioneel)",
-          "enable_all_sensors": "Alle sensoren standaard inschakelen (in plaats van alleen kernsensoren zoals PV, net, batterij, verbruik)"
+          "enable_all_sensors": "Alle beschikbare sensoren inschakelen (anders worden de kernsensoren zoals PV, net, batterij en verbruik geactiveerd)"
         }
       }
     }

@@ -25,7 +25,7 @@
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "name_prefix": "Name prefix (optional)",
-          "enable_all_sensors": "Enable all sensors by default (instead of only core sensors like PV, grid, battery, consumption)"
+          "enable_all_sensors": "Enable all available sensors (otherwise, the core sensors such as PV, grid, battery, and consumption are enabled)"
         }
       }
     }
@@ -42,7 +42,7 @@
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "name_prefix": "Name prefix (optional)",
-          "enable_all_sensors": "Enable all sensors by default (instead of only core sensors like PV, grid, battery, consumption)"
+          "enable_all_sensors": "Enable all available sensors (otherwise, the core sensors such as PV, grid, battery, and consumption are enabled)"
         }
       }
     }

@@ -25,7 +25,7 @@
           "scan_interval": "Intervalle de mise à jour (secondes)",
           "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
           "name_prefix": "Préfixe de nom (optionnel)",
-          "enable_all_sensors": "Activer tous les capteurs par défaut (au lieu des capteurs principaux comme PV, réseau, batterie, consommation)"
+          "enable_all_sensors": "Activer tous les capteurs disponibles (sinon, les capteurs principaux tels que le PV, le réseau, la batterie et la consommation sont activés)"
         }
       }
     }
@@ -42,7 +42,7 @@
           "scan_interval": "Intervalle de mise à jour (secondes)",
           "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
           "name_prefix": "Préfixe de nom (optionnel)",
-          "enable_all_sensors": "Activer tous les capteurs par défaut (au lieu des capteurs principaux comme PV, réseau, batterie, consommation)"
+          "enable_all_sensors": "Activer tous les capteurs disponibles (sinon, les capteurs principaux tels que le PV, le réseau, la batterie et la consommation sont activés)"
         }
       }
     }

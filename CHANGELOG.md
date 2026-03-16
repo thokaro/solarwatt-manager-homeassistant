@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026.3.2
+
+### Changes
+- Sensor enablement: the `Enable all sensors` option now enables integration-disabled item sensors immediately, auto-enables newly discovered sensors while active, and disables only the sensors it had auto-enabled when turned off again.
+- Config flow/options flow: normalized form input handling, preserved internal option keys, and returned field-specific validation errors for host, credentials, scan interval, and energy delta.
+- Entity helpers: extracted item-sensor unique ID migration and enablement logic into a shared helper module used during setup and sensor creation.
+- Client robustness: unified JSON fetch handling for `/rest/items` and `/rest/things` with one reauthentication retry when SOLARWATT returns `401` or an HTML login page.
+- Documentation/translations: updated the `Enable all sensors` wording in the README and all shipped UI translations to match the new behavior.
+
 ## 2026.3.1
 
 ### Changes

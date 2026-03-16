@@ -19,6 +19,7 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_NAME_PREFIX = "name_prefix"
 CONF_ENABLE_ALL_SENSORS = "enable_all_sensors"
 CONF_ENERGY_DELTA_KWH = "energy_delta_kwh"
+OPT_ENABLED_SENSOR_IDS_BEFORE_ALL = "enabled_sensor_ids_before_all"
 
 DEFAULT_SCAN_INTERVAL = 15  # Sekunden
 MIN_SCAN_INTERVAL = 10  # Minimaler Scan-Interval in Sekunden

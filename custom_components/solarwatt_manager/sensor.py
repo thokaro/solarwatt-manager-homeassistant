@@ -17,11 +17,12 @@ from .const import (
     SOLARWATTConfigEntry,
     build_device_info,
 )
-from .naming import clean_item_key, format_display_name, is_enabled_by_default, normalize_item_name
 from .coordinator import guess_ha_meta
-
-
-
+from .entity_helpers import (
+    build_item_sensor_unique_id,
+    is_item_sensor_enabled_by_default,
+)
+from .naming import format_display_name, normalize_item_name
 
 # Enable only a small set of "core" sensors by default. Serial numbers in the
 # item name can differ between installations, so we match with regex.
@@ -129,11 +130,12 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._last_update_success: bool | None = None
         self._is_energy = False
 
-        raw_item_key = clean_item_key(item_name or "")
         clean_item_name = normalize_item_name(item_name or "")
 
-        self._attr_unique_id = f"{entry_id}_{raw_item_key}"
-        self._attr_entity_registry_enabled_default = enable_all or is_enabled_by_default(self._item_name)
+        self._attr_unique_id = build_item_sensor_unique_id(entry_id, item_name)
+        self._attr_entity_registry_enabled_default = (
+            is_item_sensor_enabled_by_default(self._item_name, enable_all)
+        )
 
         # Group all sensors under one device for a cleaner HA UI.
         host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id

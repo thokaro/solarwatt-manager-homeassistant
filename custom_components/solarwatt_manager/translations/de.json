@@ -25,7 +25,7 @@
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
           "name_prefix": "Namens-Prefix der Entität-IDs (optional)",
-          "enable_all_sensors": "Alle Sensoren standardmäßig aktivieren (anstatt nur die Kernsensoren wie PV, Netz, Batterie, Verbrauch)"
+          "enable_all_sensors": "Alle verfügbaren Sensoren aktivieren (ansonsten werden die Kernsensoren wie PV, Netz, Batterie und Verbrauch aktiviert)"
         }
       }
     }
@@ -42,7 +42,7 @@
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
           "name_prefix": "Namens-Prefix der Entität-IDs (optional)",
-          "enable_all_sensors": "Alle Sensoren standardmäßig aktivieren (anstatt nur die Kernsensoren wie PV, Netz, Batterie, Verbrauch)"
+          "enable_all_sensors": "Alle verfügbaren Sensoren aktivieren (ansonsten werden die Kernsensoren wie PV, Netz, Batterie und Verbrauch aktiviert)"
         }
       }
     }

@@ -11,7 +11,6 @@ import unicodedata
 import logging
 
 from aiohttp import ClientError, ClientResponseError, CookieJar, ClientSession
-from aiohttp.client_exceptions import ContentTypeError
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
     PERCENTAGE,
@@ -531,6 +530,31 @@ class SOLARWATTClient:
         if time.time() - self._last_login > self.session_ttl:
             await self.async_login()
 
+    async def _async_get_json_endpoint(self, url: str, *, where: str) -> Any:
+        """Fetch a JSON endpoint with one reauthentication retry on 401/HTML."""
+        await self._ensure_session()
+
+        for attempt in range(2):
+            async with self._session.get(
+                url,
+                timeout=5,
+                headers=self._auth_headers(),
+            ) as resp:
+                # SOLARWATT can return a 401 or a HTML login page instead of JSON.
+                if resp.status == 401:
+                    if attempt == 0:
+                        await self.async_login()
+                        continue
+                    resp.raise_for_status()
+
+                ct = (resp.headers.get("Content-Type") or "").lower()
+                if "text/html" in ct and attempt == 0:
+                    await self.async_login()
+                    continue
+
+                resp.raise_for_status()
+                return await self._ensure_json(resp, where)
+
     async def async_validate_connection(self) -> None:
         """Test connection to SOLARWATT Manager.
         
@@ -547,46 +571,11 @@ class SOLARWATTClient:
             raise SolarwattConnectionError(f"Cannot connect to SOLARWATT Manager: {str(e)}") from e
 
     async def async_get_items(self) -> list[dict[str, Any]]:
-        await self._ensure_session()
         try:
-            async with self._session.get(self.items_url, timeout=5, headers=self._auth_headers()) as resp:
-                # SOLARWATT liefert teils HTML (Login-Seite) statt 401.
-                # Dann ist der Status 200, aber Content-Type nicht JSON.
-                if resp.status == 401:
-                    await self.async_login()
-                    async with self._session.get(
-                        self.items_url,
-                        timeout=5,
-                        headers=self._auth_headers(),
-                    ) as resp2:
-                        resp2.raise_for_status()
-                        return await self._ensure_json(resp2, "GET /rest/items (nach 401)")
-
-                resp.raise_for_status()
-
-                ct = (resp.headers.get("Content-Type") or "").lower()
-                if "text/html" in ct:
-                    # einmal neu einloggen und erneut versuchen
-                    await self.async_login()
-                    async with self._session.get(
-                        self.items_url,
-                        timeout=5,
-                        headers=self._auth_headers(),
-                    ) as resp2:
-                        resp2.raise_for_status()
-                        return await self._ensure_json(resp2, "GET /rest/items (nach HTML)")
-                return await self._ensure_json(resp, "GET /rest/items")
-        except ContentTypeError as e:
-            # Status ist oft 200 -> deshalb nicht als "HTTP Fehler: 200" maskieren.
-            self._log.error(
-                f"Content-Type error fetching items from {self.host}: {str(e)}. "
-                "Usually indicates HTML login page instead of JSON response."
+            return await self._async_get_json_endpoint(
+                self.items_url,
+                where="GET /rest/items",
             )
-            raise SolarwattProtocolError(
-                "Antwort ist kein JSON (Content-Type stimmt nicht). "
-                "SOLARWATT liefert dann meist eine HTML-Loginseite. "
-                "Prüfe Host, Port und Login-Daten."
-            ) from e
         except SolarwattError:
             raise
         except ClientResponseError as e:
@@ -604,36 +593,11 @@ class SOLARWATTClient:
             raise SolarwattConnectionError(str(e)) from e
 
     async def async_get_things(self) -> list[dict[str, Any]]:
-        await self._ensure_session()
         try:
-            async with self._session.get(self.things_url, timeout=5, headers=self._auth_headers()) as resp:
-                if resp.status == 401:
-                    await self.async_login()
-                    async with self._session.get(
-                        self.things_url,
-                        timeout=5,
-                        headers=self._auth_headers(),
-                    ) as resp2:
-                        resp2.raise_for_status()
-                        return await self._ensure_json(resp2, "GET /rest/things (nach 401)")
-
-                resp.raise_for_status()
-
-                ct = (resp.headers.get("Content-Type") or "").lower()
-                if "text/html" in ct:
-                    await self.async_login()
-                    async with self._session.get(
-                        self.things_url,
-                        timeout=5,
-                        headers=self._auth_headers(),
-                    ) as resp2:
-                        resp2.raise_for_status()
-                        return await self._ensure_json(resp2, "GET /rest/things (nach HTML)")
-                return await self._ensure_json(resp, "GET /rest/things")
-        except ContentTypeError as e:
-            raise SolarwattProtocolError(
-                "Antwort für /rest/things ist kein JSON (Content-Type stimmt nicht)."
-            ) from e
+            return await self._async_get_json_endpoint(
+                self.things_url,
+                where="GET /rest/things",
+            )
         except SolarwattError:
             raise
         except ClientResponseError as e:

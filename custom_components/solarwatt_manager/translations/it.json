@@ -25,7 +25,7 @@
           "scan_interval": "Intervallo di aggiornamento (secondi)",
           "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
           "name_prefix": "Prefisso nome (opzionale)",
-          "enable_all_sensors": "Abilita tutti i sensori per impostazione predefinita (anziche solo i sensori principali come PV, rete, batteria, consumo)"
+          "enable_all_sensors": "Abilita tutti i sensori disponibili (altrimenti vengono attivati i sensori principali come PV, rete, batteria e consumo)"
         }
       }
     }
@@ -42,7 +42,7 @@
           "scan_interval": "Intervallo di aggiornamento (secondi)",
           "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
           "name_prefix": "Prefisso nome (opzionale)",
-          "enable_all_sensors": "Abilita tutti i sensori per impostazione predefinita (anziche solo i sensori principali come PV, rete, batteria, consumo)"
+          "enable_all_sensors": "Abilita tutti i sensori disponibili (altrimenti vengono attivati i sensori principali come PV, rete, batteria e consumo)"
         }
       }
     }

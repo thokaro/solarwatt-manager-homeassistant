@@ -94,7 +94,7 @@ You can adjust these in the integration options:
 * **Update interval (seconds)** – polling interval
 * **Name prefix (optional)** – prefix for entity names
 * **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
-* **Enable all sensors by default** – if off, only the core sensors (PV, grid, battery, consumption) are enabled by default; if on, all sensors are enabled regardless of the core list
+* **Enable all sensors** – enables all sensors currently disabled by the integration and turns on newly discovered sensors automatically; when switched off again, sensors that were only active because of this option are disabled again, while core and previously enabled sensors stay active
 
 ---
 

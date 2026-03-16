@@ -1,69 +1,15 @@
 from __future__ import annotations
 
-import logging
-
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN, SOLARWATTConfigEntry
+from .const import SOLARWATTConfigEntry
 from .coordinator import SOLARWATTCoordinator, SOLARWATTClient
-from .naming import clean_item_key, normalize_item_name
+from .entity_helpers import (
+    enable_all_item_sensor_entities,
+    migrate_item_sensor_unique_ids,
+)
 
 PLATFORMS: list[str] = ["sensor", "button"]
-_LOGGER = logging.getLogger(__name__)
-
-
-def _migrate_sensor_unique_ids(
-    hass: HomeAssistant, entry: SOLARWATTConfigEntry, coordinator: SOLARWATTCoordinator
-) -> None:
-    """Migrate sensor unique IDs from normalized item names to raw item names."""
-    migration_map: dict[str, str] = {}
-    for item_name, item in (coordinator.data or {}).items():
-        if (getattr(item, "oh_type", None) or "").startswith("Switch"):
-            continue
-
-        old_unique_id = f"{entry.entry_id}_{normalize_item_name(item_name or '')}"
-        new_unique_id = f"{entry.entry_id}_{clean_item_key(item_name or '')}"
-        if old_unique_id != new_unique_id:
-            migration_map[old_unique_id] = new_unique_id
-
-    if not migration_map:
-        return
-
-    ent_reg = er.async_get(hass)
-    entries = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
-    used_unique_ids = {ent.unique_id for ent in entries if ent.unique_id}
-
-    migrated = 0
-    skipped = 0
-    for ent in entries:
-        if ent.domain != "sensor" or ent.platform != DOMAIN:
-            continue
-
-        target_unique_id = migration_map.get(ent.unique_id)
-        if not target_unique_id:
-            continue
-        if target_unique_id in used_unique_ids and target_unique_id != ent.unique_id:
-            skipped += 1
-            _LOGGER.warning(
-                "Skipping unique_id migration for %s due to collision: %s",
-                ent.entity_id,
-                target_unique_id,
-            )
-            continue
-
-        ent_reg.async_update_entity(ent.entity_id, new_unique_id=target_unique_id)
-        used_unique_ids.discard(ent.unique_id)
-        used_unique_ids.add(target_unique_id)
-        migrated += 1
-
-    if migrated or skipped:
-        _LOGGER.info(
-            "Unique ID migration finished for entry %s: migrated=%s skipped=%s",
-            entry.entry_id,
-            migrated,
-            skipped,
-        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) -> bool:
@@ -78,7 +24,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) ->
     try:
         await coordinator.async_config_entry_first_refresh()
         await coordinator.async_refresh_things()
-        _migrate_sensor_unique_ids(hass, entry, coordinator)
+        migrate_item_sensor_unique_ids(hass, entry, coordinator.data)
+        enable_all_item_sensor_entities(hass, entry, coordinator.data)
 
         entry.runtime_data = coordinator
         runtime_data_set = True
