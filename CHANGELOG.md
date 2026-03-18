@@ -1,8 +1,17 @@
 # Changelog
 
+## 2026.3.3
+
+### Changes
+- Naming normalization: all device-type rules that strip installation-specific IDs now keep the device ID when multiple devices of that normalized type are present.
+- Duplicate-device detection: the multi-device check runs during setup/reload and when pressing `Update data`
+- Legacy migration: normalized entity IDs with and without a retained device ID are migrated to the stable raw item-name unique IDs.
+- State parsing: OpenHAB states `UNDEF` and `UNINITIALIZED` are now treated like `NULL` and exposed as unavailable instead of invalid string values for numeric Home Assistant sensors.
+
 ## 2026.3.2
 
 ### Changes
+- Naming normalization: all device-type rules that strip installation-specific IDs now keep the device ID only when multiple devices of that normalized type are present in the current item set; existing legacy normalized IDs with and without the device ID are migrated to the stable raw item-name unique IDs.
 - Sensor enablement: the `Enable all sensors` option now enables integration-disabled item sensors immediately, auto-enables newly discovered sensors while active, and disables only the sensors it had auto-enabled when turned off again.
 - Config flow/options flow: normalized form input handling, preserved internal option keys, and returned field-specific validation errors for host, credentials, scan interval, and energy delta.
 - Entity helpers: extracted item-sensor unique ID migration and enablement logic into a shared helper module used during setup and sensor creation.

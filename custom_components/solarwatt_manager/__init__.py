@@ -23,6 +23,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) ->
 
     try:
         await coordinator.async_config_entry_first_refresh()
+        coordinator.refresh_multi_instance_device_types()
         await coordinator.async_refresh_things()
         migrate_item_sensor_unique_ids(hass, entry, coordinator.data)
         enable_all_item_sensor_entities(hass, entry, coordinator.data)

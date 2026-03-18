@@ -26,6 +26,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, MIN_SCAN_INTERVAL, MAX_SCAN_INTERVAL
+from .naming import detect_multi_instance_device_types
 
 
 _NUM_RE = re.compile(r"^\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([^\d\s].*)?\s*$")
@@ -37,6 +38,7 @@ _UNIT_ALIASES = {
     "Ohm": "Ω",
     "mOhm": "mΩ",
 }
+_UNAVAILABLE_STATES = {"NULL", "UNDEF", "UNINITIALIZED"}
 
 
 def _extract_unit_from_pattern(pattern: str | None) -> str | None:
@@ -133,7 +135,7 @@ def parse_state(state: Any, pattern: str | None = None, oh_type: str | None = No
 
     s = unicodedata.normalize("NFKC", str(state).strip())
 
-    if s == "NULL":
+    if s in _UNAVAILABLE_STATES:
         return ParsedState(value=None)
 
     # Only coerce ON/OFF to bool for switch-like items. For String items
@@ -616,6 +618,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.entry = entry
         self.client = client
         self.things: dict[str, dict[str, Any]] = {}
+        self.multi_instance_device_types: set[str] = set()
         self._discovery_callbacks: set[Callable[[], None]] = set()
 
         scan = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -647,9 +650,20 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             except Exception:
                 self.logger.exception("Error running discovery callback")
 
+    def refresh_multi_instance_device_types(self, *, notify: bool = False) -> bool:
+        """Recompute multi-instance device types from the current item snapshot."""
+        new_types = detect_multi_instance_device_types(self.data or {})
+        if new_types == self.multi_instance_device_types:
+            return False
+        self.multi_instance_device_types = new_types
+        if notify:
+            self.async_update_listeners()
+        return True
+
     async def async_refresh_discovery_data(self) -> None:
         """Refresh items/things and run one-shot entity discovery."""
         await self.async_request_refresh()
+        self.refresh_multi_instance_device_types(notify=True)
         await self.async_refresh_things()
         self._run_discovery_callbacks()
 

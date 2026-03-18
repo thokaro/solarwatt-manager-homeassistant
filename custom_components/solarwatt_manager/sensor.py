@@ -129,8 +129,7 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._last_energy_value: float | None = None
         self._last_update_success: bool | None = None
         self._is_energy = False
-
-        clean_item_name = normalize_item_name(item_name or "")
+        self._prefix = prefix
 
         self._attr_unique_id = build_item_sensor_unique_id(entry_id, item_name)
         self._attr_entity_registry_enabled_default = (
@@ -142,11 +141,7 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._attr_device_info = build_device_info(host, device_name)
         item = (self.coordinator.data or {}).get(item_name)
 
-        # Use the OpenHAB/SOLARWATT item name (as requested), strip leading '#',
-        # and optionally prefix it.
-        base_name = clean_item_name.replace("harmonized_", "").replace("_", " ").strip()
-        display_name = format_display_name(base_name)
-        self._attr_name = f"{prefix} {display_name}".strip() if prefix else display_name
+        self._attr_name = self._build_display_name()
 
         if item:
             meta = guess_ha_meta(getattr(item, "oh_type", None), getattr(item, "parsed", None), item_name)
@@ -158,6 +153,22 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
                 self._attr_device_class == SensorDeviceClass.ENERGY
                 or self._attr_state_class == SensorStateClass.TOTAL_INCREASING
             )
+
+    def _build_display_name(self) -> str:
+        clean_item_name = normalize_item_name(
+            self._item_name or "",
+            getattr(self.coordinator, "multi_instance_device_types", set()),
+        )
+        base_name = clean_item_name.replace("harmonized_", "").replace("_", " ").strip()
+        display_name = format_display_name(base_name)
+        return f"{self._prefix} {display_name}".strip() if self._prefix else display_name
+
+    def _sync_display_name(self) -> bool:
+        new_name = self._build_display_name()
+        if new_name == self._attr_name:
+            return False
+        self._attr_name = new_name
+        return True
 
     def _is_invalid_energy_value(self, value) -> bool:
         if value is None or isinstance(value, bool):
@@ -193,13 +204,14 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._last_energy_value = new_val if math.isfinite(new_val) else None
 
     def _handle_coordinator_update(self) -> None:
+        name_changed = self._sync_display_name()
         update_success = getattr(self.coordinator, "last_update_success", None)
         if update_success != self._last_update_success:
             self._last_update_success = update_success
             self._sync_energy_value(self.native_value)
             super()._handle_coordinator_update()
             return
-        if self._is_energy and not self._should_write_energy(self.native_value):
+        if self._is_energy and not name_changed and not self._should_write_energy(self.native_value):
             return
         super()._handle_coordinator_update()
 

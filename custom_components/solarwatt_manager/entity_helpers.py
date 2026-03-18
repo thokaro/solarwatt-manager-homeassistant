@@ -14,7 +14,7 @@ from .const import (
     OPT_ENABLED_SENSOR_IDS_BEFORE_ALL,
     SOLARWATTConfigEntry,
 )
-from .naming import clean_item_key, is_enabled_by_default, normalize_item_name
+from .naming import clean_item_key, is_enabled_by_default, normalized_item_name_variants
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,9 +24,12 @@ def build_item_sensor_unique_id(entry_id: str, item_name: str) -> str:
     return f"{entry_id}_{clean_item_key(item_name or '')}"
 
 
-def build_legacy_item_sensor_unique_id(entry_id: str, item_name: str) -> str:
-    """Return the legacy normalized unique_id used before the raw-key migration."""
-    return f"{entry_id}_{normalize_item_name(item_name or '')}"
+def build_legacy_item_sensor_unique_ids(entry_id: str, item_name: str) -> set[str]:
+    """Return all legacy normalized unique_id variants used before the raw-key migration."""
+    return {
+        f"{entry_id}_{normalized_name}"
+        for normalized_name in normalized_item_name_variants(item_name or "")
+    }
 
 
 def is_item_sensor_enabled_by_default(
@@ -44,10 +47,10 @@ def migrate_item_sensor_unique_ids(
     """Migrate item sensor unique IDs from normalized names to raw item names."""
     migration_map: dict[str, str] = {}
     for item_name in _item_sensor_names(items):
-        old_unique_id = build_legacy_item_sensor_unique_id(entry.entry_id, item_name)
         new_unique_id = build_item_sensor_unique_id(entry.entry_id, item_name)
-        if old_unique_id != new_unique_id:
-            migration_map[old_unique_id] = new_unique_id
+        for old_unique_id in build_legacy_item_sensor_unique_ids(entry.entry_id, item_name):
+            if old_unique_id != new_unique_id:
+                migration_map[old_unique_id] = new_unique_id
 
     if not migration_map:
         return
