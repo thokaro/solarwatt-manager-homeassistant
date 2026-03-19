@@ -139,24 +139,38 @@ This keeps entities readable without breaking existing statistics.
 ### Repository Structure
 
 ```
-custom_components/
-└─ solarwatt_manager/
-   ├─ __init__.py        # integration setup
-   ├─ button.py          # diagnostics refresh button
-   ├─ const.py           # constants & defaults
-   ├─ manifest.json      # integration metadata
-   ├─ sensor.py          # entity definitions
-   ├─ coordinator.py     # polling + data parsing
-   ├─ config_flow.py     # UI config flow
-   ├─ diagnostics.py     # diagnostics output
-   ├─ naming.py          # name normalization/formatting
-   ├─ icon.png
-   └─ translations/
-      ├─ de.json          # German translations
-      ├─ en.json          # English translations
-      ├─ fr.json          # French translations
-      ├─ it.json          # Italian translations
-      └─ nl.json          # Dutch translations
+.
+├─ custom_components/
+│  └─ solarwatt_manager/
+│     ├─ __init__.py         # integration setup
+│     ├─ button.py           # diagnostics refresh button
+│     ├─ config_flow.py      # UI config flow
+│     ├─ const.py            # constants & defaults
+│     ├─ coordinator.py      # polling + data parsing
+│     ├─ diagnostics.py      # diagnostics output
+│     ├─ entity_helpers.py   # shared entity helper utilities
+│     ├─ icon.png
+│     ├─ manifest.json       # integration metadata
+│     ├─ naming.py           # name normalization/formatting
+│     ├─ sensor.py           # entity definitions
+│     ├─ brand/
+│     │  ├─ icon.png
+│     │  ├─ icon@2x.png
+│     │  ├─ logo.png
+│     │  └─ logo@2x.png
+│     └─ translations/
+│        ├─ de.json          # German translations
+│        ├─ en.json          # English translations
+│        ├─ fr.json          # French translations
+│        ├─ it.json          # Italian translations
+│        └─ nl.json          # Dutch translations
+├─ docs/
+│  ├─ evvc-guide-german.md   # EVVC setup guide
+│  └─ kiwigrid-items.md      # item reference for KiwiGrid systems
+├─ CHANGELOG.md              # release history
+├─ hacs.json                 # HACS metadata
+├─ LICENSE
+└─ README.md
 ```
 
 ### Versioning
