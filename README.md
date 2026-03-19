@@ -149,7 +149,6 @@ This keeps entities readable without breaking existing statistics.
 │     ├─ coordinator.py      # polling + data parsing
 │     ├─ diagnostics.py      # diagnostics output
 │     ├─ entity_helpers.py   # shared entity helper utilities
-│     ├─ icon.png
 │     ├─ manifest.json       # integration metadata
 │     ├─ naming.py           # name normalization/formatting
 │     ├─ sensor.py           # entity definitions
