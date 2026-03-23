@@ -10,6 +10,7 @@
 - Device selection: setup and options now let you choose which SOLARWATT things should be created, and the selection is applied consistently to linked item sensors and thing diagnostics entities.
 - Options cleanup: the `Enable all sensors` setting has been removed.
 - Migration cleanup: obsolete legacy diagnostics entities and orphaned legacy root devices are cleaned up during reload/update.
+- Diagnostics cleanup: thing diagnostics for devices without channels are removed during reload/update so no empty diagnostics device remains.
 
 ## 2026.3.3
 
