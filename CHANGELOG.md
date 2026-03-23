@@ -2,7 +2,11 @@
 
 ## 2026.3.4
 
+### Important before updating
+- Before updating, enable the integration option `Enable all available sensors (otherwise, the core sensors such as PV, grid, battery, and consumption are enabled)`. This avoids devices ending up with only disabled sensors after the update.
+
 ### Changes
+- Device mapping: devices are now derived from `/rest/things`, and related item sensors are assigned to the matching devices.
 - Device selection: setup and options now let you choose which SOLARWATT things should be created, and the selection is applied consistently to linked item sensors and thing diagnostics entities.
 - Options cleanup: the `Enable all sensors` setting has been removed.
 - Migration cleanup: obsolete legacy diagnostics entities and orphaned legacy root devices are cleaned up during reload/update.
