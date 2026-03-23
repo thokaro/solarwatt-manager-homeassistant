@@ -6,6 +6,7 @@ from .const import SOLARWATTConfigEntry
 from .coordinator import SOLARWATTCoordinator, SOLARWATTClient
 from .entity_helpers import sync_selected_thing_entities
 from .legacy_migrations import (
+    cleanup_empty_channel_thing_diagnostics,
     cleanup_legacy_device_registry_entries,
     migrate_item_entities_to_thing_devices,
     migrate_item_sensor_unique_ids,
@@ -51,6 +52,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) ->
             entry,
             coordinator.data,
             coordinator.item_to_thing_uid,
+        )
+        cleanup_empty_channel_thing_diagnostics(
+            hass,
+            entry,
+            coordinator.things,
         )
         cleanup_legacy_device_registry_entries(hass, entry)
     except Exception:
