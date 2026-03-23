@@ -86,6 +86,7 @@ After restarting Home Assistant:
 2. Click **Add Integration**
 3. Search for **SOLARWATT Manager**
 4. Enter the required connection details
+5. Select the SOLARWATT devices you want to create
 
 ### Options
 
@@ -94,7 +95,7 @@ You can adjust these in the integration options:
 * **Update interval (seconds)** – polling interval
 * **Name prefix (optional)** – prefix for entity names
 * **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
-* **Enable all sensors** – enables all sensors currently disabled by the integration and turns on newly discovered sensors automatically; when switched off again, sensors that were only active because of this option are disabled again, while core and previously enabled sensors stay active
+* **Device selection** – choose which detected SOLARWATT devices should be created in Home Assistant
 
 ---
 
@@ -148,7 +149,8 @@ This keeps entities readable without breaking existing statistics.
 │     ├─ const.py            # constants & defaults
 │     ├─ coordinator.py      # polling + data parsing
 │     ├─ diagnostics.py      # diagnostics output
-│     ├─ entity_helpers.py   # shared entity helper utilities
+│     ├─ entity_helpers.py   # current entity/device helper utilities
+│     ├─ legacy_migrations.py # upgrade cleanup for older entity/device layouts
 │     ├─ manifest.json       # integration metadata
 │     ├─ naming.py           # name normalization/formatting
 │     ├─ sensor.py           # entity definitions

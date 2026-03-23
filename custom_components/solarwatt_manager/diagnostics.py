@@ -52,7 +52,6 @@ def _item_payload(item: Any) -> dict[str, Any]:
         "label": getattr(item, "label", None),
         "category": getattr(item, "category", None),
         "editable": getattr(item, "editable", None),
-        "group_names": getattr(item, "group_names", None),
         "raw_state": raw.get("state") if isinstance(raw, dict) else None,
         "state_pattern": pattern,
         "parsed_value": getattr(parsed, "value", None),

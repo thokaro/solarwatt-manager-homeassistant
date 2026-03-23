@@ -10,16 +10,14 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
-
 from .const import (
-    CONF_ENABLE_ALL_SENSORS,
+    CONF_ENABLED_THINGS,
     CONF_ENERGY_DELTA_KWH,
     CONF_HOST,
     CONF_NAME_PREFIX,
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
-    DEFAULT_ENABLE_ALL_SENSORS,
     DEFAULT_ENERGY_DELTA_KWH,
     DEFAULT_NAME_PREFIX,
     DEFAULT_SCAN_INTERVAL,
@@ -27,6 +25,8 @@ from .const import (
     MAX_SCAN_INTERVAL,
     MIN_ENERGY_DELTA_KWH,
     MIN_SCAN_INTERVAL,
+    get_thing_display_name,
+    get_thing_selection_detail,
 )
 from .coordinator import (
     SOLARWATTClient,
@@ -35,7 +35,7 @@ from .coordinator import (
     SolarwattNotManagerError,
     SolarwattProtocolError,
 )
-from .entity_helpers import sync_enable_all_item_sensor_entities
+from .entity_helpers import sync_selected_thing_entities
 
 _LOGGER = logging.getLogger(__name__)
 _HOST_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -92,21 +92,6 @@ def _normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _normalize_bool(value: Any, *, default: bool) -> bool:
-    """Normalize boolean form values."""
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return default
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered in {"1", "true", "yes", "on"}:
-            return True
-        if lowered in {"0", "false", "no", "off"}:
-            return False
-    return bool(value)
-
-
 def _normalize_int(value: Any, *, default: int) -> int | None:
     """Normalize integer form values."""
     raw_value = default if value is None else value
@@ -129,10 +114,9 @@ def _normalize_options_input(
     user_input: Mapping[str, Any],
     current_options: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Normalize user-visible options while preserving internal option keys."""
+    """Normalize user-visible options."""
     current = dict(current_options or {})
     return {
-        **current,
         CONF_SCAN_INTERVAL: _normalize_int(
             user_input.get(
                 CONF_SCAN_INTERVAL,
@@ -152,13 +136,6 @@ def _normalize_options_input(
                 CONF_NAME_PREFIX,
                 current.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
             )
-        ),
-        CONF_ENABLE_ALL_SENSORS: _normalize_bool(
-            user_input.get(
-                CONF_ENABLE_ALL_SENSORS,
-                current.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS),
-            ),
-            default=DEFAULT_ENABLE_ALL_SENSORS,
         ),
     }
 
@@ -213,6 +190,12 @@ def _validate_user_data(
 class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+    def __init__(self) -> None:
+        self._pending_entry_data: dict[str, Any] | None = None
+        self._pending_options: dict[str, Any] | None = None
+        self._available_things: dict[str, dict[str, Any]] = {}
+        self._device_fields: dict[str, str] = {}
+
     def _build_user_schema(
         self, user_input: Mapping[str, Any] | None = None
     ) -> vol.Schema:
@@ -241,13 +224,6 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_NAME_PREFIX,
                     default=values.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
                 ): str,
-                vol.Optional(
-                    CONF_ENABLE_ALL_SENSORS,
-                    default=values.get(
-                        CONF_ENABLE_ALL_SENSORS,
-                        DEFAULT_ENABLE_ALL_SENSORS,
-                    ),
-                ): bool,
             }
         )
 
@@ -276,17 +252,66 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     await self.async_set_unique_id(host)
                     self._abort_if_unique_id_configured()
-
-                    return self.async_create_entry(
-                        title=f"SOLARWATT ({host})",
-                        data=entry_data,
-                        options=options,
+                    things, errors = await self._async_fetch_things(
+                        host=host,
+                        username=entry_data[CONF_USERNAME],
+                        password=entry_data[CONF_PASSWORD],
                     )
+
+            if not errors:
+                selectable_things = self._selectable_things(things)
+                self._pending_entry_data = entry_data
+                self._pending_options = options
+                self._available_things = selectable_things
+                if not selectable_things:
+                    return self._async_create_config_entry([] if things else None)
+                return await self.async_step_devices()
 
         return self.async_show_form(
             step_id="user",
             data_schema=self._build_user_schema(user_input),
             errors=errors,
+        )
+
+    async def async_step_devices(self, user_input=None):
+        if self._pending_entry_data is None or self._pending_options is None:
+            return await self.async_step_user()
+
+        if user_input is not None:
+            selected = self._normalize_selected_device_fields(user_input)
+            return self._async_create_config_entry(selected)
+
+        return self.async_show_form(
+            step_id="devices",
+            data_schema=self._build_devices_schema(),
+        )
+
+    def _build_devices_schema(self) -> vol.Schema:
+        """Build the device-selection schema."""
+        selected_by_default = set(self._default_selected_things(self._available_things))
+        self._device_fields = {}
+        schema: dict[Any, Any] = {}
+        for uid, thing in self._sorted_things(self._available_things):
+            field_name = self._thing_checkbox_label(uid, thing, self._device_fields)
+            self._device_fields[field_name] = uid
+            schema[vol.Optional(field_name, default=uid in selected_by_default)] = bool
+        return vol.Schema(schema)
+
+    def _async_create_config_entry(self, selected_thing_uids: list[str] | None):
+        """Create the config entry using the pending validated data."""
+        assert self._pending_entry_data is not None
+        assert self._pending_options is not None
+
+        host = self._pending_entry_data[CONF_HOST]
+        options = dict(self._pending_options)
+        if selected_thing_uids is None:
+            options.pop(CONF_ENABLED_THINGS, None)
+        else:
+            options[CONF_ENABLED_THINGS] = selected_thing_uids
+        return self.async_create_entry(
+            title=f"SOLARWATT ({host})",
+            data=self._pending_entry_data,
+            options=options,
         )
 
     async def _test_connection(
@@ -335,6 +360,143 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return errors
 
+    async def _async_fetch_things(
+        self,
+        *,
+        host: str,
+        username: str,
+        password: str,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+        """Fetch device metadata for the device selection step."""
+        errors: dict[str, str] = {}
+        things_by_uid: dict[str, dict[str, Any]] = {}
+
+        try:
+            client = SOLARWATTClient(
+                self.hass,
+                host=host,
+                username=username,
+                password=password,
+            )
+            try:
+                for idx, thing in enumerate(await client.async_get_things()):
+                    uid = str(thing.get("UID") or thing.get("uid") or f"unknown_{idx}").strip()
+                    if uid:
+                        things_by_uid[uid] = thing
+            finally:
+                await client.async_close()
+        except SolarwattAuthError as err:
+            _LOGGER.warning("Invalid SOLARWATT credentials while fetching things: %s", err)
+            errors["base"] = "invalid_auth"
+        except SolarwattConnectionError as err:
+            _LOGGER.warning("Connection error while fetching SOLARWATT things: %s", err)
+            errors["base"] = "cannot_connect"
+        except SolarwattProtocolError as err:
+            _LOGGER.warning("Unexpected SOLARWATT things response: %s", err)
+            errors["base"] = "connection_failed"
+        except Exception as err:
+            _LOGGER.exception("Unexpected error fetching SOLARWATT things: %s", err)
+            errors["base"] = "unknown_error"
+
+        return things_by_uid, errors
+
+    @staticmethod
+    def _sorted_things(things: Mapping[str, dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
+        """Return things sorted by label for stable selector ordering."""
+        return sorted(
+            things.items(),
+            key=lambda item: (
+                str(item[1].get("label") or item[0]).strip().lower(),
+                item[0],
+            ),
+        )
+
+    @staticmethod
+    def _format_thing_choice(thing: Mapping[str, Any], uid: str) -> str:
+        """Return the selector label for one thing."""
+        label = get_thing_display_name(thing, uid)
+        detail = get_thing_selection_detail(thing)
+        if label and detail and detail.lower() != label.lower():
+            return f"{label} ({detail})"
+        return label or uid
+
+    @staticmethod
+    def _thing_has_linked_items(thing: Mapping[str, Any]) -> bool:
+        """Return True if any channel of this thing is linked to at least one item."""
+        channels = thing.get("channels")
+        if not isinstance(channels, list):
+            return False
+
+        for channel in channels:
+            if not isinstance(channel, Mapping):
+                continue
+            linked_items = channel.get("linkedItems")
+            if not isinstance(linked_items, list):
+                continue
+            if any(str(linked_item).strip() for linked_item in linked_items):
+                return True
+        return False
+
+    @classmethod
+    def _selectable_things(
+        cls, things: Mapping[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        """Return only things that should appear in the device selector."""
+        return {
+            uid: thing
+            for uid, thing in things.items()
+            if cls._thing_has_linked_items(thing)
+        }
+
+    @classmethod
+    def _default_selected_things(cls, things: Mapping[str, dict[str, Any]]) -> list[str]:
+        """Return the default-selected devices for a fresh config entry."""
+        return [
+            uid
+            for uid, thing in cls._sorted_things(things)
+            if cls._is_default_selected_thing(thing)
+        ]
+
+    @staticmethod
+    def _is_default_selected_thing(thing: Mapping[str, Any]) -> bool:
+        """Return True for things enabled by default during setup."""
+        label = str(thing.get("label") or "").lower()
+        thing_type_uid = str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "").lower()
+        properties = thing.get("properties")
+        props = properties if isinstance(properties, Mapping) else {}
+        ui_category = str(props.get("kig.meta.uiCategory") or "").lower()
+        balancing_type = str(props.get("kig.meta.balancingtype") or "").lower()
+
+        is_location = "location" in label or "location" in thing_type_uid
+        is_battery = any(
+            token in candidate
+            for candidate in (label, thing_type_uid, ui_category, balancing_type)
+            for token in ("battery", "batteries", "dc_battery")
+        )
+        return is_location or is_battery
+
+    def _normalize_selected_device_fields(
+        self,
+        user_input: Mapping[str, Any],
+    ) -> list[str]:
+        """Return selected thing UIDs from checkbox inputs."""
+        return [
+            uid
+            for field_name, uid in self._device_fields.items()
+            if bool(user_input.get(field_name))
+        ]
+
+    @classmethod
+    def _thing_checkbox_label(
+        cls,
+        uid: str,
+        thing: Mapping[str, Any],
+        existing_fields: Mapping[str, str],
+    ) -> str:
+        """Return a stable, user-facing checkbox label for one thing."""
+        base = cls._format_thing_choice(thing, uid)
+        return base if base not in existing_fields else f"{base} [{uid}]"
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
@@ -347,6 +509,7 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         # OptionsFlow (no setter). Store the entry in the internal attribute
         # expected by the base class so this works across HA versions.
         self._config_entry = config_entry
+        self._device_fields: dict[str, str] = {}
 
     async def async_step_init(self, user_input=None):
         if user_input is not None:
@@ -354,11 +517,16 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
             errors = _validate_options_data(data)
 
             if not errors:
-                sync_enable_all_item_sensor_entities(
-                    self.hass,
-                    self.config_entry,
-                    data,
-                )
+                coordinator = getattr(self.config_entry, "runtime_data", None)
+                if coordinator is not None:
+                    sync_selected_thing_entities(
+                        self.hass,
+                        self.config_entry,
+                        coordinator.data,
+                        coordinator.item_to_thing_uid,
+                        coordinator.things,
+                        data,
+                    )
                 return self.async_create_entry(title="", data=data)
 
             return self.async_show_form(
@@ -377,33 +545,70 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
     ) -> vol.Schema:
         """Build the options schema."""
         values = dict(user_input or self.config_entry.options)
-        return vol.Schema(
-            {
-                vol.Optional(
-                    CONF_SCAN_INTERVAL,
-                    default=values.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-                ): vol.Coerce(int),
-                vol.Optional(
+        schema: dict[Any, Any] = {
+            vol.Optional(
+                CONF_SCAN_INTERVAL,
+                default=values.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            ): vol.Coerce(int),
+            vol.Optional(
+                CONF_ENERGY_DELTA_KWH,
+                default=values.get(
                     CONF_ENERGY_DELTA_KWH,
-                    default=values.get(
-                        CONF_ENERGY_DELTA_KWH,
-                        DEFAULT_ENERGY_DELTA_KWH,
-                    ),
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_NAME_PREFIX,
-                    default=values.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
-                ): str,
-                vol.Optional(
-                    CONF_ENABLE_ALL_SENSORS,
-                    default=values.get(
-                        CONF_ENABLE_ALL_SENSORS,
-                        DEFAULT_ENABLE_ALL_SENSORS,
-                    ),
-                ): bool,
-            }
-        )
+                    DEFAULT_ENERGY_DELTA_KWH,
+                ),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_NAME_PREFIX,
+                default=values.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
+            ): str,
+        }
+
+        self._device_fields = {}
+        available_things = self._available_things()
+        selected_things = self._selected_thing_uids(values)
+        if CONF_ENABLED_THINGS not in values:
+            selected_things = {uid for uid, _ in available_things}
+
+        for uid, thing in available_things:
+            field_name = SOLARWATTItemsConfigFlow._thing_checkbox_label(uid, thing, self._device_fields)
+            self._device_fields[field_name] = uid
+            schema[vol.Optional(field_name, default=uid in selected_things)] = bool
+
+        return vol.Schema(schema)
 
     def _build_options_data(self, user_input: Mapping[str, Any]) -> dict[str, Any]:
         """Merge, normalize, and return user-visible options."""
-        return _normalize_options_input(user_input, self.config_entry.options)
+        data = _normalize_options_input(user_input, self.config_entry.options)
+        if self._device_fields:
+            data[CONF_ENABLED_THINGS] = [
+                uid
+                for field_name, uid in self._device_fields.items()
+                if bool(user_input.get(field_name))
+            ]
+        elif CONF_ENABLED_THINGS in self.config_entry.options:
+            data[CONF_ENABLED_THINGS] = self.config_entry.options[CONF_ENABLED_THINGS]
+        return data
+
+    def _available_things(self) -> list[tuple[str, dict[str, Any]]]:
+        """Return known things for the options form."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        things = getattr(coordinator, "things", {}) or {}
+        return SOLARWATTItemsConfigFlow._sorted_things(
+            SOLARWATTItemsConfigFlow._selectable_things(things)
+        )
+
+    @staticmethod
+    def _selected_thing_uids(values: Mapping[str, Any]) -> set[str]:
+        """Return the selected thing UIDs from options."""
+        raw_values = values.get(CONF_ENABLED_THINGS)
+        if isinstance(raw_values, str):
+            values_list = [raw_values]
+        elif isinstance(raw_values, (list, tuple, set)):
+            values_list = raw_values
+        else:
+            values_list = []
+        return {
+            value
+            for item in values_list
+            if (value := str(item).strip())
+        }

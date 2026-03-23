@@ -24,9 +24,12 @@
           "password": "Wachtwoord",
           "scan_interval": "Update-interval (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
-          "name_prefix": "Naamvoorvoegsel (optioneel)",
-          "enable_all_sensors": "Alle beschikbare sensoren inschakelen (anders worden de kernsensoren zoals PV, net, batterij en verbruik geactiveerd)"
+          "name_prefix": "Naamvoorvoegsel (optioneel)"
         }
+      },
+      "devices": {
+        "title": "Selecteer apparaten",
+        "description": "Selecteer met selectievakjes welke apparaten moeten worden aangemaakt. KiwiGrid en Battery staan standaard aan."
       }
     }
   },
@@ -41,8 +44,7 @@
         "data": {
           "scan_interval": "Update-interval (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
-          "name_prefix": "Naamvoorvoegsel (optioneel)",
-          "enable_all_sensors": "Alle beschikbare sensoren inschakelen (anders worden de kernsensoren zoals PV, net, batterij en verbruik geactiveerd)"
+          "name_prefix": "Naamvoorvoegsel (optioneel)"
         }
       }
     }

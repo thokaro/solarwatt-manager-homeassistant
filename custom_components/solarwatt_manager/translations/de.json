@@ -24,9 +24,12 @@
           "password": "Passwort",
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
-          "name_prefix": "Namens-Prefix der Entität-IDs (optional)",
-          "enable_all_sensors": "Alle verfügbaren Sensoren aktivieren (ansonsten werden die Kernsensoren wie PV, Netz, Batterie und Verbrauch aktiviert)"
+          "name_prefix": "Namens-Prefix der Entität-IDs (optional)"
         }
+      },
+      "devices": {
+        "title": "Geräte auswählen",
+        "description": "Wähle per Checkbox die Geräte aus, die angelegt werden sollen. Standardmäßig sind KiwiGrid und Speicher aktiviert."
       }
     }
   },
@@ -41,8 +44,7 @@
         "data": {
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
-          "name_prefix": "Namens-Prefix der Entität-IDs (optional)",
-          "enable_all_sensors": "Alle verfügbaren Sensoren aktivieren (ansonsten werden die Kernsensoren wie PV, Netz, Batterie und Verbrauch aktiviert)"
+          "name_prefix": "Namens-Prefix der Entität-IDs (optional)"
         }
       }
     }

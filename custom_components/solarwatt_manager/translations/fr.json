@@ -24,9 +24,12 @@
           "password": "Mot de passe",
           "scan_interval": "Intervalle de mise à jour (secondes)",
           "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
-          "name_prefix": "Préfixe de nom (optionnel)",
-          "enable_all_sensors": "Activer tous les capteurs disponibles (sinon, les capteurs principaux tels que le PV, le réseau, la batterie et la consommation sont activés)"
+          "name_prefix": "Préfixe de nom (optionnel)"
         }
+      },
+      "devices": {
+        "title": "Sélectionner les appareils",
+        "description": "Sélectionnez avec des cases à cocher les appareils à créer. KiwiGrid et Battery sont activés par défaut."
       }
     }
   },
@@ -41,8 +44,7 @@
         "data": {
           "scan_interval": "Intervalle de mise à jour (secondes)",
           "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
-          "name_prefix": "Préfixe de nom (optionnel)",
-          "enable_all_sensors": "Activer tous les capteurs disponibles (sinon, les capteurs principaux tels que le PV, le réseau, la batterie et la consommation sont activés)"
+          "name_prefix": "Préfixe de nom (optionnel)"
         }
       }
     }

@@ -126,7 +126,6 @@ class SOLARWATTItem:
     editable: bool
     label: Optional[str] = None
     category: Optional[str] = None
-    group_names: Optional[list[str]] = None
 
 
 def parse_state(state: Any, pattern: str | None = None, oh_type: str | None = None) -> ParsedState:
@@ -618,6 +617,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.entry = entry
         self.client = client
         self.things: dict[str, dict[str, Any]] = {}
+        self.item_to_thing_uid: dict[str, str] = {}
         self.multi_instance_device_types: set[str] = set()
         self._discovery_callbacks: set[Callable[[], None]] = set()
 
@@ -682,7 +682,6 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                 editable=bool(it.get("editable")),
                 label=it.get("label"),
                 category=it.get("category"),
-                group_names=it.get("groupNames"),
             )
 
         out_all: dict[str, SOLARWATTItem] = {}
@@ -702,8 +701,18 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             return
 
         out: dict[str, dict[str, Any]] = {}
+        item_to_thing_uid: dict[str, str] = {}
         for idx, thing in enumerate(things or []):
             uid = thing.get("UID") or thing.get("uid") or f"unknown_{idx}"
             out[uid] = thing
+            for channel in thing.get("channels") or []:
+                linked_items = channel.get("linkedItems") if isinstance(channel, dict) else None
+                if not isinstance(linked_items, list):
+                    continue
+                for linked_item in linked_items:
+                    if not linked_item or linked_item in item_to_thing_uid:
+                        continue
+                    item_to_thing_uid[str(linked_item)] = uid
         self.things = out
+        self.item_to_thing_uid = item_to_thing_uid
         self.async_update_listeners()

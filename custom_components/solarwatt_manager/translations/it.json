@@ -24,9 +24,12 @@
           "password": "Password",
           "scan_interval": "Intervallo di aggiornamento (secondi)",
           "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
-          "name_prefix": "Prefisso nome (opzionale)",
-          "enable_all_sensors": "Abilita tutti i sensori disponibili (altrimenti vengono attivati i sensori principali come PV, rete, batteria e consumo)"
+          "name_prefix": "Prefisso nome (opzionale)"
         }
+      },
+      "devices": {
+        "title": "Seleziona dispositivi",
+        "description": "Seleziona con le caselle i dispositivi da creare. KiwiGrid e Battery sono attivi per impostazione predefinita."
       }
     }
   },
@@ -41,8 +44,7 @@
         "data": {
           "scan_interval": "Intervallo di aggiornamento (secondi)",
           "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
-          "name_prefix": "Prefisso nome (opzionale)",
-          "enable_all_sensors": "Abilita tutti i sensori disponibili (altrimenti vengono attivati i sensori principali come PV, rete, batteria e consumo)"
+          "name_prefix": "Prefisso nome (opzionale)"
         }
       }
     }

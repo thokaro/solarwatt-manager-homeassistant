@@ -5,16 +5,16 @@ from collections.abc import Mapping
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
-    CONF_ENABLE_ALL_SENSORS,
-    DEFAULT_ENABLE_ALL_SENSORS,
     DOMAIN,
-    OPT_ENABLED_SENSOR_IDS_BEFORE_ALL,
     SOLARWATTConfigEntry,
+    build_thing_device_identifier,
+    get_selected_thing_uids,
 )
-from .naming import clean_item_key, is_enabled_by_default, normalized_item_name_variants
+from .naming import clean_item_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,84 +24,12 @@ def build_item_sensor_unique_id(entry_id: str, item_name: str) -> str:
     return f"{entry_id}_{clean_item_key(item_name or '')}"
 
 
-def build_legacy_item_sensor_unique_ids(entry_id: str, item_name: str) -> set[str]:
-    """Return all legacy normalized unique_id variants used before the raw-key migration."""
-    return {
-        f"{entry_id}_{normalized_name}"
-        for normalized_name in normalized_item_name_variants(item_name or "")
-    }
-
-
-def is_item_sensor_enabled_by_default(
-    item_name: str, enable_all: bool = False
-) -> bool:
-    """Return whether an item sensor should be enabled by default."""
-    return enable_all or is_enabled_by_default(item_name)
-
-
-def migrate_item_sensor_unique_ids(
-    hass: HomeAssistant,
-    entry: SOLARWATTConfigEntry,
-    items: Mapping[str, Any] | None,
-) -> None:
-    """Migrate item sensor unique IDs from normalized names to raw item names."""
-    migration_map: dict[str, str] = {}
-    for item_name in _item_sensor_names(items):
-        new_unique_id = build_item_sensor_unique_id(entry.entry_id, item_name)
-        for old_unique_id in build_legacy_item_sensor_unique_ids(entry.entry_id, item_name):
-            if old_unique_id != new_unique_id:
-                migration_map[old_unique_id] = new_unique_id
-
-    if not migration_map:
-        return
-
-    ent_reg, entries = _item_sensor_entries(hass, entry)
-    used_unique_ids = {registry_entry.unique_id for registry_entry in entries}
-
-    migrated = 0
-    skipped = 0
-    for registry_entry in entries:
-        target_unique_id = migration_map.get(registry_entry.unique_id)
-        if not target_unique_id:
-            continue
-        if (
-            target_unique_id in used_unique_ids
-            and target_unique_id != registry_entry.unique_id
-        ):
-            skipped += 1
-            _LOGGER.warning(
-                "Skipping unique_id migration for %s due to collision: %s",
-                registry_entry.entity_id,
-                target_unique_id,
-            )
-            continue
-
-        ent_reg.async_update_entity(
-            registry_entry.entity_id,
-            new_unique_id=target_unique_id,
-        )
-        used_unique_ids.discard(registry_entry.unique_id)
-        used_unique_ids.add(target_unique_id)
-        migrated += 1
-
-    if migrated or skipped:
-        _LOGGER.info(
-            "Unique ID migration finished for entry %s: migrated=%s skipped=%s",
-            entry.entry_id,
-            migrated,
-            skipped,
-        )
-
-
-def enable_all_item_sensor_entities(
+def enable_item_sensor_entities(
     hass: HomeAssistant,
     entry: SOLARWATTConfigEntry,
     items: Mapping[str, Any] | None,
 ) -> None:
     """Enable item sensor entities previously disabled by the integration."""
-    if not entry.options.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS):
-        return
-
     expected_unique_ids = {
         build_item_sensor_unique_id(entry.entry_id, item_name)
         for item_name in _item_sensor_names(items)
@@ -128,62 +56,186 @@ def enable_all_item_sensor_entities(
         )
 
 
-def sync_enable_all_item_sensor_entities(
+def sync_selected_thing_entities(
     hass: HomeAssistant,
     entry: SOLARWATTConfigEntry,
-    data: dict[str, Any],
+    items: Mapping[str, Any] | None,
+    item_to_thing_uid: Mapping[str, str] | None,
+    things: Mapping[str, Any] | None,
+    options: Mapping[str, Any] | None = None,
 ) -> None:
-    """Persist and apply the enable-all-sensors transition."""
-    old_enable_all = entry.options.get(
-        CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS
-    )
-    new_enable_all = data.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS)
-    keep_enabled_ids = set(entry.options.get(OPT_ENABLED_SENSOR_IDS_BEFORE_ALL, []))
+    """Enable selected devices and disable deselected ones in the entity registry."""
+    selected_thing_uids = get_selected_thing_uids(options if options is not None else entry.options)
+    if selected_thing_uids is None:
+        enable_item_sensor_entities(hass, entry, items)
+        _enable_selected_thing_entities(
+            hass,
+            entry,
+            thing_uids=set((things or {}).keys()),
+        )
+        _restore_selected_thing_devices(hass, entry, things)
+        return
 
-    if new_enable_all and not old_enable_all:
-        data[OPT_ENABLED_SENSOR_IDS_BEFORE_ALL] = sorted(
-            _enabled_item_sensor_unique_ids(hass, entry)
+    expected_unique_ids = _selected_entity_unique_ids(
+        entry,
+        items,
+        item_to_thing_uid,
+        selected_thing_uids,
+        things,
+    )
+    if not expected_unique_ids:
+        _disable_unselected_entities(hass, entry, set())
+        _remove_deselected_thing_devices(
+            hass,
+            entry,
+            selected_thing_uids,
+            things,
         )
         return
 
-    if not new_enable_all and old_enable_all:
-        _disable_auto_enabled_item_sensor_entities(hass, entry, keep_enabled_ids)
-        data[OPT_ENABLED_SENSOR_IDS_BEFORE_ALL] = []
-        return
+    ent_reg = er.async_get(hass)
+    entries = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+    for registry_entry in entries:
+        if registry_entry.domain not in {"sensor", "button"}:
+            continue
+        if registry_entry.platform != DOMAIN or not registry_entry.unique_id:
+            continue
 
-    data[OPT_ENABLED_SENSOR_IDS_BEFORE_ALL] = (
-        sorted(keep_enabled_ids) if new_enable_all else []
+        if registry_entry.unique_id in expected_unique_ids:
+            if registry_entry.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
+                ent_reg.async_update_entity(registry_entry.entity_id, disabled_by=None)
+            continue
+
+        if registry_entry.disabled_by == er.RegistryEntryDisabler.USER:
+            continue
+        if not _is_managed_entity_unique_id(entry, registry_entry.unique_id):
+            continue
+
+        ent_reg.async_update_entity(
+            registry_entry.entity_id,
+            disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+        )
+
+    _remove_deselected_thing_devices(
+        hass,
+        entry,
+        selected_thing_uids,
+        things,
     )
-
-
-def _enabled_item_sensor_unique_ids(
-    hass: HomeAssistant, entry: SOLARWATTConfigEntry
+def _selected_entity_unique_ids(
+    entry: SOLARWATTConfigEntry,
+    items: Mapping[str, Any] | None,
+    item_to_thing_uid: Mapping[str, str] | None,
+    selected_thing_uids: set[str],
+    things: Mapping[str, Any] | None,
 ) -> set[str]:
-    """Return item sensor unique IDs that are currently enabled."""
-    _, entries = _item_sensor_entries(hass, entry)
-    return {
-        registry_entry.unique_id
-        for registry_entry in entries
-        if registry_entry.disabled_by is None
-    }
+    """Return the expected active entity unique IDs for the selected devices."""
+    expected_unique_ids: set[str] = set()
+
+    for item_name, item in (items or {}).items():
+        if _is_switch_item(item):
+            continue
+        thing_uid = (item_to_thing_uid or {}).get(item_name)
+        if thing_uid and thing_uid not in selected_thing_uids:
+            continue
+        expected_unique_ids.add(build_item_sensor_unique_id(entry.entry_id, item_name))
+
+    for thing_uid in (things or {}).keys():
+        if thing_uid not in selected_thing_uids:
+            continue
+        expected_unique_ids.add(f"{entry.entry_id}_thing_{thing_uid}")
+        expected_unique_ids.add(f"{entry.entry_id}_thing_{thing_uid}_diagnostics_refresh")
+
+    return expected_unique_ids
 
 
-def _disable_auto_enabled_item_sensor_entities(
+def _enable_selected_thing_entities(
     hass: HomeAssistant,
     entry: SOLARWATTConfigEntry,
-    keep_enabled_ids: set[str],
+    thing_uids: set[str],
 ) -> None:
-    """Disable sensors that became active only because enable-all was enabled."""
-    ent_reg, entries = _item_sensor_entries(hass, entry)
-    for registry_entry in entries:
-        if registry_entry.unique_id in keep_enabled_ids:
+    """Enable thing sensor/button entities disabled by the integration."""
+    ent_reg = er.async_get(hass)
+    for registry_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if registry_entry.domain not in {"sensor", "button"}:
             continue
-        if _is_default_enabled_item_sensor(entry, registry_entry.unique_id):
+        if registry_entry.platform != DOMAIN or not registry_entry.unique_id:
             continue
-        if registry_entry.disabled_by in (
-            er.RegistryEntryDisabler.USER,
-            er.RegistryEntryDisabler.INTEGRATION,
+        if registry_entry.disabled_by != er.RegistryEntryDisabler.INTEGRATION:
+            continue
+        if not any(
+            registry_entry.unique_id == f"{entry.entry_id}_thing_{thing_uid}"
+            or registry_entry.unique_id == f"{entry.entry_id}_thing_{thing_uid}_diagnostics_refresh"
+            for thing_uid in thing_uids
         ):
+            continue
+        ent_reg.async_update_entity(registry_entry.entity_id, disabled_by=None)
+
+
+def _remove_deselected_thing_devices(
+    hass: HomeAssistant,
+    entry: SOLARWATTConfigEntry,
+    selected_thing_uids: set[str],
+    things: Mapping[str, Any] | None,
+) -> None:
+    """Remove this config entry from deselected thing devices."""
+    host = str(entry.data.get("host") or "").strip().lower()
+    if not host:
+        return
+
+    dev_reg = dr.async_get(hass)
+    for thing_uid in (things or {}).keys():
+        if thing_uid in selected_thing_uids:
+            continue
+        device = dev_reg.async_get_device(
+            identifiers={build_thing_device_identifier(host, thing_uid)}
+        )
+        if not device or entry.entry_id not in device.config_entries:
+            continue
+        dev_reg.async_update_device(
+            device_id=device.id,
+            remove_config_entry_id=entry.entry_id,
+        )
+
+
+def _restore_selected_thing_devices(
+    hass: HomeAssistant,
+    entry: SOLARWATTConfigEntry,
+    things: Mapping[str, Any] | None,
+) -> None:
+    """Reattach this config entry to selected thing devices if needed."""
+    host = str(entry.data.get("host") or "").strip().lower()
+    if not host:
+        return
+
+    dev_reg = dr.async_get(hass)
+    for thing_uid in (things or {}).keys():
+        device = dev_reg.async_get_device(
+            identifiers={build_thing_device_identifier(host, thing_uid)}
+        )
+        if not device or entry.entry_id in device.config_entries:
+            continue
+        dev_reg.async_update_device(
+            device_id=device.id,
+            add_config_entry_id=entry.entry_id,
+        )
+def _disable_unselected_entities(
+    hass: HomeAssistant,
+    entry: SOLARWATTConfigEntry,
+    expected_unique_ids: set[str],
+) -> None:
+    """Disable managed entities not part of the selected thing set."""
+    ent_reg = er.async_get(hass)
+    for registry_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if registry_entry.domain not in {"sensor", "button"}:
+            continue
+        if registry_entry.platform != DOMAIN or not registry_entry.unique_id:
+            continue
+        if registry_entry.unique_id in expected_unique_ids:
+            continue
+        if registry_entry.disabled_by == er.RegistryEntryDisabler.USER:
+            continue
+        if not _is_managed_entity_unique_id(entry, registry_entry.unique_id):
             continue
 
         ent_reg.async_update_entity(
@@ -192,14 +244,10 @@ def _disable_auto_enabled_item_sensor_entities(
         )
 
 
-def _is_default_enabled_item_sensor(
-    entry: SOLARWATTConfigEntry, unique_id: str
-) -> bool:
-    """Return whether the registry unique_id belongs to a default-enabled item sensor."""
+def _is_managed_entity_unique_id(entry: SOLARWATTConfigEntry, unique_id: str) -> bool:
+    """Return whether the unique_id belongs to a managed SOLARWATT entity."""
     prefix = f"{entry.entry_id}_"
-    if not unique_id.startswith(prefix):
-        return False
-    return is_item_sensor_enabled_by_default(unique_id.removeprefix(prefix))
+    return unique_id.startswith(prefix)
 
 
 def _item_sensor_entries(

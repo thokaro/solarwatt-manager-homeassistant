@@ -9,23 +9,20 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    CONF_ENABLE_ALL_SENSORS,
     CONF_NAME_PREFIX,
     CONF_ENERGY_DELTA_KWH,
-    DEFAULT_ENABLE_ALL_SENSORS,
     DEFAULT_ENERGY_DELTA_KWH,
     SOLARWATTConfigEntry,
     build_device_info,
+    build_thing_device_info,
+    get_selected_thing_uids,
+    get_thing_display_name,
 )
 from .coordinator import guess_ha_meta
 from .entity_helpers import (
     build_item_sensor_unique_id,
-    is_item_sensor_enabled_by_default,
 )
 from .naming import format_display_name, normalize_item_name
-
-# Enable only a small set of "core" sensors by default. Serial numbers in the
-# item name can differ between installations, so we match with regex.
 
 
 async def async_setup_entry(
@@ -34,14 +31,21 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
 
     prefix = (entry.options.get(CONF_NAME_PREFIX) or "").strip()
-    enable_all = entry.options.get(CONF_ENABLE_ALL_SENSORS, DEFAULT_ENABLE_ALL_SENSORS)
     energy_delta_kwh = float(entry.options.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH))
 
     entities = []
     added_item_names: set[str] = set()
     added_thing_uids: set[str] = set()
+    selected_thing_uids = get_selected_thing_uids(entry.options)
     for item_name, it in coordinator.data.items():
         if (it.oh_type or "").startswith("Switch"):
+            continue
+        thing_uid = (getattr(coordinator, "item_to_thing_uid", {}) or {}).get(item_name)
+        if (
+            thing_uid
+            and selected_thing_uids is not None
+            and thing_uid not in selected_thing_uids
+        ):
             continue
         added_item_names.add(item_name)
         entities.append(
@@ -51,12 +55,13 @@ async def async_setup_entry(
                 item_name,
                 device_name=entry.title,
                 prefix=prefix,
-                enable_all=enable_all,
                 energy_delta_kwh=energy_delta_kwh,
             )
         )
 
     for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
+        if selected_thing_uids is not None and thing_uid not in selected_thing_uids:
+            continue
         added_thing_uids.add(thing_uid)
         entities.append(
             SOLARWATTThingSensor(
@@ -64,7 +69,6 @@ async def async_setup_entry(
                 entry.entry_id,
                 thing_uid,
                 thing,
-                device_name=entry.title,
             )
         )
 
@@ -76,6 +80,13 @@ async def async_setup_entry(
         for item_name, it in (coordinator.data or {}).items():
             if (it.oh_type or "").startswith("Switch"):
                 continue
+            thing_uid = (getattr(coordinator, "item_to_thing_uid", {}) or {}).get(item_name)
+            if (
+                thing_uid
+                and selected_thing_uids is not None
+                and thing_uid not in selected_thing_uids
+            ):
+                continue
             if item_name in added_item_names:
                 continue
             added_item_names.add(item_name)
@@ -86,12 +97,13 @@ async def async_setup_entry(
                     item_name,
                     device_name=entry.title,
                     prefix=prefix,
-                    enable_all=enable_all,
                     energy_delta_kwh=energy_delta_kwh,
                 )
             )
 
         for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
+            if selected_thing_uids is not None and thing_uid not in selected_thing_uids:
+                continue
             if thing_uid in added_thing_uids:
                 continue
             added_thing_uids.add(thing_uid)
@@ -101,7 +113,6 @@ async def async_setup_entry(
                     entry.entry_id,
                     thing_uid,
                     thing,
-                    device_name=entry.title,
                 )
             )
         if new_entities:
@@ -120,7 +131,6 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         item_name: str,
         device_name: str = "SOLARWATT Manager",
         prefix: str = "",
-        enable_all: bool = False,
         energy_delta_kwh: float = DEFAULT_ENERGY_DELTA_KWH,
     ):
         super().__init__(coordinator)
@@ -132,13 +142,16 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._prefix = prefix
 
         self._attr_unique_id = build_item_sensor_unique_id(entry_id, item_name)
-        self._attr_entity_registry_enabled_default = (
-            is_item_sensor_enabled_by_default(self._item_name, enable_all)
-        )
+        self._attr_entity_registry_enabled_default = True
 
-        # Group all sensors under one device for a cleaner HA UI.
         host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id
-        self._attr_device_info = build_device_info(host, device_name)
+        thing_uid = (getattr(self.coordinator, "item_to_thing_uid", {}) or {}).get(item_name)
+        thing = (getattr(self.coordinator, "things", {}) or {}).get(thing_uid) if thing_uid else None
+        self._attr_device_info = (
+            build_thing_device_info(host, thing)
+            if isinstance(thing, dict)
+            else build_device_info(host, device_name)
+        )
         item = (self.coordinator.data or {}).get(item_name)
 
         self._attr_name = self._build_display_name()
@@ -239,17 +252,16 @@ class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):
         entry_id: str,
         thing_uid: str,
         thing: dict,
-        device_name: str = "SOLARWATT Manager",
     ):
         super().__init__(coordinator)
         self._thing_uid = thing_uid
         self._attr_unique_id = f"{entry_id}_thing_{thing_uid}"
 
-        label = (thing.get("label") or thing_uid or "").strip()
+        label = get_thing_display_name(thing, thing_uid)
         self._attr_name = label or thing_uid
 
         host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id
-        self._attr_device_info = build_device_info(host, device_name)
+        self._attr_device_info = build_thing_device_info(host, thing)
 
     def _thing(self) -> dict | None:
         return (getattr(self.coordinator, "things", {}) or {}).get(self._thing_uid)
