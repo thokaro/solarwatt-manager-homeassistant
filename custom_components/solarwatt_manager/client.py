@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from http.cookies import CookieError, SimpleCookie
 import logging
 import time
 from typing import Any
@@ -51,7 +50,6 @@ class SOLARWATTClient:
         self._session = ClientSession(cookie_jar=CookieJar(unsafe=True))
         self.session_ttl = 900
         self._last_login = 0.0
-        self._manual_cookies: dict[str, str] = {}
         self._log = logging.getLogger(__name__)
 
     def _refresh_urls(self) -> None:
@@ -97,61 +95,17 @@ class SOLARWATTClient:
         # Newer managers can redirect to or expose HTTPS with a self-signed cert.
         return {"ssl": False} if url.startswith("https://") else {}
 
-    def _auth_headers(self) -> dict[str, str]:
-        """Return headers that ensure SOLARWATT accepts our session."""
-        cookie_header = self._cookie_header()
-        if cookie_header:
-            return {"Cookie": cookie_header}
-        return {}
-
-    def _cookie_header(self) -> str | None:
-        """Build a cookie header from jar cookies and manual fallbacks."""
-        cookies: dict[str, str] = dict(self._manual_cookies)
-
+    def _has_session_cookies(self) -> bool:
         try:
             jar_cookies = self._session.cookie_jar.filter_cookies(self.base)
-            for morsel in jar_cookies.values():
-                if morsel.value:
-                    cookies[morsel.key] = morsel.value
+            return any(morsel.value for morsel in jar_cookies.values())
         except Exception:
-            pass
-
-        if not cookies:
-            return None
-        return "; ".join(f"{name}={value}" for name, value in cookies.items())
-
-    def _store_response_cookies(self, resp) -> None:
-        """Persist cookies from the response as fallback for strict devices."""
-        try:
-            for name, morsel in resp.cookies.items():
-                if morsel.value:
-                    self._manual_cookies[name] = morsel.value
-        except Exception:
-            pass
-
-        try:
-            set_cookie_headers = (
-                resp.headers.getall("Set-Cookie", [])
-                if hasattr(resp.headers, "getall")
-                else []
-            )
-        except Exception:
-            set_cookie_headers = []
-
-        for header in set_cookie_headers:
-            parser: SimpleCookie[str] = SimpleCookie()
-            try:
-                parser.load(header)
-            except CookieError:
-                continue
-            for name, morsel in parser.items():
-                if morsel.value:
-                    self._manual_cookies[name] = morsel.value
+            return False
 
     def _cookie_debug(self) -> str:
         try:
-            cookie_header = self._cookie_header()
-            names = [part.split("=", 1)[0] for part in (cookie_header or "").split("; ") if "=" in part]
+            jar_cookies = self._session.cookie_jar.filter_cookies(self.base)
+            names = [morsel.key for morsel in jar_cookies.values() if morsel.value]
             return ",".join(names) if names else "<none>"
         except Exception:
             return "<unknown>"
@@ -188,7 +142,6 @@ class SOLARWATTClient:
                 resp_status: int | None = None
                 resp_headers: dict[str, str] = {}
                 resp_ct: str = ""
-                self._manual_cookies.clear()
 
                 payload = {
                     "username": username,
@@ -209,7 +162,6 @@ class SOLARWATTClient:
                         resp_status = resp.status
                         resp_headers = dict(resp.headers)
                         resp_ct = (resp.headers.get("Content-Type") or "").lower()
-                        self._store_response_cookies(resp)
 
                         redirected_base = self._base_from_url(resp.url)
                         if redirected_base:
@@ -239,18 +191,16 @@ class SOLARWATTClient:
                                 "GET",
                                 follow_url,
                                 timeout=5,
-                                headers=self._auth_headers(),
                             ) as redirect_resp:
-                                self._store_response_cookies(redirect_resp)
                                 redirected_base = self._base_from_url(redirect_resp.url)
                                 if redirected_base:
                                     self._set_base(redirected_base)
                                 redirect_snippet = await self._read_snippet(redirect_resp)
 
-                    if not self._cookie_header() and self._looks_like_login_page(redirect_snippet):
+                    if not self._has_session_cookies() and self._looks_like_login_page(redirect_snippet):
                         raise SolarwattAuthError("Login returned to sign-in page without session cookie")
 
-                    if not self._cookie_header():
+                    if not self._has_session_cookies():
                         self._log.debug(
                             "Login response delivered no reusable cookies. "
                             "Host=%s Base=%s Status=%s Content-Type=%s Username=%s",
@@ -358,7 +308,6 @@ class SOLARWATTClient:
                 "GET",
                 url,
                 timeout=5,
-                headers=self._auth_headers(),
             ) as resp:
                 redirected_base = self._base_from_url(resp.url)
                 if redirected_base:

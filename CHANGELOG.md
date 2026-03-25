@@ -1,7 +1,5 @@
 # Changelog
 
-## Unreleased
-
 ## 2026.3.5
 
 ### Changes
