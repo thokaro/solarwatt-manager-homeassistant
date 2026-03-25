@@ -4,7 +4,7 @@
 
 ### Changes
 - Login/connection fix: setup now validates the connection directly via login + `/rest/items` instead of failing early on a separate probe request that newer SOLARWATT firmware can answer with `401` even when login works.
-- Client compatibility: login handling is now more tolerant of current SOLARWATT manager behavior, including cookie persistence, redirects, and managers that expose the local UI/API via HTTP or HTTPS.
+- Client compatibility: login handling is now more tolerant of current SOLARWATT manager behavior, including redirects and managers that expose the local UI/API via HTTP or HTTPS.
 - Registry refactor: split legacy upgrade migrations and ongoing registry cleanup into separate modules, so non-legacy cleanup is no longer grouped under `legacy_migrations.py`.
 - Coordinator refactor: moved API client, state parsing, and sensor metadata heuristics into dedicated modules so `coordinator.py` only handles update orchestration.
 

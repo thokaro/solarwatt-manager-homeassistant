@@ -16,10 +16,11 @@ Note for user with **vision** components: If you want to control settings like w
 
 ## ✨ Features
 
-* Local polling of Solarwatt Manager data
+* Local polling of SOLARWATT Manager data
 * Energy Dashboard ready (correct `device_class` & `state_class`)
 * Automatic unit normalization (Wh → kWh)
 * Entity names are normalized and installation-specific IDs are removed.
+* Entities are assigned to their corresponding SOLARWATT devices
 * Human‑friendly display names (Title Case; BMS/SoC/SoH preserved)
 * Diagnostics data from /rest/things with devices and their "properties" exposed as diagnostic entities
 * Stable `unique_id`s (safe for long‑term statistics)
