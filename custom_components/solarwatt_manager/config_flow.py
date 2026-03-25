@@ -25,10 +25,11 @@ from .const import (
     MAX_SCAN_INTERVAL,
     MIN_ENERGY_DELTA_KWH,
     MIN_SCAN_INTERVAL,
+    get_selected_thing_uids,
     get_thing_display_name,
     get_thing_selection_detail,
 )
-from .coordinator import (
+from .client import (
     SOLARWATTClient,
     SolarwattAuthError,
     SolarwattConnectionError,
@@ -332,7 +333,6 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 password=password,
             )
             try:
-                await client.async_probe_manager()
                 await client.async_validate_connection()
             finally:
                 await client.async_close()
@@ -565,9 +565,11 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
 
         self._device_fields = {}
         available_things = self._available_things()
-        selected_things = self._selected_thing_uids(values)
-        if CONF_ENABLED_THINGS not in values:
+        selected_things = get_selected_thing_uids(values)
+        if selected_things is None and CONF_ENABLED_THINGS not in values:
             selected_things = {uid for uid, _ in available_things}
+        elif selected_things is None:
+            selected_things = set()
 
         for uid, thing in available_things:
             field_name = SOLARWATTItemsConfigFlow._thing_checkbox_label(uid, thing, self._device_fields)
@@ -596,19 +598,3 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         return SOLARWATTItemsConfigFlow._sorted_things(
             SOLARWATTItemsConfigFlow._selectable_things(things)
         )
-
-    @staticmethod
-    def _selected_thing_uids(values: Mapping[str, Any]) -> set[str]:
-        """Return the selected thing UIDs from options."""
-        raw_values = values.get(CONF_ENABLED_THINGS)
-        if isinstance(raw_values, str):
-            values_list = [raw_values]
-        elif isinstance(raw_values, (list, tuple, set)):
-            values_list = raw_values
-        else:
-            values_list = []
-        return {
-            value
-            for item in values_list
-            if (value := str(item).strip())
-        }

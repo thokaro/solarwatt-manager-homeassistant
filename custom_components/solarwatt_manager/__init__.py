@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
 
+from .client import SOLARWATTClient
 from .const import SOLARWATTConfigEntry
-from .coordinator import SOLARWATTCoordinator, SOLARWATTClient
+from .coordinator import SOLARWATTCoordinator
 from .entity_helpers import sync_selected_thing_entities
-from .legacy_migrations import (
-    cleanup_empty_channel_thing_diagnostics,
+from .registry_cleanup import cleanup_empty_channel_thing_diagnostics
+from .registry_migrations import (
     cleanup_legacy_device_registry_entries,
     migrate_item_entities_to_thing_devices,
     migrate_item_sensor_unique_ids,

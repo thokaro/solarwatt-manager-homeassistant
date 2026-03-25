@@ -147,10 +147,14 @@ This keeps entities readable without breaking existing statistics.
 │     ├─ button.py           # diagnostics refresh button
 │     ├─ config_flow.py      # UI config flow
 │     ├─ const.py            # constants & defaults
-│     ├─ coordinator.py      # polling + data parsing
+│     ├─ client.py           # HTTP/session client for the manager API
+│     ├─ coordinator.py      # polling orchestration + thing discovery
 │     ├─ diagnostics.py      # diagnostics output
 │     ├─ entity_helpers.py   # current entity/device helper utilities
-│     ├─ legacy_migrations.py # upgrade cleanup for older entity/device layouts
+│     ├─ registry_cleanup.py  # ongoing registry cleanup for current layouts
+│     ├─ registry_migrations.py # upgrade paths for older entity/device layouts
+│     ├─ sensor_meta.py      # Home Assistant sensor metadata heuristics
+│     ├─ state_parser.py     # item state parsing + normalization
 │     ├─ manifest.json       # integration metadata
 │     ├─ naming.py           # name normalization/formatting
 │     ├─ sensor.py           # entity definitions

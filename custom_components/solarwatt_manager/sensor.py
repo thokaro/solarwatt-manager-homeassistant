@@ -18,11 +18,11 @@ from .const import (
     get_selected_thing_uids,
     get_thing_display_name,
 )
-from .coordinator import guess_ha_meta
 from .entity_helpers import (
     build_item_sensor_unique_id,
 )
 from .naming import format_display_name, normalize_item_name
+from .sensor_meta import guess_ha_meta
 
 
 async def async_setup_entry(
@@ -153,11 +153,19 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
             else build_device_info(host, device_name)
         )
         item = (self.coordinator.data or {}).get(item_name)
+        channel_metadata = (
+            getattr(self.coordinator, "item_to_channel_metadata", {}) or {}
+        ).get(item_name)
 
         self._attr_name = self._build_display_name()
 
         if item:
-            meta = guess_ha_meta(getattr(item, "oh_type", None), getattr(item, "parsed", None), item_name)
+            meta = guess_ha_meta(
+                getattr(item, "oh_type", None),
+                getattr(item, "parsed", None),
+                item_name,
+                channel_metadata,
+            )
             self._attr_device_class = meta.get("device_class")
             self._attr_state_class = meta.get("state_class")
             self._attr_native_unit_of_measurement = meta.get("suggested_unit")

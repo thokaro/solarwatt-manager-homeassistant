@@ -1,616 +1,22 @@
 from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass
 from datetime import timedelta
-import re
-import time
-from typing import Any, Callable, Optional
-import unicodedata
-
 import logging
+from typing import Any, Callable
 
-from aiohttp import ClientError, ClientResponseError, CookieJar, ClientSession
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import (
-    PERCENTAGE,
-    UnitOfElectricCurrent,
-    UnitOfElectricPotential,
-    UnitOfEnergy,
-    UnitOfFrequency,
-    UnitOfPower,
-    UnitOfTemperature,
-    UnitOfTime,
-)
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, MIN_SCAN_INTERVAL, MAX_SCAN_INTERVAL
+from .client import SOLARWATTClient, SolarwattError
+from .const import (
+    CONF_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
+)
 from .naming import detect_multi_instance_device_types
+from .state_parser import SOLARWATTItem, parse_state
 
-
-_NUM_RE = re.compile(r"^\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([^\d\s].*)?\s*$")
-_PATTERN_UNIT_RE = re.compile(r"%[-+0-9.]*[a-zA-Z]")
-_UNIT_ALIASES = {
-    "A·h": "Ah",
-    "kW·h": "kWh",
-    "W·h": "Wh",
-    "Ohm": "Ω",
-    "mOhm": "mΩ",
-}
-_UNAVAILABLE_STATES = {"NULL", "UNDEF", "UNINITIALIZED"}
-
-
-def _extract_unit_from_pattern(pattern: str | None) -> str | None:
-    if not pattern:
-        return None
-    if "%unit%" in pattern:
-        return None
-    cleaned = _PATTERN_UNIT_RE.sub("", pattern).strip()
-    if not cleaned:
-        return None
-    parts = cleaned.split()
-    return parts[-1] if parts else None
-
-
-def _normalize_unit(unit: str | None) -> str | None:
-    if not unit:
-        return None
-    unit = unicodedata.normalize("NFKC", unit).strip()
-    unit = unit.replace("·", "")
-    unit = unit.replace("µ", "u").replace("μ", "u")
-    unit = unit.replace("\\u00b0", "°")
-    unit = _UNIT_ALIASES.get(unit, unit)
-    return unit or None
-
-
-def _convert_milli_unit(value: float, unit: str | None) -> tuple[float, str | None]:
-    if unit == "mA":
-        return value / 1000.0, "A"
-    if unit == "mV":
-        return value / 1000.0, "V"
-    if unit == "mW":
-        return value / 1000.0, "W"
-    if unit == "mWh":
-        return value / 1000.0, "Wh"
-    if unit == "mHz":
-        return value / 1000.0, "Hz"
-    if unit == "mΩ":
-        return value / 1000.0, "Ω"
-    if unit == "uA":
-        return value / 1_000_000.0, "A"
-    if unit == "uV":
-        return value / 1_000_000.0, "V"
-    if unit == "uW":
-        return value / 1_000_000.0, "W"
-    if unit == "uWh":
-        return value / 1_000_000.0, "Wh"
-    if unit == "uHz":
-        return value / 1_000_000.0, "Hz"
-    return value, unit
-
-
-class SolarwattError(UpdateFailed):
-    """Base error for SOLARWATT client failures."""
-
-
-class SolarwattAuthError(SolarwattError):
-    """Authentication failed."""
-
-
-class SolarwattConnectionError(SolarwattError):
-    """Connection or transport error."""
-
-
-class SolarwattNotManagerError(SolarwattError):
-    """Host does not look like a SOLARWATT Manager."""
-
-
-class SolarwattProtocolError(SolarwattError):
-    """Unexpected response format or protocol mismatch."""
-
-
-@dataclass
-class ParsedState:
-    value: Any
-    unit: Optional[str] = None
-    timestamp_ms: Optional[int] = None
-
-
-@dataclass
-class SOLARWATTItem:
-    name: str
-    raw: dict[str, Any]
-    parsed: ParsedState
-    oh_type: str | None
-    editable: bool
-    label: Optional[str] = None
-    category: Optional[str] = None
-
-
-def parse_state(state: Any, pattern: str | None = None, oh_type: str | None = None) -> ParsedState:
-    if state is None:
-        return ParsedState(value=None)
-
-    s = unicodedata.normalize("NFKC", str(state).strip())
-
-    if s in _UNAVAILABLE_STATES:
-        return ParsedState(value=None)
-
-    # Only coerce ON/OFF to bool for switch-like items. For String items
-    # such as battery_mode, keep the textual state.
-    if s in ("ON", "OFF") and (oh_type or "").startswith("Switch"):
-        return ParsedState(value=(s == "ON"))
-
-    # timestamp|value unit
-    if "|" in s:
-        left, right = s.split("|", 1)
-        left = left.strip()
-        right = right.strip()
-        ts = None
-        if left.isdigit():
-            try:
-                ts = int(left)
-            except ValueError:
-                ts = None
-        ps = parse_state(right, pattern, oh_type)
-        ps.timestamp_ms = ts
-        return ps
-
-    # numeric + optional unit
-    m = _NUM_RE.match(s)
-    if m:
-        num_s = m.group(1)
-        unit = (m.group(2) or "").strip() or None
-        if unit is None:
-            unit = _extract_unit_from_pattern(pattern)
-        unit = _normalize_unit(unit)
-        try:
-            val = float(num_s)
-
-            # ---- Einheiten normalisieren ----
-            # SOLARWATT/OpenHAB liefert teils Ws, Wh, kWh, kW, °C, etc.
-            if unit:
-                val, unit = _convert_milli_unit(val, unit)
-
-            # Ws -> Wh (für HA besser)
-            if unit == "Ws":
-                val = val / 3600.0
-                unit = "Wh"
-
-            # Wh -> kWh (Energy Dashboard & Langzeitwerte)
-            # (nur Umrechnung, keine "int"-Abschneidung)
-            if unit == "Wh":
-                val = val / 1000.0
-                unit = "kWh"
-
-            # Rundung je nach Einheit
-            if unit == "kWh":
-                val = round(val, 3)
-            elif unit in ("kW",):
-                val = round(val, 3)
-            elif unit in ("W", "V", "A", "Hz", "%"):
-                # meist ganze Zahlen, aber nicht erzwingen
-                val = round(val, 2)
-            elif unit in ("°C", "C"):
-                unit = "°C"
-                val = round(val, 2)
-
-            if isinstance(val, float) and val.is_integer():
-                val = int(val)
-
-            return ParsedState(value=val, unit=unit)
-        except ValueError:
-            pass
-
-    return ParsedState(value=s)
-
-
-def guess_ha_meta(oh_type: str | None, parsed: ParsedState, item_name: str | None = None) -> dict[str, Any]:
-    """Heuristisches Mapping OpenHAB/SOLARWATT -> Home Assistant Sensor-Metadaten.
-
-    Ziel:
-    - sinnvolle device_class/state_class
-    - HA-konforme Einheiten (native_unit_of_measurement)
-    - optional Icons für bessere Übersicht
-    """
-    unit = parsed.unit if parsed else None
-    name_l = (item_name or "").lower()
-    duration_name = name_l.endswith("seconds") or name_l.endswith("sec")
-    temperature_name = "temperature" in name_l or "temperatur" in name_l
-
-    # Map string units to HA constants where possible (helps Energy Dashboard & statistics)
-    unit_map: dict[str, Any] = {
-        "W": UnitOfPower.WATT,
-        "kW": UnitOfPower.KILO_WATT,
-        "Wh": UnitOfEnergy.WATT_HOUR,
-        "kWh": UnitOfEnergy.KILO_WATT_HOUR,
-        "V": UnitOfElectricPotential.VOLT,
-        "A": UnitOfElectricCurrent.AMPERE,
-        "Hz": UnitOfFrequency.HERTZ,
-        "°C": UnitOfTemperature.CELSIUS,
-        "%": PERCENTAGE,
-        "s": UnitOfTime.SECONDS,
-        "sec": UnitOfTime.SECONDS,
-    }
-
-    meta: dict[str, Any] = {"suggested_unit": unit_map.get(unit, unit)}
-
-    if duration_name:
-        meta.update({"device_class": SensorDeviceClass.DURATION, "state_class": SensorStateClass.MEASUREMENT})
-        if unit is None:
-            meta["suggested_unit"] = UnitOfTime.SECONDS
-    elif temperature_name:
-        meta.update({"device_class": SensorDeviceClass.TEMPERATURE, "state_class": SensorStateClass.MEASUREMENT})
-        if unit is None:
-            meta["suggested_unit"] = UnitOfTemperature.CELSIUS
-    else:
-        # --- Fallbacks rein aus Einheit/Name ---
-        if unit in ("W", "kW"):
-            meta.update({"device_class": SensorDeviceClass.POWER, "state_class": SensorStateClass.MEASUREMENT})
-        elif unit in ("kWh", "Wh"):
-            # Wh is normalized to kWh in parse_state, but keep this safe.
-            meta.update({"device_class": SensorDeviceClass.ENERGY, "state_class": SensorStateClass.TOTAL_INCREASING})
-        elif unit in ("V",):
-            meta.update({"device_class": SensorDeviceClass.VOLTAGE, "state_class": SensorStateClass.MEASUREMENT})
-        elif unit in ("A",):
-            meta.update({"device_class": SensorDeviceClass.CURRENT, "state_class": SensorStateClass.MEASUREMENT})
-        elif unit in ("Hz",):
-            meta.update({"device_class": SensorDeviceClass.FREQUENCY, "state_class": SensorStateClass.MEASUREMENT})
-        elif unit in ("°C",):
-            meta.update({"device_class": SensorDeviceClass.TEMPERATURE, "state_class": SensorStateClass.MEASUREMENT})
-        elif unit == "%":
-            meta.update({"state_class": SensorStateClass.MEASUREMENT})
-            # SOC/Prozentwerte werden oft als Battery angezeigt
-            if any(k in name_l for k in ("soc", "stateofcharge", "battery", "akku")):
-                meta["device_class"] = SensorDeviceClass.BATTERY
-        elif unit in ("Ω",):
-            meta.update({"state_class": SensorStateClass.MEASUREMENT})
-
-    # Icons (nur Vorschläge)
-    if "icon" not in meta:
-        if any(k in name_l for k in ("pv", "solar", "generator")):
-            meta["icon"] = "mdi:solar-power"
-        elif any(k in name_l for k in ("grid", "netz")):
-            meta["icon"] = "mdi:transmission-tower"
-        elif any(k in name_l for k in ("battery", "akku")):
-            meta["icon"] = "mdi:battery"
-        elif any(k in name_l for k in ("house", "home", "load", "verbrauch")):
-            meta["icon"] = "mdi:home-lightning-bolt"
-
-    # Wenn kein OpenHAB-Typ da ist, bleiben wir bei den Fallbacks.
-    if not oh_type or duration_name:
-        return meta
-
-    if oh_type.startswith("Number:Power"):
-        meta["device_class"] = SensorDeviceClass.POWER
-        meta["state_class"] = SensorStateClass.MEASUREMENT
-        if unit is None:
-            meta["suggested_unit"] = UnitOfPower.WATT
-        return meta
-
-    if oh_type.startswith("Number:Energy"):
-        meta["device_class"] = SensorDeviceClass.ENERGY
-        meta["state_class"] = SensorStateClass.TOTAL_INCREASING
-        if unit is None:
-            meta["suggested_unit"] = UnitOfEnergy.KILO_WATT_HOUR
-        return meta
-
-    if oh_type.startswith("Number:Temperature"):
-        meta["device_class"] = SensorDeviceClass.TEMPERATURE
-        meta["state_class"] = SensorStateClass.MEASUREMENT
-        if unit is None:
-            meta["suggested_unit"] = UnitOfTemperature.CELSIUS
-        return meta
-
-    if oh_type.startswith("Number:Frequency"):
-        meta["device_class"] = SensorDeviceClass.FREQUENCY
-        meta["state_class"] = SensorStateClass.MEASUREMENT
-        if unit is None:
-            meta["suggested_unit"] = UnitOfFrequency.HERTZ
-        return meta
-
-    if oh_type.startswith("Number:ElectricCurrent"):
-        meta["device_class"] = SensorDeviceClass.CURRENT
-        meta["state_class"] = SensorStateClass.MEASUREMENT
-        if unit is None:
-            meta["suggested_unit"] = UnitOfElectricCurrent.AMPERE
-        return meta
-
-    if oh_type.startswith("Number:ElectricPotential"):
-        meta["device_class"] = SensorDeviceClass.VOLTAGE
-        meta["state_class"] = SensorStateClass.MEASUREMENT
-        if unit is None:
-            meta["suggested_unit"] = UnitOfElectricPotential.VOLT
-        return meta
-
-    if oh_type.startswith("Number:Dimensionless"):
-        meta["state_class"] = SensorStateClass.MEASUREMENT
-        if unit == "%":
-            meta["device_class"] = SensorDeviceClass.BATTERY
-        return meta
-
-    return meta
-
-
-class SOLARWATTClient:
-    def __init__(self, hass: HomeAssistant, host: str, username: str, password: str):
-        # Validate required parameters
-        if not host or not isinstance(host, str):
-            raise ValueError("host must be a non-empty string")
-        if not username or not isinstance(username, str):
-            raise ValueError("username must be a non-empty string")
-        if not password or not isinstance(password, str):
-            raise ValueError("password must be a non-empty string")
-
-        self.hass = hass
-        self.host = host
-        self.username = username
-        self.password = password
-
-        self.base = f"http://{host}"
-        self.login_url = f"{self.base}/auth/login"
-        self.items_url = f"{self.base}/rest/items"
-        self.things_url = f"{self.base}/rest/things"
-
-        # Use a dedicated session with CookieJar(unsafe=True) so cookies from IP
-        # hosts are accepted. This is REQUIRED for SOLARWATT Manager when accessed
-        # by local IP (e.g. 192.168.x.x), because aiohttp's default cookie policy
-        # rejects IP-host cookies.
-        #
-        # We create our own ClientSession here intentionally (instead of HA's
-        # shared session) to guarantee the cookie jar behavior.
-        self._session = ClientSession(cookie_jar=CookieJar(unsafe=True))
-
-        self.session_ttl = 900
-        self._last_login = 0.0
-        # Some SOLARWATT versions set the session cookie with a non-IP domain
-        # (e.g. "karaf"). In that case aiohttp's cookie jar may not send the
-        # cookie back to the manager when we access it by IP. We therefore also
-        # store the session cookie value explicitly and attach it to every
-        # request.
-        self._kiwi_cookie: str | None = None  # e.g. "kiwisessionid=..."
-        self._log = logging.getLogger(__name__)
-
-    def _auth_headers(self) -> dict[str, str]:
-        """Return headers that ensure SOLARWATT accepts our session."""
-        if self._kiwi_cookie:
-            return {"Cookie": self._kiwi_cookie}
-        return {}
-
-    def _cookie_debug(self) -> str:
-        try:
-            cookies = self._session.cookie_jar.filter_cookies(self.base)
-            # cookies is a SimpleCookie
-            names = [m.key for m in cookies.values()]
-            return ",".join(names) if names else "<none>"
-        except Exception:
-            return "<unknown>"
-
-    async def _read_snippet(self, resp, limit: int = 300) -> str:
-        try:
-            text = await resp.text()
-            text = text.replace("\n", " ").replace("\r", " ")
-            return text[:limit]
-        except Exception:
-            return "<unreadable>"
-
-    async def async_close(self) -> None:
-        if not self._session.closed:
-            await self._session.close()
-
-    async def async_login(self) -> None:
-        # SOLARWATT's login form expects classic form fields.
-        # Community findings show that adding submit=Login can be required.
-        payload = {
-            "username": self.username,
-            "password": self.password,
-            "url": "/",
-            "submit": "Login",
-        }
-        # SOLARWATT responds with "303 See Other" and sets the session cookie
-        # (kiwisessionid) in the 303 response. Following redirects can sometimes
-        # make cookie handling harder to debug, so we first capture the 303
-        # response without redirecting.
-        resp_status: int | None = None
-        resp_headers: dict[str, str] = {}
-        resp_ct: str = ""
-
-        try:
-            async with self._session.post(
-                self.login_url,
-                data=payload,
-                timeout=5,
-                allow_redirects=False,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            ) as resp:
-                resp_status = resp.status
-                resp_headers = dict(resp.headers)
-                resp_ct = (resp.headers.get("Content-Type") or "").lower()
-
-                if resp.status not in (200, 303):
-                    text = await resp.text()
-                    self._log.error(
-                        f"Login failed with status {resp.status}. "
-                        f"Response: {text[:200]}. Host: {self.host}"
-                    )
-                    if resp.status in (401, 403):
-                        raise SolarwattAuthError(f"Login failed ({resp.status}): {text[:200]}")
-                    if resp.status == 404:
-                        raise SolarwattNotManagerError(f"Login endpoint not found ({resp.status})")
-                    raise SolarwattConnectionError(f"Login failed ({resp.status}): {text[:200]}")
-
-                # Extract kiwisessionid explicitly (works even if cookie domain is odd)
-                try:
-                    if "kiwisessionid" in resp.cookies:
-                        self._kiwi_cookie = f"kiwisessionid={resp.cookies['kiwisessionid'].value}"
-                except Exception:
-                    # best effort only
-                    pass
-
-                # Also look at Set-Cookie header as fallback
-                if not self._kiwi_cookie:
-                    sc = resp.headers.getall("Set-Cookie", []) if hasattr(resp.headers, "getall") else []
-                    for h in sc:
-                        if "kiwisessionid=" in h:
-                            # take until ';'
-                            part = h.split("kiwisessionid=", 1)[1]
-                            val = part.split(";", 1)[0]
-                            if val:
-                                self._kiwi_cookie = f"kiwisessionid={val}"
-                                break
-
-                # IMPORTANT: The login response may be HTML (SPA shell) even when
-                # login is successful. Treat login as successful **only** if we
-                # have a kiwisessionid afterwards.
-
-            # If we got redirected, optionally follow once to warm up the session.
-            # Not strictly required for /rest/items, but harmless.
-            if resp_status == 303:
-                loc = resp_headers.get("Location") or resp_headers.get("location")
-                if loc:
-                    try:
-                        async with self._session.get(f"{self.base}{loc}", timeout=5, headers=self._auth_headers()):
-                            pass
-                    except Exception:
-                        # Best effort only; session cookie is what matters.
-                        pass
-
-            # Validate: we must have a session cookie now.
-            if not self._kiwi_cookie:
-                error_msg = (
-                    "Login hat keinen kiwisessionid-Cookie geliefert. "
-                    f"Status={resp_status}, Content-Type={resp_ct or '<none>'}, "
-                    f"Cookies={self._cookie_debug()}, Host={self.host}"
-                )
-                self._log.error(error_msg)
-                raise SolarwattAuthError(error_msg)
-
-            self._last_login = time.time()
-            self._log.debug(f"Successfully logged in to {self.host}")
-        except Exception as e:
-            if isinstance(e, SolarwattError):
-                raise
-            if isinstance(e, (ClientError, asyncio.TimeoutError)):
-                self._log.error(f"Login connection error for {self.host}: {str(e)}")
-                raise SolarwattConnectionError(f"Login connection error: {str(e)}") from e
-            self._log.error(f"Login error for {self.host}: {str(e)}")
-            raise SolarwattConnectionError(f"Login error: {str(e)}") from e
-
-    async def async_probe_manager(self) -> None:
-        """Check whether the host looks like a SOLARWATT Manager.
-
-        Raises:
-            SolarwattNotManagerError: if /logon.html is missing.
-            SolarwattConnectionError: on unexpected response codes.
-        """
-        url = f"{self.base}/logon.html"
-        try:
-            async with self._session.get(url, timeout=5, allow_redirects=True) as resp:
-                if resp.status == 404:
-                    raise SolarwattNotManagerError("logon.html not found")
-                if 200 <= resp.status < 400:
-                    return
-                raise SolarwattConnectionError(f"Unexpected probe status: {resp.status}")
-        except (ClientError, asyncio.TimeoutError) as e:
-            self._log.debug(f"Probe failed for {self.host}: {e}")
-            raise SolarwattConnectionError(f"Probe failed: {e}") from e
-
-    async def _ensure_json(self, resp, where: str) -> Any:
-        """Parse JSON with better diagnostics."""
-        ct = (resp.headers.get("Content-Type") or "").lower()
-        if "json" not in ct:
-            snippet = await self._read_snippet(resp)
-            raise SolarwattProtocolError(
-                f"Antwort ist kein JSON bei {where}. Status={resp.status}, Content-Type={ct or '<none>'}, "
-                f"Cookies={self._cookie_debug()}, Snippet={snippet}"
-            )
-        return await resp.json()
-
-    async def _ensure_session(self) -> None:
-        if time.time() - self._last_login > self.session_ttl:
-            await self.async_login()
-
-    async def _async_get_json_endpoint(self, url: str, *, where: str) -> Any:
-        """Fetch a JSON endpoint with one reauthentication retry on 401/HTML."""
-        await self._ensure_session()
-
-        for attempt in range(2):
-            async with self._session.get(
-                url,
-                timeout=5,
-                headers=self._auth_headers(),
-            ) as resp:
-                # SOLARWATT can return a 401 or a HTML login page instead of JSON.
-                if resp.status == 401:
-                    if attempt == 0:
-                        await self.async_login()
-                        continue
-                    resp.raise_for_status()
-
-                ct = (resp.headers.get("Content-Type") or "").lower()
-                if "text/html" in ct and attempt == 0:
-                    await self.async_login()
-                    continue
-
-                resp.raise_for_status()
-                return await self._ensure_json(resp, where)
-
-    async def async_validate_connection(self) -> None:
-        """Test connection to SOLARWATT Manager.
-        
-        Raises:
-            SolarwattError: If connection cannot be established or login fails
-        """
-        try:
-            await self.async_login()
-            # Try to fetch one item to verify API access
-            await self.async_get_items()
-        except SolarwattError:
-            raise
-        except Exception as e:
-            raise SolarwattConnectionError(f"Cannot connect to SOLARWATT Manager: {str(e)}") from e
-
-    async def async_get_items(self) -> list[dict[str, Any]]:
-        try:
-            return await self._async_get_json_endpoint(
-                self.items_url,
-                where="GET /rest/items",
-            )
-        except SolarwattError:
-            raise
-        except ClientResponseError as e:
-            self._log.error(f"HTTP error {e.status} fetching items from {self.host}")
-            if e.status in (401, 403):
-                raise SolarwattAuthError(f"HTTP {e.status} fetching items") from e
-            if e.status == 404:
-                raise SolarwattNotManagerError("Items endpoint not found") from e
-            raise SolarwattConnectionError(f"HTTP error {e.status}") from e
-        except (ClientError, asyncio.TimeoutError) as e:
-            self._log.exception(f"Connection error fetching items from {self.host}: {e}")
-            raise SolarwattConnectionError(str(e)) from e
-        except Exception as e:
-            self._log.exception(f"Unexpected error fetching items from {self.host}: {e}")
-            raise SolarwattConnectionError(str(e)) from e
-
-    async def async_get_things(self) -> list[dict[str, Any]]:
-        try:
-            return await self._async_get_json_endpoint(
-                self.things_url,
-                where="GET /rest/things",
-            )
-        except SolarwattError:
-            raise
-        except ClientResponseError as e:
-            if e.status in (401, 403):
-                raise SolarwattAuthError("HTTP error fetching things") from e
-            if e.status == 404:
-                raise SolarwattProtocolError("Things endpoint not found") from e
-            raise SolarwattConnectionError(f"HTTP error {e.status}") from e
-        except (ClientError, asyncio.TimeoutError) as e:
-            raise SolarwattConnectionError(f"Connection error fetching things: {e}") from e
-        except Exception as e:
-            raise SolarwattConnectionError(f"Error fetching things: {e}") from e
 
 class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     def __init__(self, hass: HomeAssistant, entry, client: SOLARWATTClient):
@@ -618,6 +24,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.client = client
         self.things: dict[str, dict[str, Any]] = {}
         self.item_to_thing_uid: dict[str, str] = {}
+        self.item_to_channel_metadata: dict[str, dict[str, str]] = {}
         self.multi_instance_device_types: set[str] = set()
         self._discovery_callbacks: set[Callable[[], None]] = set()
 
@@ -702,17 +109,80 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
 
         out: dict[str, dict[str, Any]] = {}
         item_to_thing_uid: dict[str, str] = {}
+        item_to_channel_metadata: dict[str, dict[str, str]] = {}
         for idx, thing in enumerate(things or []):
             uid = thing.get("UID") or thing.get("uid") or f"unknown_{idx}"
             out[uid] = thing
             for channel in thing.get("channels") or []:
-                linked_items = channel.get("linkedItems") if isinstance(channel, dict) else None
+                if not isinstance(channel, dict):
+                    continue
+                linked_items = channel.get("linkedItems")
                 if not isinstance(linked_items, list):
                     continue
+                channel_metadata = _channel_item_metadata(channel)
                 for linked_item in linked_items:
-                    if not linked_item or linked_item in item_to_thing_uid:
+                    if not linked_item:
                         continue
-                    item_to_thing_uid[str(linked_item)] = uid
+                    item_name = str(linked_item)
+                    if item_name not in item_to_thing_uid:
+                        item_to_thing_uid[item_name] = uid
+                    _merge_channel_item_metadata(
+                        item_to_channel_metadata,
+                        item_name,
+                        channel_metadata,
+                    )
         self.things = out
         self.item_to_thing_uid = item_to_thing_uid
+        self.item_to_channel_metadata = item_to_channel_metadata
         self.async_update_listeners()
+
+
+def _channel_item_metadata(channel: dict[str, Any]) -> dict[str, str]:
+    """Extract item-relevant metadata from a thing channel."""
+    properties = channel.get("properties")
+    props = properties if isinstance(properties, dict) else {}
+
+    metadata: dict[str, str] = {}
+    channel_uid = str(channel.get("uid") or "").strip()
+    item_type = str(channel.get("itemType") or "").strip()
+    harmonized_item_type = str(props.get("kig.meta.harmonized.itemtype") or "").strip()
+    scope = str(props.get("kig.meta.scope") or "").strip()
+    label = str(channel.get("label") or "").strip()
+
+    if channel_uid:
+        metadata["channel_uid"] = channel_uid
+    if item_type:
+        metadata["item_type"] = item_type
+    if harmonized_item_type:
+        metadata["harmonized_item_type"] = harmonized_item_type
+    if scope:
+        metadata["scope"] = scope
+    if label:
+        metadata["channel_label"] = label
+    return metadata
+
+
+def _merge_channel_item_metadata(
+    item_to_channel_metadata: dict[str, dict[str, str]],
+    item_name: str,
+    channel_metadata: dict[str, str],
+) -> None:
+    """Store channel metadata for one linked item, preferring richer typing."""
+    if not channel_metadata:
+        return
+
+    existing = item_to_channel_metadata.get(item_name)
+    if existing is None:
+        item_to_channel_metadata[item_name] = dict(channel_metadata)
+        return
+
+    # Prefer metadata that provides a harmonized typed view, then fill gaps.
+    if (
+        "harmonized_item_type" in channel_metadata
+        and "harmonized_item_type" not in existing
+    ):
+        existing.update(channel_metadata)
+        return
+
+    for key, value in channel_metadata.items():
+        existing.setdefault(key, value)
