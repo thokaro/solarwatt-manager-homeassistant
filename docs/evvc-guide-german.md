@@ -29,8 +29,8 @@ Da der SOLARWATT Manager einige Leistungswerte nicht direkt im von evcc erwartet
 ### Zustand (Template)
 
 ```jinja2
-{{ states('sensor.vision_kiwigrid_power_in') | int
-   - states('sensor.vision_kiwigrid_power_out') | int }}
+{{ states('sensor.vision_kiwigrid_power_in')|int(0)
+   - states('sensor.vision_kiwigrid_power_out')|int(0) }}
 ```
 
 Die Entitäts-IDs können bei euch natürlich abweichen.
@@ -61,8 +61,8 @@ Die Entitäts-IDs können bei euch natürlich abweichen.
 ### Zustand (Template)
 
 ```jinja2
-{{ states('sensor.vision_kiwigrid_power_consumed_from_storage') | int
-   - states('sensor.vision_kiwigrid_power_buffered') | int }}
+{{ states('sensor.vision_kiwigrid_power_consumed_from_storage')|int(0)
+   - states('sensor.vision_kiwigrid_power_buffered')|int(0) }}
 ```
 
 Setzt sich wie folgt zusammen:
