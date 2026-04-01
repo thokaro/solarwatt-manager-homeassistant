@@ -8,7 +8,7 @@
 
 This custom integration connects a **SOLARWATT Manager** like FLEX or Rail to **Home Assistant** and provides energy- and power-related sensors.
 
-Note for user with **vision** components: If you want to control settings like workmode, maximum charge current or discharge current try https://github.com/nathanmarlor/foxess_modbus
+Note for users with **vision** components: If you need write/control functions such as work mode, maximum charge current, or discharge current, try https://github.com/nathanmarlor/foxess_modbus
 
 ⚠️ **EnergyManager pro** is not supported by this integration, use https://github.com/Mas2112/solarwatt-energymanager-homeassistant instead.
 
@@ -19,10 +19,11 @@ Note for user with **vision** components: If you want to control settings like w
 * Local polling of SOLARWATT Manager data
 * Energy Dashboard ready (correct `device_class` & `state_class`)
 * Automatic unit normalization (Wh → kWh)
-* Entity names are normalized and installation-specific IDs are removed.
+* Item names are normalized and installation-specific IDs are removed.
+* Item `entity_id`s are derived from the Home Assistant device name and the normalized channel name, following the device-based naming structure planned for future Home Assistant releases
 * Entities are assigned to their corresponding SOLARWATT devices
 * Human‑friendly display names (Title Case; BMS/SoC/SoH preserved)
-* Diagnostics data from /rest/things with devices and their "properties" exposed as diagnostic entities
+* Per-device diagnostics based on `/rest/things`, including status sensors with thing properties as attributes and refresh buttons to update item and thing discovery on demand
 * Stable `unique_id`s (safe for long‑term statistics)
 * Works with Home Assistant statistics & history
 
@@ -86,31 +87,36 @@ After restarting Home Assistant:
 1. Go to **Settings → Devices & Services**
 2. Click **Add Integration**
 3. Search for **SOLARWATT Manager**
-4. Enter the required connection details
-5. Select the SOLARWATT devices you want to create
+4. Enter the required connection details:
+   * **Host**: hostname or IPv4 address, optionally with `:port`
+   * **Username** / **Password**: your SOLARWATT login credentials
+   * Optional tuning values such as **Update interval**, **Energy delta**, and **Power unavailable threshold** can be set here already or adjusted later in the integration options
+   * Do not enter a full URL. The integration automatically tries HTTP and HTTPS.
+5. Select the SOLARWATT devices you want to create (KiwiGrid and battery devices are preselected by default)
 
 ### Options
 
 You can adjust these in the integration options:
 
 * **Update interval (seconds)** – polling interval
-* **Name prefix (optional)** – prefix for entity names
 * **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
+* **Power unavailable threshold (polls)** – applies to power sensors only. If SOLARWATT briefly returns `unavailable`, the last valid power value is kept until the configured consecutive poll limit is reached. Example: `3` means the 1st and 2nd `unavailable` poll keep the previous value, and the sensor only switches to `unavailable` on the 3rd poll. Set to `0` to disable this debounce completely.
 * **Device selection** – choose which detected SOLARWATT devices should be created in Home Assistant
+* **Rebuild entity IDs when saving** – rebuild managed `entity_id`s using `device name + sensor name`
 
 ---
 
 ## 🔋 Energy Dashboard
 
-Energy sensors are provided in kWh and prepared for the Energy Dashboard (`device_class: energy`, `state_class: total_increasing`). Which sensors you use depends on your setup.
+Energy sensors are provided in kWh and prepared for the Energy Dashboard (`device_class: energy`, `state_class: total` or `total_increasing`, depending on whether the value is cumulative or strictly increasing). Which sensors you use depends on your setup.
 
 ---
 
 ## 🚗 evcc Sensors
 
-If you want to use sensors from this integration in **evcc**, please refer to the instructions (in german).
+If you want to use sensors from this integration in **evcc**, please refer to the instructions (in German).
 
-* [evvc-guide-german.md](docs/evvc-guide-german.md)
+* [evcc guide (German)](docs/evcc-guide-german.md)
 
 ---
 
@@ -124,15 +130,12 @@ Here you will find an overview of the most important Kiwigrid items.
 
 ## 🧠 Naming Strategy
 
-* Internal sensor keys remain unchanged for stability
-* Display names:
+* Technical item prefixes and installation-specific IDs are stripped from channel names
+* Display names stay channel-based, for example `Active Power Command`
+* `entity_id`s use the Home Assistant device name plus the normalized channel name, for example `sensor.vision_battery_bms_soc`
+* Duplicate fragments such as `Battery Battery ...` are collapsed
 
-  * remove technical prefixes (e.g. `harmonized`)
-  * replace underscores (`_`) with spaces
-  * Title Case formatting with exceptions for common acronyms/brands (e.g. `BMS`, `SoC`, `SoH`, `AC`, `DC`, `PV`, `MPPT`, `SMA`, `KEBA`, `SunSpec`, `Modbus`, `FoxESS`)
-
-
-This keeps entities readable without breaking existing statistics.
+This keeps entities readable while making `entity_id`s match the device names configured in Home Assistant, using the device-name-first structure planned for a future Home Assistant naming update.
 
 ---
 
@@ -171,7 +174,7 @@ This keeps entities readable without breaking existing statistics.
 │        ├─ it.json          # Italian translations
 │        └─ nl.json          # Dutch translations
 ├─ docs/
-│  ├─ evvc-guide-german.md   # EVVC setup guide
+│  ├─ evcc-guide-german.md   # evcc setup guide
 │  └─ kiwigrid-items.md      # item reference for KiwiGrid systems
 ├─ CHANGELOG.md              # release history
 ├─ hacs.json                 # HACS metadata

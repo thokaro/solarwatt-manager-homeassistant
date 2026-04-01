@@ -5,6 +5,8 @@ from typing import Any
 from typing import TYPE_CHECKING, TypeAlias
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 
 if TYPE_CHECKING:
@@ -18,17 +20,19 @@ CONF_HOST = "host"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_SCAN_INTERVAL = "scan_interval"
-CONF_NAME_PREFIX = "name_prefix"
 CONF_ENERGY_DELTA_KWH = "energy_delta_kwh"
+CONF_POWER_UNAVAILABLE_THRESHOLD = "power_unavailable_threshold"
 CONF_ENABLED_THINGS = "enabled_things"
+CONF_REBUILD_ENTITY_IDS = "rebuild_entity_ids"
 
 DEFAULT_SCAN_INTERVAL = 15  # Sekunden
 MIN_SCAN_INTERVAL = 10  # Minimaler Scan-Interval in Sekunden
 MAX_SCAN_INTERVAL = 3600  # Maximaler Scan-Interval in Sekunden (1 Stunde)
 
-DEFAULT_NAME_PREFIX = ""
 DEFAULT_ENERGY_DELTA_KWH = 0.01
 MIN_ENERGY_DELTA_KWH = 0.0
+DEFAULT_POWER_UNAVAILABLE_THRESHOLD = 3
+MIN_POWER_UNAVAILABLE_THRESHOLD = 0
 
 DEVICE_MANUFACTURER = "SOLARWATT"
 DEVICE_MODEL = "Manager flex / rail"
@@ -48,6 +52,62 @@ def build_device_info(host: str, device_name: str) -> DeviceInfo:
 def build_thing_device_identifier(host: str, thing_uid: str) -> tuple[str, str]:
     """Return the stable device-registry identifier for a SOLARWATT thing."""
     return DOMAIN, f"{host}:{thing_uid}"
+
+
+def get_thing_bridge_uid(thing: Mapping[str, Any]) -> str | None:
+    """Return the parent bridge UID for one thing, if any."""
+    bridge_uid = str(thing.get("bridgeUID") or thing.get("bridgeUid") or "").strip()
+    return bridge_uid or None
+
+
+def get_preferred_parent_thing_uid(
+    thing: Mapping[str, Any],
+    things: Mapping[str, dict[str, Any]] | None,
+) -> str | None:
+    """Return the preferred visible parent thing UID for one child thing."""
+    bridge_uid = get_thing_bridge_uid(thing)
+    if not bridge_uid or not things:
+        return None
+
+    thing_uid = str(thing.get("UID") or thing.get("uid") or "").strip()
+    thing_type_uid = str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "").strip().lower()
+    if "inverter" in thing_type_uid:
+        return None
+
+    for sibling in things.values():
+        if not isinstance(sibling, Mapping) or get_thing_bridge_uid(sibling) != bridge_uid:
+            continue
+        sibling_uid = str(sibling.get("UID") or sibling.get("uid") or "").strip()
+        sibling_type_uid = str(
+            sibling.get("thingTypeUID") or sibling.get("thingTypeUid") or ""
+        ).strip().lower()
+        channels = sibling.get("channels")
+        if sibling_uid == thing_uid or not isinstance(channels, list) or not channels:
+            continue
+        if "inverter" in sibling_type_uid:
+            return sibling_uid
+
+    return None
+
+
+def get_registry_device_name(
+    hass: HomeAssistant | None,
+    device_identifier: tuple[str, str],
+) -> str | None:
+    """Return the current Home Assistant device name for one device identifier."""
+    if hass is None:
+        return None
+    return get_registry_entry_device_name(
+        dr.async_get(hass).async_get_device(identifiers={device_identifier})
+    )
+
+
+def get_registry_entry_device_name(device: dr.DeviceEntry | None) -> str | None:
+    """Return the current name stored in the device registry."""
+    if not device:
+        return None
+    registry_name = str(device.name_by_user or device.name or "").strip()
+    return registry_name or None
 
 
 def get_thing_display_name(thing: Mapping[str, Any], fallback: str = "") -> str:
@@ -72,7 +132,12 @@ def get_thing_selection_detail(thing: Mapping[str, Any]) -> str:
     return str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "").strip()
 
 
-def build_thing_device_info(host: str, thing: dict[str, Any]) -> DeviceInfo:
+def build_thing_device_info(
+    hass: HomeAssistant | None,
+    host: str,
+    thing: dict[str, Any],
+    things: Mapping[str, dict[str, Any]] | None = None,
+) -> DeviceInfo:
     """Build device metadata for a SOLARWATT thing node."""
     thing_uid = str(thing.get("UID") or thing.get("uid") or "").strip()
     label = get_thing_display_name(thing, thing_uid or host)
@@ -97,8 +162,13 @@ def build_thing_device_info(host: str, thing: dict[str, Any]) -> DeviceInfo:
     sw_version = props.get("firmwareVersion") or props.get("firmware")
     hw_version = props.get("hardwareVersion")
 
-    bridge_uid = str(thing.get("bridgeUID") or thing.get("bridgeUid") or "").strip()
-    via_device = build_thing_device_identifier(host, bridge_uid) if bridge_uid else None
+    via_device = None
+    parent_thing_uid = get_preferred_parent_thing_uid(thing, things)
+    if hass is not None and parent_thing_uid:
+        parent_identifier = build_thing_device_identifier(host, parent_thing_uid)
+        parent_device = dr.async_get(hass).async_get_device(identifiers={parent_identifier})
+        if parent_device is not None:
+            via_device = parent_identifier
 
     return DeviceInfo(
         identifiers={build_thing_device_identifier(host, thing_uid)},

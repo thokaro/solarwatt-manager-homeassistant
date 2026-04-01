@@ -7,6 +7,7 @@
       "invalid_password": "Ungültiges Passwort.",
       "invalid_scan_interval": "Das Update-Intervall muss zwischen 10 und 3600 Sekunden liegen.",
       "invalid_energy_delta_kwh": "Das Energie-Delta muss größer oder gleich 0 sein (kWh).",
+      "invalid_power_unavailable_threshold": "Der Power-unavailable-Schwellwert muss größer oder gleich 0 sein.",
       "invalid_input": "Ungültige Eingabe.",
       "invalid_auth": "Benutzername oder Passwort ungültig.",
       "not_solarwatt": "Der Host scheint kein SOLARWATT Manager zu sein.",
@@ -24,7 +25,7 @@
           "password": "Passwort",
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
-          "name_prefix": "Namens-Prefix der Entität-IDs (optional)"
+          "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert"
         }
       },
       "devices": {
@@ -34,17 +35,22 @@
     }
   },
   "options": {
+    "abort": {
+      "rebuild_entity_ids_done": "Entitäts-IDs wurden nach dem Schema Gerätename + Sensorname neu aufgebaut."
+    },
     "error": {
       "invalid_scan_interval": "Das Update-Intervall muss zwischen 10 und 3600 Sekunden liegen.",
-      "invalid_energy_delta_kwh": "Das Energie-Delta muss größer oder gleich 0 sein (kWh)."
+      "invalid_energy_delta_kwh": "Das Energie-Delta muss größer oder gleich 0 sein (kWh).",
+      "invalid_power_unavailable_threshold": "Der Power-unavailable-Schwellwert muss größer oder gleich 0 sein."
     },
     "step": {
       "init": {
         "title": "Optionen",
         "data": {
+          "rebuild_entity_ids": "Entitäts-IDs beim Speichern neu aufbauen (Gerätename + Sensorname)",
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
-          "name_prefix": "Namens-Prefix der Entität-IDs (optional)"
+          "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert"
         }
       }
     }

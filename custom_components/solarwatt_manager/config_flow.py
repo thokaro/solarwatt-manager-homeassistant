@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 import ipaddress
 import logging
 import re
@@ -14,16 +14,18 @@ from .const import (
     CONF_ENABLED_THINGS,
     CONF_ENERGY_DELTA_KWH,
     CONF_HOST,
-    CONF_NAME_PREFIX,
     CONF_PASSWORD,
+    CONF_POWER_UNAVAILABLE_THRESHOLD,
+    CONF_REBUILD_ENTITY_IDS,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
     DEFAULT_ENERGY_DELTA_KWH,
-    DEFAULT_NAME_PREFIX,
+    DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     MAX_SCAN_INTERVAL,
     MIN_ENERGY_DELTA_KWH,
+    MIN_POWER_UNAVAILABLE_THRESHOLD,
     MIN_SCAN_INTERVAL,
     get_selected_thing_uids,
     get_thing_display_name,
@@ -37,6 +39,7 @@ from .client import (
     SolarwattProtocolError,
 )
 from .entity_helpers import sync_selected_thing_entities
+from .registry_migrations import mark_pending_registry_migration
 
 _LOGGER = logging.getLogger(__name__)
 _HOST_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -111,6 +114,60 @@ def _normalize_float(value: Any, *, default: float) -> float | None:
         return None
 
 
+def _is_invalid_scan_interval(value: Any) -> bool:
+    """Return True if the configured scan interval is outside the allowed range."""
+    return value is None or value < MIN_SCAN_INTERVAL or value > MAX_SCAN_INTERVAL
+
+
+def _is_invalid_energy_delta(value: Any) -> bool:
+    """Return True if the configured energy delta is outside the allowed range."""
+    return value is None or value < MIN_ENERGY_DELTA_KWH
+
+
+def _is_invalid_power_unavailable_threshold(value: Any) -> bool:
+    """Return True if the power unavailable threshold is outside the allowed range."""
+    return value is None or value < MIN_POWER_UNAVAILABLE_THRESHOLD
+
+
+_OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
+    {
+        "key": CONF_SCAN_INTERVAL,
+        "default": DEFAULT_SCAN_INTERVAL,
+        "normalize": _normalize_int,
+        "coerce": vol.Coerce(int),
+        "error": "invalid_scan_interval",
+        "invalid": _is_invalid_scan_interval,
+    },
+    {
+        "key": CONF_ENERGY_DELTA_KWH,
+        "default": DEFAULT_ENERGY_DELTA_KWH,
+        "normalize": _normalize_float,
+        "coerce": vol.Coerce(float),
+        "error": "invalid_energy_delta_kwh",
+        "invalid": _is_invalid_energy_delta,
+    },
+    {
+        "key": CONF_POWER_UNAVAILABLE_THRESHOLD,
+        "default": DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
+        "normalize": _normalize_int,
+        "coerce": vol.Coerce(int),
+        "error": "invalid_power_unavailable_threshold",
+        "invalid": _is_invalid_power_unavailable_threshold,
+    },
+)
+
+
+def _build_option_schema_fields(values: Mapping[str, Any]) -> dict[Any, Any]:
+    """Build voluptuous schema fields for all user-visible options."""
+    return {
+        vol.Optional(
+            field["key"],
+            default=values.get(field["key"], field["default"]),
+        ): field["coerce"]
+        for field in _OPTION_FIELD_SPECS
+    }
+
+
 def _normalize_options_input(
     user_input: Mapping[str, Any],
     current_options: Mapping[str, Any] | None = None,
@@ -118,26 +175,14 @@ def _normalize_options_input(
     """Normalize user-visible options."""
     current = dict(current_options or {})
     return {
-        CONF_SCAN_INTERVAL: _normalize_int(
+        field["key"]: field["normalize"](
             user_input.get(
-                CONF_SCAN_INTERVAL,
-                current.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                field["key"],
+                current.get(field["key"], field["default"]),
             ),
-            default=DEFAULT_SCAN_INTERVAL,
-        ),
-        CONF_ENERGY_DELTA_KWH: _normalize_float(
-            user_input.get(
-                CONF_ENERGY_DELTA_KWH,
-                current.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH),
-            ),
-            default=DEFAULT_ENERGY_DELTA_KWH,
-        ),
-        CONF_NAME_PREFIX: _normalize_text(
-            user_input.get(
-                CONF_NAME_PREFIX,
-                current.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
-            )
-        ),
+            default=field["default"],
+        )
+        for field in _OPTION_FIELD_SPECS
     }
 
 
@@ -154,21 +199,11 @@ def _normalize_user_input(user_input: Mapping[str, Any]) -> tuple[dict[str, Any]
 
 def _validate_options_data(options: Mapping[str, Any]) -> dict[str, str]:
     """Validate normalized option values."""
-    errors: dict[str, str] = {}
-
-    scan_interval = options.get(CONF_SCAN_INTERVAL)
-    if (
-        scan_interval is None
-        or scan_interval < MIN_SCAN_INTERVAL
-        or scan_interval > MAX_SCAN_INTERVAL
-    ):
-        errors[CONF_SCAN_INTERVAL] = "invalid_scan_interval"
-
-    energy_delta = options.get(CONF_ENERGY_DELTA_KWH)
-    if energy_delta is None or energy_delta < MIN_ENERGY_DELTA_KWH:
-        errors[CONF_ENERGY_DELTA_KWH] = "invalid_energy_delta_kwh"
-
-    return errors
+    return {
+        field["key"]: field["error"]
+        for field in _OPTION_FIELD_SPECS
+        if field["invalid"](options.get(field["key"]))
+    }
 
 
 def _validate_user_data(
@@ -210,21 +245,7 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     default=values.get(CONF_USERNAME, "installer"),
                 ): str,
                 vol.Required(CONF_PASSWORD, default=values.get(CONF_PASSWORD, "")): str,
-                vol.Optional(
-                    CONF_SCAN_INTERVAL,
-                    default=values.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-                ): vol.Coerce(int),
-                vol.Optional(
-                    CONF_ENERGY_DELTA_KWH,
-                    default=values.get(
-                        CONF_ENERGY_DELTA_KWH,
-                        DEFAULT_ENERGY_DELTA_KWH,
-                    ),
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_NAME_PREFIX,
-                    default=values.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
-                ): str,
+                **_build_option_schema_fields(values),
             }
         )
 
@@ -234,30 +255,23 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             entry_data, options = _normalize_user_input(user_input)
             errors = _validate_user_data(entry_data, options)
+            host = entry_data.get(CONF_HOST)
 
-            if not errors:
-                host = entry_data[CONF_HOST]
-                if host is None:
-                    errors[CONF_HOST] = "invalid_host"
-                else:
-                    errors = await self._test_connection(
-                        host=host,
-                        username=entry_data[CONF_USERNAME],
-                        password=entry_data[CONF_PASSWORD],
-                    )
+            if not errors and host is not None:
+                errors = await self._test_connection(
+                    host=host,
+                    username=entry_data[CONF_USERNAME],
+                    password=entry_data[CONF_PASSWORD],
+                )
 
-            if not errors:
-                host = entry_data[CONF_HOST]
-                if host is None:
-                    errors[CONF_HOST] = "invalid_host"
-                else:
-                    await self.async_set_unique_id(host)
-                    self._abort_if_unique_id_configured()
-                    things, errors = await self._async_fetch_things(
-                        host=host,
-                        username=entry_data[CONF_USERNAME],
-                        password=entry_data[CONF_PASSWORD],
-                    )
+            if not errors and host is not None:
+                await self.async_set_unique_id(host)
+                self._abort_if_unique_id_configured()
+                things, errors = await self._async_fetch_things(
+                    host=host,
+                    username=entry_data[CONF_USERNAME],
+                    password=entry_data[CONF_PASSWORD],
+                )
 
             if not errors:
                 selectable_things = self._selectable_things(things)
@@ -323,41 +337,13 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         password: str,
     ) -> dict[str, str]:
         """Test connection to SOLARWATT Manager using normalized credentials."""
-        errors: dict[str, str] = {}
-
-        try:
-            client = SOLARWATTClient(
-                self.hass,
-                host=host,
-                username=username,
-                password=password,
-            )
-            try:
-                await client.async_validate_connection()
-            finally:
-                await client.async_close()
-        except ValueError as err:
-            _LOGGER.warning("Invalid input for SOLARWATT Manager: %s", err)
-            errors["base"] = "invalid_input"
-        except SolarwattNotManagerError as err:
-            _LOGGER.warning("Host is not a SOLARWATT Manager: %s", err)
-            errors["base"] = "not_solarwatt"
-        except SolarwattAuthError as err:
-            _LOGGER.warning("Invalid SOLARWATT credentials: %s", err)
-            errors["base"] = "invalid_auth"
-        except SolarwattConnectionError as err:
-            _LOGGER.warning("Connection error to SOLARWATT Manager: %s", err)
-            errors["base"] = "cannot_connect"
-        except SolarwattProtocolError as err:
-            _LOGGER.warning("Unexpected SOLARWATT response: %s", err)
-            errors["base"] = "connection_failed"
-        except Exception as err:
-            _LOGGER.exception(
-                "Unexpected error testing SOLARWATT connection: %s",
-                err,
-            )
-            errors["base"] = "unknown_error"
-
+        _, errors = await self._async_with_client(
+            host=host,
+            username=username,
+            password=password,
+            action=SOLARWATTClient.async_validate_connection,
+            action_label="testing SOLARWATT connection",
+        )
         return errors
 
     async def _async_fetch_things(
@@ -368,9 +354,34 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         password: str,
     ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
         """Fetch device metadata for the device selection step."""
-        errors: dict[str, str] = {}
         things_by_uid: dict[str, dict[str, Any]] = {}
+        result, errors = await self._async_with_client(
+            host=host,
+            username=username,
+            password=password,
+            action=SOLARWATTClient.async_get_things,
+            action_label="fetching SOLARWATT things",
+        )
+        if errors:
+            return things_by_uid, errors
 
+        for idx, thing in enumerate(result or []):
+            uid = str(thing.get("UID") or thing.get("uid") or f"unknown_{idx}").strip()
+            if uid:
+                things_by_uid[uid] = thing
+
+        return things_by_uid, errors
+
+    async def _async_with_client(
+        self,
+        *,
+        host: str,
+        username: str,
+        password: str,
+        action: Callable[[SOLARWATTClient], Awaitable[Any]],
+        action_label: str,
+    ) -> tuple[Any | None, dict[str, str]]:
+        """Run one client action and map known failures to config-flow errors."""
         try:
             client = SOLARWATTClient(
                 self.hass,
@@ -379,26 +390,27 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 password=password,
             )
             try:
-                for idx, thing in enumerate(await client.async_get_things()):
-                    uid = str(thing.get("UID") or thing.get("uid") or f"unknown_{idx}").strip()
-                    if uid:
-                        things_by_uid[uid] = thing
+                return await action(client), {}
             finally:
                 await client.async_close()
+        except ValueError as err:
+            _LOGGER.warning("Invalid input while %s: %s", action_label, err)
+            return None, {"base": "invalid_input"}
+        except SolarwattNotManagerError as err:
+            _LOGGER.warning("Host is not a SOLARWATT Manager while %s: %s", action_label, err)
+            return None, {"base": "not_solarwatt"}
         except SolarwattAuthError as err:
-            _LOGGER.warning("Invalid SOLARWATT credentials while fetching things: %s", err)
-            errors["base"] = "invalid_auth"
+            _LOGGER.warning("Invalid SOLARWATT credentials while %s: %s", action_label, err)
+            return None, {"base": "invalid_auth"}
         except SolarwattConnectionError as err:
-            _LOGGER.warning("Connection error while fetching SOLARWATT things: %s", err)
-            errors["base"] = "cannot_connect"
+            _LOGGER.warning("Connection error while %s: %s", action_label, err)
+            return None, {"base": "cannot_connect"}
         except SolarwattProtocolError as err:
-            _LOGGER.warning("Unexpected SOLARWATT things response: %s", err)
-            errors["base"] = "connection_failed"
+            _LOGGER.warning("Unexpected SOLARWATT response while %s: %s", action_label, err)
+            return None, {"base": "connection_failed"}
         except Exception as err:
-            _LOGGER.exception("Unexpected error fetching SOLARWATT things: %s", err)
-            errors["base"] = "unknown_error"
-
-        return things_by_uid, errors
+            _LOGGER.exception("Unexpected error while %s: %s", action_label, err)
+            return None, {"base": "unknown_error"}
 
     @staticmethod
     def _sorted_things(things: Mapping[str, dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
@@ -517,6 +529,9 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
             errors = _validate_options_data(data)
 
             if not errors:
+                rebuild_requested = bool(user_input.get(CONF_REBUILD_ENTITY_IDS))
+                if rebuild_requested:
+                    mark_pending_registry_migration(self.hass, self.config_entry.entry_id)
                 coordinator = getattr(self.config_entry, "runtime_data", None)
                 if coordinator is not None:
                     sync_selected_thing_entities(
@@ -527,6 +542,16 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                         coordinator.things,
                         data,
                     )
+                if rebuild_requested:
+                    current_options = dict(self.config_entry.options)
+                    if data != current_options:
+                        self.hass.config_entries.async_update_entry(
+                            self.config_entry,
+                            options=data,
+                        )
+                    else:
+                        await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+                    return self.async_abort(reason="rebuild_entity_ids_done")
                 return self.async_create_entry(title="", data=data)
 
             return self.async_show_form(
@@ -547,20 +572,10 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         values = dict(user_input or self.config_entry.options)
         schema: dict[Any, Any] = {
             vol.Optional(
-                CONF_SCAN_INTERVAL,
-                default=values.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-            ): vol.Coerce(int),
-            vol.Optional(
-                CONF_ENERGY_DELTA_KWH,
-                default=values.get(
-                    CONF_ENERGY_DELTA_KWH,
-                    DEFAULT_ENERGY_DELTA_KWH,
-                ),
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_NAME_PREFIX,
-                default=values.get(CONF_NAME_PREFIX, DEFAULT_NAME_PREFIX),
-            ): str,
+                CONF_REBUILD_ENTITY_IDS,
+                default=False,
+            ): bool,
+            **_build_option_schema_fields(values),
         }
 
         self._device_fields = {}

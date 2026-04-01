@@ -1,55 +1,43 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Collection, Iterable
 from functools import lru_cache
 
 # -----------------------------
 # Name normalization (display + entity_id friendliness)
 # -----------------------------
-# Add more conditional rules by appending
-# (device_type, pattern, single-device replacement, multi-device replacement).
-# Patterns are applied in order.
-CONDITIONAL_ID_RULES: list[tuple[str, str, str, str]] = [
-    # kiwigrid_location_standard_<ID>_harmonized_... -> kiwigrid_...
-    ("kiwigrid", r"^kiwigrid_location_standard_([^_]+)_harmonized_", "kiwigrid_", r"kiwigrid_\1_"),
-    # foxesshybrid_battery_<ID>_... -> foxess_...
-    ("foxess", r"^foxesshybrid_battery_([^_]+)_", "foxess_", r"foxess_\1_"),
-    ("foxessinv", r"^foxesshybrid_inverter_([^_]+)_", "foxessinv_", r"foxessinv_\1_"),
-    ("foxessmeter", r"^foxesshybrid_meter_([^_]+)_", "foxessmeter_", r"foxessmeter_\1_"),
-    ("keba", r"^keba_wallbox_([^_]+)_", "keba_", r"keba_\1_"),
-    ("mystrom", r"^mystrom_switch_([^_]+)_", "mystrom_", r"mystrom_\1_"),
-    ("sma", r"^modbus_sunspec_sma_inverter_([^_]+)_", "sma_", r"sma_\1_"),
-    ("fronius", r"^modbus_sunspec_fronius_inverter_([^_]+)_", "fronius_", r"fronius_\1_"),
-    ("myreserve", r"^myreserveethernet_myreserve_([^_]+)_", "myreserve_", r"myreserve_\1_"),
-    ("acs", r"^myreserveethernet_acs_([^_]+)_0_", "acs_", r"acs_\1_"),
-    ("acs", r"^myreserveethernet_acs_([^_]+)_", "acs_", r"acs_\1_"),
-    ("pvplant", r"^pvplant_standard_([^_]+)_", "pvplant_", r"pvplant_\1_"),
-    ("batteryflex", r"^batteryflex_battery_([^_]+)_harmonized_", "batteryflex_", r"batteryflex_\1_"),
-    ("batteryflex", r"^batteryflex_battery_([^_]+)_batteryChannelGroup_", "batteryflex_", r"batteryflex_\1_"),
-    ("batteryflex", r"^batteryflex_battery_([^_]+)_", "batteryflex_", r"batteryflex_\1_"),
-    ("batteryflex", r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_harmonized_", "batteryflex_", r"batteryflex_\1_"),
-    ("batteryflex", r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_batteryChannelGroup_", "batteryflex_", r"batteryflex_\1_"),
-    ("batteryflex", r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_", "batteryflex_", r"batteryflex_\1_"),
-    # Shorten KACO device block while preserving known suffix groups.
-    (
-        "kacoinv",
-        r"^sunspecnext_inverter_KACO_(.*?)_(?=(harmonized_|inverter_|limitable_|pv_power_production_))",
-        "kacoinv_",
-        r"kacoinv_\1_",
-    ),
+# Current normalization removes technical prefixes entirely.
+CONDITIONAL_ID_RULES = [
+    r"^kiwigrid_location_standard_([^_]+)_harmonized_",
+    r"^foxesshybrid_battery_([^_]+)_",
+    r"^foxesshybrid_inverter_([^_]+)_",
+    r"^foxesshybrid_meter_([^_]+)_",
+    r"^keba_wallbox_([^_]+)_",
+    r"^mystrom_switch_([^_]+)_",
+    r"^modbus_sunspec_sma_inverter_([^_]+)_",
+    r"^modbus_sunspec_fronius_inverter_([^_]+)_",
+    r"^myreserveethernet_myreserve_([^_]+)_",
+    r"^myreserveethernet_acs_([^_]+)_0_",
+    r"^myreserveethernet_acs_([^_]+)_",
+    r"^pvplant_standard_([^_]+)_",
+    r"^batteryflex_battery_([^_]+)_harmonized_",
+    r"^batteryflex_battery_([^_]+)_batteryChannelGroup_",
+    r"^batteryflex_battery_([^_]+)_",
+    r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_harmonized_",
+    r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_batteryChannelGroup_",
+    r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_",
+    r"^sunspecnext_inverter_KACO_(.*?)_(?=(harmonized_|inverter_|limitable_|pv_power_production_))",
 ]
 
 
-STATIC_NORMALIZATION_RULES: list[tuple[str, str]] = []
+STATIC_NORMALIZATION_RULES: list[tuple[str, str]] = [
+    (r"(^|_)battery_battery_", r"\1battery_"),
+]
 
 
 @lru_cache(maxsize=1)
-def _compiled_conditional_id_rules() -> list[tuple[str, re.Pattern[str], str, str]]:
-    return [
-        (device_type, re.compile(pattern), single_repl, multi_repl)
-        for device_type, pattern, single_repl, multi_repl in CONDITIONAL_ID_RULES
-    ]
+def _compiled_conditional_id_rules() -> list[re.Pattern[str]]:
+    return [re.compile(pattern) for pattern in CONDITIONAL_ID_RULES]
 
 
 @lru_cache(maxsize=1)
@@ -62,28 +50,6 @@ def clean_item_key(raw: str) -> str:
     return (raw or "").lstrip("#")
 
 
-def detect_multi_instance_device_types(item_names: Iterable[str] | None) -> set[str]:
-    """Return device types whose item names contain multiple distinct device IDs."""
-    if not item_names:
-        return set()
-
-    device_ids_by_type: dict[str, set[str]] = {}
-    for item_name in item_names:
-        name = clean_item_key(item_name)
-        for device_type, pattern, _single_repl, _multi_repl in _compiled_conditional_id_rules():
-            match = pattern.match(name)
-            if not match:
-                continue
-            device_ids_by_type.setdefault(device_type, set()).add(match.group(1))
-            break
-
-    return {
-        device_type
-        for device_type, device_ids in device_ids_by_type.items()
-        if len(device_ids) > 1
-    }
-
-
 def _normalize_static_item_name(name: str) -> str:
     for pattern, repl in _compiled_static_normalization_rules():
         name = pattern.sub(repl, name)
@@ -92,35 +58,63 @@ def _normalize_static_item_name(name: str) -> str:
 
 def normalize_item_name(
     raw: str,
-    multi_instance_device_types: Collection[str] | None = None,
 ) -> str:
     """Normalize item names using conditional and static normalization rules."""
     name = clean_item_key(raw)
-    multi_instance_device_types = set(multi_instance_device_types or ())
 
-    for device_type, pattern, single_repl, multi_repl in _compiled_conditional_id_rules():
-        repl = multi_repl if device_type in multi_instance_device_types else single_repl
-        name = pattern.sub(repl, name)
+    for pattern in _compiled_conditional_id_rules():
+        name = pattern.sub("", name)
 
     return _normalize_static_item_name(name)
 
 
-def normalized_item_name_variants(raw: str) -> set[str]:
-    """Return all legacy normalized variants for an item name."""
-    name = clean_item_key(raw)
-    variants = {name}
+def item_entity_name(
+    raw: str,
+) -> str:
+    """Return the user-facing entity name derived from one raw item key."""
+    clean_item_name = normalize_item_name(raw)
+    base_name = clean_item_name.replace("harmonized_", "").replace("_", " ").strip()
+    return format_display_name(base_name)
 
-    for _device_type, pattern, single_repl, multi_repl in _compiled_conditional_id_rules():
-        if not pattern.match(name):
-            continue
-        variants = {
-            pattern.sub(repl, variant)
-            for variant in variants
-            for repl in (single_repl, multi_repl)
-        }
-        break
 
-    return {_normalize_static_item_name(variant) for variant in variants}
+def slugify_entity_name(name: str) -> str:
+    """Return a Home Assistant friendly object-id fragment."""
+    slug = re.sub(r"[^a-z0-9]+", "_", (name or "").strip().lower())
+    slug = re.sub(r"_+", "_", slug)
+    return slug.strip("_")
+
+
+def trim_device_tokens(entity_name: str, device_name: str) -> str:
+    """Remove a duplicated device prefix or overlap from an entity/object name."""
+    entity_tokens = [token for token in slugify_entity_name(entity_name).split("_") if token]
+    device_tokens = [token for token in slugify_entity_name(device_name).split("_") if token]
+
+    if not entity_tokens or not device_tokens:
+        return "_".join(entity_tokens)
+
+    if entity_tokens[: len(device_tokens)] == device_tokens:
+        entity_tokens = entity_tokens[len(device_tokens):]
+
+    max_overlap = min(len(device_tokens), len(entity_tokens))
+    for overlap in range(max_overlap, 0, -1):
+        if entity_tokens[:overlap] == device_tokens[-overlap:]:
+            entity_tokens = entity_tokens[overlap:]
+            break
+
+    return "_".join(entity_tokens)
+
+
+def compose_entity_object_id(device_name: str, entity_name: str) -> str:
+    """Return a stable object-id from device and entity names without duplicates."""
+    clean_device_name = slugify_entity_name(device_name)
+    clean_entity_name = trim_device_tokens(entity_name, device_name)
+
+    if not clean_device_name:
+        return clean_entity_name
+    if not clean_entity_name:
+        return clean_device_name
+
+    return f"{clean_device_name}_{clean_entity_name}"
 
 
 def format_display_name(name: str) -> str:

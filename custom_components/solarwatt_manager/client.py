@@ -45,21 +45,14 @@ class SOLARWATTClient:
 
         self._candidate_bases = [f"http://{host}", f"https://{host}"]
         self.base = self._candidate_bases[0]
-        self._refresh_urls()
 
         self._session = ClientSession(cookie_jar=CookieJar(unsafe=True))
         self.session_ttl = 900
         self._last_login = 0.0
         self._log = logging.getLogger(__name__)
 
-    def _refresh_urls(self) -> None:
-        self.login_url = f"{self.base}/auth/login"
-        self.items_url = f"{self.base}/rest/items"
-        self.things_url = f"{self.base}/rest/things"
-
     def _set_base(self, base: str) -> None:
         self.base = base.rstrip("/")
-        self._refresh_urls()
 
     @staticmethod
     def _base_from_url(url) -> str | None:
@@ -153,7 +146,7 @@ class SOLARWATTClient:
                 try:
                     async with self._request(
                         "POST",
-                        self.login_url,
+                        f"{self.base}/auth/login",
                         data=payload,
                         timeout=5,
                         allow_redirects=False,

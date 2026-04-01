@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026.4.0
+
+### Changes
+- Removed the `Name prefix` option.
+- Device-based entity IDs: item sensor `entity_id`s now use the current Home Assistant device name, including user-renamed device names from setup/device settings. This follows the device-name-first structure planned for a future Home Assistant naming update.
+- Entity IDs are rebuilt automatically during initial setup using the schema `device name + sensor name`.
+- Integration options now include an explicit action to rebuild entity IDs again using the schema `device name + sensor name`.
+- Technical vendor/device prefixes and installation-specific IDs are stripped more consistently during item-name normalization.
+- Repeated channel fragments such as `Battery Battery ...` are normalized to a single term.
+- Power sensors: transient `unavailable` item values are now debounced with a configurable poll threshold; the last valid power value is kept until the configured unavailable limit is reached, and `0` disables the debounce entirely.
+- Sensor type detection: metadata mapping now derives Home Assistant sensor types more reliably from `/rest/things`, including typed `itemType` metadata and `channelTypeUID` fallback inference for channels such as current and voltage.
+- Device registry compatibility: fixed `via_device` handling for SOLARWATT sub-devices so Home Assistant no longer warns about references to non-existing parent devices.
+- Internal cleanup: removed unused client URL state, consolidated device-name lookup into a shared helper, and simplified the naming/migration flow.
+
 ## 2026.3.5
 
 ### Changes

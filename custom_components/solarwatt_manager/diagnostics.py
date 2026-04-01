@@ -97,7 +97,7 @@ async def async_get_config_entry_diagnostics(
         attrs = state.attributes or {}
         device_class = attrs.get("device_class")
         state_class = attrs.get("state_class")
-        if device_class != "energy" and state_class != "total_increasing":
+        if device_class != "energy" and state_class not in ("total", "total_increasing"):
             continue
         last_updated = state.last_updated.isoformat() if state.last_updated else None
         last_changed = state.last_changed.isoformat() if state.last_changed else None
@@ -111,7 +111,6 @@ async def async_get_config_entry_diagnostics(
         }
 
     item_payloads: dict[str, Any] = {}
-    item_keys: list[str] = []
     numeric_count = 0
     type_counts: Counter[str] = Counter()
     category_counts: Counter[str] = Counter()
@@ -125,7 +124,6 @@ async def async_get_config_entry_diagnostics(
         k_clean = (k or "").lstrip("#")
         payload = _item_payload(it)
         item_payloads[k_clean] = payload
-        item_keys.append(k_clean)
 
         if _num_value(it) is not None:
             numeric_count += 1
@@ -150,10 +148,6 @@ async def async_get_config_entry_diagnostics(
             null_value_count += 1
         elif not isinstance(val, (int, float)):
             non_numeric_count += 1
-
-    item_pairs = list(item_payloads.items())
-    sample = dict(item_pairs[:50])
-    sample_tail = dict(item_pairs[-50:]) if len(item_pairs) > 50 else {}
 
     # Highlight the most common problems to speed up support.
     N = 20
@@ -211,7 +205,6 @@ async def async_get_config_entry_diagnostics(
             "energy_delta_kwh": energy_delta_kwh,
             "energy_sensors_last_write": _redact(energy_sensor_writes),
         },
-        "data_keys": item_keys,
         "data_stats": _redact(
             {
                 "types": dict(type_counts),
@@ -230,8 +223,6 @@ async def async_get_config_entry_diagnostics(
                 "problem_items_total": len(problem_items),
             }
         ),
-        "data_sample_first_50": _redact(sample),
-        "data_sample_last_50": _redact(sample_tail) if sample_tail else None,
         "things": _redact(
             {
                 "things_count": len(things_compact),

@@ -9,19 +9,26 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    CONF_NAME_PREFIX,
     CONF_ENERGY_DELTA_KWH,
+    CONF_POWER_UNAVAILABLE_THRESHOLD,
     DEFAULT_ENERGY_DELTA_KWH,
+    DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
+    DOMAIN,
     SOLARWATTConfigEntry,
     build_device_info,
+    build_thing_device_identifier,
     build_thing_device_info,
+    get_registry_device_name,
     get_selected_thing_uids,
     get_thing_display_name,
 )
 from .entity_helpers import (
     build_item_sensor_unique_id,
 )
-from .naming import format_display_name, normalize_item_name
+from .naming import (
+    compose_entity_object_id,
+    item_entity_name,
+)
 from .sensor_meta import guess_ha_meta
 
 
@@ -30,16 +37,62 @@ async def async_setup_entry(
 ):
     coordinator = entry.runtime_data
 
-    prefix = (entry.options.get(CONF_NAME_PREFIX) or "").strip()
     energy_delta_kwh = float(entry.options.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH))
+    power_unavailable_threshold = int(
+        entry.options.get(
+            CONF_POWER_UNAVAILABLE_THRESHOLD,
+            DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
+        )
+    )
 
-    entities = []
     added_item_names: set[str] = set()
     added_thing_uids: set[str] = set()
     selected_thing_uids = get_selected_thing_uids(entry.options)
-    for item_name, it in coordinator.data.items():
-        if (it.oh_type or "").startswith("Switch"):
+    entities = _collect_new_entities(
+        coordinator,
+        entry,
+        selected_thing_uids,
+        energy_delta_kwh,
+        power_unavailable_threshold,
+        added_item_names,
+        added_thing_uids,
+    )
+    async_add_entities(entities)
+
+    @callback
+    def _async_discover_new_entities() -> None:
+        new_entities = _collect_new_entities(
+            coordinator,
+            entry,
+            selected_thing_uids,
+            energy_delta_kwh,
+            power_unavailable_threshold,
+            added_item_names,
+            added_thing_uids,
+        )
+        if new_entities:
+            async_add_entities(new_entities)
+
+    entry.async_on_unload(coordinator.register_discovery_callback(_async_discover_new_entities))
+
+
+def _collect_new_entities(
+    coordinator,
+    entry: SOLARWATTConfigEntry,
+    selected_thing_uids: set[str] | None,
+    energy_delta_kwh: float,
+    power_unavailable_threshold: int,
+    added_item_names: set[str],
+    added_thing_uids: set[str],
+) -> list[SensorEntity]:
+    """Build newly discovered item and thing sensors that are not added yet."""
+    entities: list[SensorEntity] = []
+    for item_name, item in (coordinator.data or {}).items():
+        if (item.oh_type or "").startswith("Switch"):
             continue
+        if item_name in added_item_names:
+            continue
+
         thing_uid = (getattr(coordinator, "item_to_thing_uid", {}) or {}).get(item_name)
         if (
             thing_uid
@@ -47,6 +100,7 @@ async def async_setup_entry(
             and thing_uid not in selected_thing_uids
         ):
             continue
+
         added_item_names.add(item_name)
         entities.append(
             SOLARWATTItemSensor(
@@ -54,14 +108,17 @@ async def async_setup_entry(
                 entry.entry_id,
                 item_name,
                 device_name=entry.title,
-                prefix=prefix,
                 energy_delta_kwh=energy_delta_kwh,
+                power_unavailable_threshold=power_unavailable_threshold,
             )
         )
 
     for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
         if selected_thing_uids is not None and thing_uid not in selected_thing_uids:
             continue
+        if thing_uid in added_thing_uids:
+            continue
+
         added_thing_uids.add(thing_uid)
         entities.append(
             SOLARWATTThingSensor(
@@ -72,53 +129,7 @@ async def async_setup_entry(
             )
         )
 
-    async_add_entities(entities)
-
-    @callback
-    def _async_discover_new_entities() -> None:
-        new_entities: list[SensorEntity] = []
-        for item_name, it in (coordinator.data or {}).items():
-            if (it.oh_type or "").startswith("Switch"):
-                continue
-            thing_uid = (getattr(coordinator, "item_to_thing_uid", {}) or {}).get(item_name)
-            if (
-                thing_uid
-                and selected_thing_uids is not None
-                and thing_uid not in selected_thing_uids
-            ):
-                continue
-            if item_name in added_item_names:
-                continue
-            added_item_names.add(item_name)
-            new_entities.append(
-                SOLARWATTItemSensor(
-                    coordinator,
-                    entry.entry_id,
-                    item_name,
-                    device_name=entry.title,
-                    prefix=prefix,
-                    energy_delta_kwh=energy_delta_kwh,
-                )
-            )
-
-        for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
-            if selected_thing_uids is not None and thing_uid not in selected_thing_uids:
-                continue
-            if thing_uid in added_thing_uids:
-                continue
-            added_thing_uids.add(thing_uid)
-            new_entities.append(
-                SOLARWATTThingSensor(
-                    coordinator,
-                    entry.entry_id,
-                    thing_uid,
-                    thing,
-                )
-            )
-        if new_entities:
-            async_add_entities(new_entities)
-
-    entry.async_on_unload(coordinator.register_discovery_callback(_async_discover_new_entities))
+    return entities
 
 
 class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
@@ -130,35 +141,48 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         entry_id: str,
         item_name: str,
         device_name: str = "SOLARWATT Manager",
-        prefix: str = "",
         energy_delta_kwh: float = DEFAULT_ENERGY_DELTA_KWH,
+        power_unavailable_threshold: int = DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
     ):
         super().__init__(coordinator)
         self._item_name = item_name
+        self._default_device_name = device_name
         self._energy_delta_kwh = energy_delta_kwh
+        self._power_unavailable_threshold = max(int(power_unavailable_threshold), 0)
         self._last_energy_value: float | None = None
+        self._last_power_value: float | int | None = None
+        self._consecutive_power_unavailable = 0
         self._last_update_success: bool | None = None
         self._is_energy = False
-        self._prefix = prefix
+        self._is_total_increasing_energy = False
+        self._is_power = False
 
         self._attr_unique_id = build_item_sensor_unique_id(entry_id, item_name)
         self._attr_entity_registry_enabled_default = True
 
+        # Resolve the owning HA device once so naming and registry mapping stay aligned.
         host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id
-        thing_uid = (getattr(self.coordinator, "item_to_thing_uid", {}) or {}).get(item_name)
-        thing = (getattr(self.coordinator, "things", {}) or {}).get(thing_uid) if thing_uid else None
+        self._host = str(host)
+        self._thing_uid = (getattr(self.coordinator, "item_to_thing_uid", {}) or {}).get(item_name)
+        thing = (getattr(self.coordinator, "things", {}) or {}).get(self._thing_uid) if self._thing_uid else None
         self._attr_device_info = (
-            build_thing_device_info(host, thing)
+            build_thing_device_info(
+                getattr(self.coordinator, "hass", None),
+                self._host,
+                thing,
+                getattr(self.coordinator, "things", {}) or {},
+            )
             if isinstance(thing, dict)
-            else build_device_info(host, device_name)
+            else build_device_info(self._host, device_name)
         )
         item = (self.coordinator.data or {}).get(item_name)
         channel_metadata = (
             getattr(self.coordinator, "item_to_channel_metadata", {}) or {}
         ).get(item_name)
 
-        self._attr_name = self._build_display_name()
+        self._attr_name = self._build_entity_name()
 
+        # Cache sensor metadata once; update handling below only works with these flags.
         if item:
             meta = guess_ha_meta(
                 getattr(item, "oh_type", None),
@@ -170,28 +194,53 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = meta.get("state_class")
             self._attr_native_unit_of_measurement = meta.get("suggested_unit")
             self._attr_icon = meta.get("icon")
-            self._is_energy = (
-                self._attr_device_class == SensorDeviceClass.ENERGY
-                or self._attr_state_class == SensorStateClass.TOTAL_INCREASING
+            self._is_energy = self._attr_device_class == SensorDeviceClass.ENERGY
+            self._is_total_increasing_energy = (
+                self._attr_state_class in (SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING)
             )
+            self._is_power = self._attr_device_class == SensorDeviceClass.POWER
 
-    def _build_display_name(self) -> str:
-        clean_item_name = normalize_item_name(
-            self._item_name or "",
-            getattr(self.coordinator, "multi_instance_device_types", set()),
+    # Entity/device naming helpers.
+    def _thing(self) -> dict | None:
+        return (getattr(self.coordinator, "things", {}) or {}).get(self._thing_uid)
+
+    def _device_identifier(self) -> tuple[str, str]:
+        if self._thing_uid:
+            return build_thing_device_identifier(self._host, self._thing_uid)
+        return DOMAIN, self._host
+
+    def _build_device_name(self) -> str:
+        registry_device_name = get_registry_device_name(self.hass, self._device_identifier())
+        if registry_device_name:
+            return registry_device_name
+
+        thing = self._thing()
+        if isinstance(thing, dict):
+            return get_thing_display_name(thing, self._default_device_name)
+        return self._default_device_name
+
+    def _build_entity_name(self) -> str:
+        return item_entity_name(self._item_name or "")
+
+    def _build_object_id(self) -> str:
+        return compose_entity_object_id(
+            self._build_device_name(),
+            self._build_entity_name(),
         )
-        base_name = clean_item_name.replace("harmonized_", "").replace("_", " ").strip()
-        display_name = format_display_name(base_name)
-        return f"{self._prefix} {display_name}".strip() if self._prefix else display_name
 
     def _sync_display_name(self) -> bool:
-        new_name = self._build_display_name()
+        new_name = self._build_entity_name()
         if new_name == self._attr_name:
             return False
         self._attr_name = new_name
         return True
 
-    def _is_invalid_energy_value(self, value) -> bool:
+    @property
+    def suggested_object_id(self) -> str | None:
+        return self._build_object_id() or None
+
+    # Numeric state handling for energy delta and temporary power unavailability.
+    def _is_invalid_numeric_value(self, value) -> bool:
         if value is None or isinstance(value, bool):
             return True
         try:
@@ -199,10 +248,21 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         except (TypeError, ValueError):
             return True
 
+    def _sync_cached_numeric_values(self, value, *, update_energy: bool) -> None:
+        is_invalid = self._is_invalid_numeric_value(value)
+        if self._is_power and self._power_unavailable_threshold > 0:
+            if is_invalid:
+                self._consecutive_power_unavailable += 1
+            else:
+                self._last_power_value = value
+                self._consecutive_power_unavailable = 0
+        if update_energy and self._is_total_increasing_energy and not is_invalid:
+            self._last_energy_value = float(value)
+
     def _should_write_energy(self, value) -> bool:
-        if not self._is_energy:
+        if not self._is_total_increasing_energy:
             return True
-        if self._is_invalid_energy_value(value):
+        if self._is_invalid_numeric_value(value):
             # Keep last valid energy value instead of overwriting with NULL/unavailable.
             return False
         new_val = float(value)
@@ -216,36 +276,55 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
             return True
         return False
 
-    def _sync_energy_value(self, value) -> None:
-        if not self._is_energy:
-            return
-        if self._is_invalid_energy_value(value):
-            return
-        new_val = float(value)
-        self._last_energy_value = new_val if math.isfinite(new_val) else None
-
-    def _handle_coordinator_update(self) -> None:
-        name_changed = self._sync_display_name()
-        update_success = getattr(self.coordinator, "last_update_success", None)
-        if update_success != self._last_update_success:
-            self._last_update_success = update_success
-            self._sync_energy_value(self.native_value)
-            super()._handle_coordinator_update()
-            return
-        if self._is_energy and not name_changed and not self._should_write_energy(self.native_value):
-            return
-        super()._handle_coordinator_update()
-
-    @property
-    def native_value(self):
+    def _current_item_value(self):
         item = (self.coordinator.data or {}).get(self._item_name)
         if not item:
             return None
         val = item.parsed.value
-        if self._is_energy and self._is_invalid_energy_value(val):
-            return self._last_energy_value
         if isinstance(val, str):
             return val.lstrip("#")
+        return val
+
+    # CoordinatorEntity hook: decide when state changes should reach Home Assistant.
+    def _handle_coordinator_update(self) -> None:
+        name_changed = self._sync_display_name()
+        update_success = getattr(self.coordinator, "last_update_success", None)
+        update_success_changed = update_success != self._last_update_success
+        current_value = self._current_item_value()
+        self._sync_cached_numeric_values(current_value, update_energy=update_success_changed)
+        if update_success_changed:
+            self._last_update_success = update_success
+            super()._handle_coordinator_update()
+            return
+        if (
+            self._is_total_increasing_energy
+            and not name_changed
+            and not self._should_write_energy(current_value)
+        ):
+            return
+        super()._handle_coordinator_update()
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        if self._power_unavailable_threshold <= 0:
+            return True
+        if self._is_power and self._consecutive_power_unavailable >= self._power_unavailable_threshold:
+            return False
+        return True
+
+    @property
+    def native_value(self):
+        val = self._current_item_value()
+        if self._is_total_increasing_energy and self._is_invalid_numeric_value(val):
+            return self._last_energy_value
+        if self._is_power and self._is_invalid_numeric_value(val):
+            if self._power_unavailable_threshold <= 0:
+                return val
+            if self._consecutive_power_unavailable < self._power_unavailable_threshold:
+                return self._last_power_value
+            return None
         return val
 
 
@@ -269,7 +348,12 @@ class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = label or thing_uid
 
         host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id
-        self._attr_device_info = build_thing_device_info(host, thing)
+        self._attr_device_info = build_thing_device_info(
+            getattr(self.coordinator, "hass", None),
+            host,
+            thing,
+            getattr(self.coordinator, "things", {}) or {},
+        )
 
     def _thing(self) -> dict | None:
         return (getattr(self.coordinator, "things", {}) or {}).get(self._thing_uid)

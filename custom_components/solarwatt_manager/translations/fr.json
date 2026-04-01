@@ -7,6 +7,7 @@
       "invalid_password": "Mot de passe invalide.",
       "invalid_scan_interval": "L'intervalle de mise à jour doit être compris entre 10 et 3600 secondes.",
       "invalid_energy_delta_kwh": "Le delta d'énergie doit être supérieur ou égal à 0 (kWh).",
+      "invalid_power_unavailable_threshold": "Le seuil d'indisponibilité de puissance doit être supérieur ou égal à 0.",
       "invalid_input": "Entrée invalide.",
       "invalid_auth": "Nom d'utilisateur ou mot de passe invalide.",
       "not_solarwatt": "L'hôte ne semble pas être un SOLARWATT Manager.",
@@ -24,7 +25,7 @@
           "password": "Mot de passe",
           "scan_interval": "Intervalle de mise à jour (secondes)",
           "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
-          "name_prefix": "Préfixe de nom (optionnel)"
+          "power_unavailable_threshold": "Seuil d'indisponibilité de puissance (polls). Conserver la dernière valeur jusqu'à la N-ième indisponibilité ; 0 = désactiver"
         }
       },
       "devices": {
@@ -34,17 +35,22 @@
     }
   },
   "options": {
+    "abort": {
+      "rebuild_entity_ids_done": "Les identifiants d'entité ont été reconstruits selon le schéma nom de l'appareil + nom du capteur."
+    },
     "error": {
       "invalid_scan_interval": "L'intervalle de mise à jour doit être compris entre 10 et 3600 secondes.",
-      "invalid_energy_delta_kwh": "Le delta d'énergie doit être supérieur ou égal à 0 (kWh)."
+      "invalid_energy_delta_kwh": "Le delta d'énergie doit être supérieur ou égal à 0 (kWh).",
+      "invalid_power_unavailable_threshold": "Le seuil d'indisponibilité de puissance doit être supérieur ou égal à 0."
     },
     "step": {
       "init": {
         "title": "Options",
         "data": {
+          "rebuild_entity_ids": "Reconstruire les identifiants d'entité lors de l'enregistrement (nom de l'appareil + nom du capteur)",
           "scan_interval": "Intervalle de mise à jour (secondes)",
           "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
-          "name_prefix": "Préfixe de nom (optionnel)"
+          "power_unavailable_threshold": "Seuil d'indisponibilité de puissance (polls). Conserver la dernière valeur jusqu'à la N-ième indisponibilité ; 0 = désactiver"
         }
       }
     }

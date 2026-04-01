@@ -6,7 +6,11 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import SOLARWATTConfigEntry, build_thing_device_info, get_selected_thing_uids
+from .const import (
+    SOLARWATTConfigEntry,
+    build_thing_device_info,
+    get_selected_thing_uids,
+)
 
 
 async def async_setup_entry(
@@ -67,7 +71,12 @@ class SOLARWATTDiagnosticsRefreshButton(CoordinatorEntity, ButtonEntity):
         self._attr_unique_id = f"{entry_id}_thing_{thing_uid}_diagnostics_refresh"
 
         host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id
-        self._attr_device_info = build_thing_device_info(host, thing)
+        self._attr_device_info = build_thing_device_info(
+            getattr(self.coordinator, "hass", None),
+            host,
+            thing,
+            getattr(self.coordinator, "things", {}) or {},
+        )
 
     async def async_press(self) -> None:
         await self.coordinator.async_refresh_discovery_data()

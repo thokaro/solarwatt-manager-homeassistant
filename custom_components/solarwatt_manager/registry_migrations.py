@@ -13,69 +13,67 @@ from .const import (
     DOMAIN,
     SOLARWATTConfigEntry,
     build_thing_device_identifier,
+    get_registry_entry_device_name,
+    get_thing_display_name,
 )
-from .entity_helpers import build_item_sensor_unique_id
-from .naming import normalized_item_name_variants
+from .entity_helpers import (
+    build_item_sensor_unique_id,
+    item_sensor_entries,
+    item_sensor_names,
+)
+from .naming import (
+    compose_entity_object_id,
+    item_entity_name,
+    slugify_entity_name,
+)
+from .registry_cleanup import cleanup_empty_channel_thing_diagnostics
 
 _LOGGER = logging.getLogger(__name__)
+_PENDING_REGISTRY_MIGRATIONS = f"{DOMAIN}_pending_registry_migrations"
 
 
-def migrate_item_sensor_unique_ids(
+def finalize_registry_migrations(
     hass: HomeAssistant,
     entry: SOLARWATTConfigEntry,
     items: Mapping[str, Any] | None,
+    item_to_thing_uid: Mapping[str, str] | None,
+    things: Mapping[str, Any] | None,
+    *,
+    force_entity_id_rebuild: bool = False,
 ) -> None:
-    """Migrate legacy normalized item unique_ids to raw item-name unique_ids."""
-    migration_map: dict[str, str] = {}
-    for item_name in _item_sensor_names(items):
-        new_unique_id = build_item_sensor_unique_id(entry.entry_id, item_name)
-        legacy_unique_ids = {
-            f"{entry.entry_id}_{normalized_name}"
-            for normalized_name in normalized_item_name_variants(item_name or "")
-        }
-        for old_unique_id in legacy_unique_ids:
-            if old_unique_id != new_unique_id:
-                migration_map[old_unique_id] = new_unique_id
+    """Run all registry migrations that require entities to exist already."""
+    migrate_item_entities_to_thing_devices(hass, entry, items, item_to_thing_uid)
+    migrate_item_sensor_entity_ids(
+        hass,
+        entry,
+        items,
+        item_to_thing_uid,
+        things,
+        force_rebuild=force_entity_id_rebuild,
+    )
+    cleanup_empty_channel_thing_diagnostics(
+        hass,
+        entry,
+        things,
+    )
+    cleanup_legacy_device_registry_entries(hass, entry)
 
-    if not migration_map:
-        return
 
-    ent_reg, entries = _item_sensor_entries(hass, entry)
-    used_unique_ids = {registry_entry.unique_id for registry_entry in entries}
+def mark_pending_registry_migration(hass: HomeAssistant, entry_id: str) -> None:
+    """Remember that the next setup should finalize registry migrations."""
+    pending = hass.data.setdefault(_PENDING_REGISTRY_MIGRATIONS, set())
+    pending.add(entry_id)
 
-    migrated = 0
-    skipped = 0
-    for registry_entry in entries:
-        target_unique_id = migration_map.get(registry_entry.unique_id)
-        if not target_unique_id:
-            continue
-        if (
-            target_unique_id in used_unique_ids
-            and target_unique_id != registry_entry.unique_id
-        ):
-            skipped += 1
-            _LOGGER.warning(
-                "Skipping unique_id migration for %s due to collision: %s",
-                registry_entry.entity_id,
-                target_unique_id,
-            )
-            continue
 
-        ent_reg.async_update_entity(
-            registry_entry.entity_id,
-            new_unique_id=target_unique_id,
-        )
-        used_unique_ids.discard(registry_entry.unique_id)
-        used_unique_ids.add(target_unique_id)
-        migrated += 1
-
-    if migrated or skipped:
-        _LOGGER.info(
-            "Unique ID migration finished for entry %s: migrated=%s skipped=%s",
-            entry.entry_id,
-            migrated,
-            skipped,
-        )
+def consume_pending_registry_migration(hass: HomeAssistant, entry_id: str) -> bool:
+    """Return and clear whether the next setup should finalize registry migrations."""
+    pending = hass.data.get(_PENDING_REGISTRY_MIGRATIONS)
+    if not pending or entry_id not in pending:
+        return False
+    pending.discard(entry_id)
+    if not pending:
+        hass.data.pop(_PENDING_REGISTRY_MIGRATIONS, None)
+    return True
 
 
 def cleanup_legacy_device_registry_entries(
@@ -84,7 +82,10 @@ def cleanup_legacy_device_registry_entries(
 ) -> None:
     """Remove obsolete registry entries left behind by older releases."""
     ent_reg = er.async_get(hass)
-    legacy_unique_ids = {f"{entry.entry_id}_diagnostics_refresh"}
+    legacy_unique_ids = {
+        f"{entry.entry_id}_diagnostics_refresh",
+        f"{entry.entry_id}_rebuild_entity_names",
+    }
     removed = 0
 
     for registry_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
@@ -105,6 +106,83 @@ def cleanup_legacy_device_registry_entries(
     _remove_orphaned_root_device(hass, entry)
 
 
+def migrate_item_sensor_entity_ids(
+    hass: HomeAssistant,
+    entry: SOLARWATTConfigEntry,
+    items: Mapping[str, Any] | None,
+    item_to_thing_uid: Mapping[str, str] | None,
+    things: Mapping[str, Any] | None,
+    *,
+    force_rebuild: bool = False,
+) -> None:
+    """Migrate item sensor entity IDs to the current device-name based format."""
+    ent_reg, entries = item_sensor_entries(hass, entry)
+    if not entries:
+        return
+
+    parameters = _update_entity_parameters(ent_reg)
+    if "new_entity_id" not in parameters:
+        _LOGGER.debug("Entity registry does not support entity_id migration for entry %s", entry.entry_id)
+        return
+
+    host = str(entry.data.get("host") or "").strip().lower()
+    dev_reg = dr.async_get(hass)
+    migrated = 0
+    skipped = 0
+    collisions = 0
+
+    for registry_entry in entries:
+        item_name = _item_name_from_unique_id(entry, registry_entry.unique_id)
+        if not item_name or item_name not in (items or {}):
+            continue
+
+        device_name = _target_device_name(
+            dev_reg,
+            registry_entry.device_id,
+            host,
+            item_name,
+            item_to_thing_uid,
+            things,
+            entry.title,
+        )
+        entity_name = item_entity_name(item_name)
+        entity_slug = slugify_entity_name(entity_name)
+        target_object_id = compose_entity_object_id(device_name, entity_name)
+        current_object_id = registry_entry.entity_id.removeprefix("sensor.")
+
+        if not target_object_id or current_object_id == target_object_id:
+            continue
+        if not force_rebuild and not _should_migrate_entity_id(current_object_id, entity_slug):
+            skipped += 1
+            continue
+
+        target_entity_id = f"sensor.{target_object_id}"
+        existing_entry = ent_reg.async_get(target_entity_id)
+        if existing_entry and existing_entry.entity_id != registry_entry.entity_id:
+            collisions += 1
+            _LOGGER.warning(
+                "Skipping entity_id migration for %s due to collision: %s",
+                registry_entry.entity_id,
+                target_entity_id,
+            )
+            continue
+
+        ent_reg.async_update_entity(
+            registry_entry.entity_id,
+            new_entity_id=target_entity_id,
+        )
+        migrated += 1
+
+    if migrated or skipped or collisions:
+        _LOGGER.info(
+            "Entity ID migration finished for entry %s: migrated=%s skipped=%s collisions=%s",
+            entry.entry_id,
+            migrated,
+            skipped,
+            collisions,
+        )
+
+
 def migrate_item_entities_to_thing_devices(
     hass: HomeAssistant,
     entry: SOLARWATTConfigEntry,
@@ -116,7 +194,7 @@ def migrate_item_entities_to_thing_devices(
     if not host:
         return
 
-    ent_reg, entries = _item_sensor_entries(hass, entry)
+    ent_reg, entries = item_sensor_entries(hass, entry)
     entries_by_unique_id = {
         registry_entry.unique_id: registry_entry
         for registry_entry in entries
@@ -127,7 +205,7 @@ def migrate_item_entities_to_thing_devices(
 
     dev_reg = dr.async_get(hass)
     moved = 0
-    for item_name in _item_sensor_names(items):
+    for item_name in item_sensor_names(items):
         thing_uid = (item_to_thing_uid or {}).get(item_name)
         if not thing_uid:
             continue
@@ -190,10 +268,7 @@ def _update_entity_device(
     target_device_id: str,
 ) -> bool:
     """Update a registry entry to point at a different device if supported."""
-    try:
-        parameters = inspect.signature(ent_reg.async_update_entity).parameters
-    except (TypeError, ValueError):
-        parameters = {}
+    parameters = _update_entity_parameters(ent_reg)
 
     if "device_id" in parameters:
         ent_reg.async_update_entity(entity_id, device_id=target_device_id)
@@ -206,34 +281,61 @@ def _update_entity_device(
     return False
 
 
-def _item_sensor_entries(
-    hass: HomeAssistant, entry: SOLARWATTConfigEntry
-) -> tuple[er.EntityRegistry, list[er.RegistryEntry]]:
-    """Return sensor registry entries for this config entry excluding thing diagnostics."""
-    ent_reg = er.async_get(hass)
-    item_prefix = f"{entry.entry_id}_"
-    thing_prefix = f"{entry.entry_id}_thing_"
-    entries = [
-        registry_entry
-        for registry_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id)
-        if registry_entry.domain == "sensor"
-        and registry_entry.platform == DOMAIN
-        and registry_entry.unique_id
-        and registry_entry.unique_id.startswith(item_prefix)
-        and not registry_entry.unique_id.startswith(thing_prefix)
-    ]
-    return ent_reg, entries
+def _update_entity_parameters(ent_reg: er.EntityRegistry) -> Mapping[str, inspect.Parameter]:
+    """Return the parameters of ``async_update_entity`` if available."""
+    try:
+        return inspect.signature(ent_reg.async_update_entity).parameters
+    except (TypeError, ValueError):
+        return {}
 
 
-def _item_sensor_names(items: Mapping[str, Any] | None) -> list[str]:
-    """Return coordinator item names that should be exposed as sensors."""
-    return [
-        item_name
-        for item_name, item in (items or {}).items()
-        if not _is_switch_item(item)
-    ]
+def _item_name_from_unique_id(entry: SOLARWATTConfigEntry, unique_id: str | None) -> str | None:
+    """Return the raw item name encoded in the sensor unique_id."""
+    if not unique_id:
+        return None
+    prefix = f"{entry.entry_id}_"
+    if not unique_id.startswith(prefix):
+        return None
+    item_name = unique_id.removeprefix(prefix)
+    return item_name or None
 
 
-def _is_switch_item(item: Any) -> bool:
-    """Return True for switch-like OpenHAB items that are not exposed as sensors."""
-    return (getattr(item, "oh_type", None) or "").startswith("Switch")
+def _target_device_name(
+    dev_reg: dr.DeviceRegistry,
+    registry_device_id: str | None,
+    host: str,
+    item_name: str,
+    item_to_thing_uid: Mapping[str, str] | None,
+    things: Mapping[str, Any] | None,
+    fallback_device_name: str,
+) -> str:
+    """Return the current device name that should be used for the entity_id."""
+    if registry_name := get_registry_entry_device_name(
+        dev_reg.async_get(registry_device_id) if registry_device_id else None
+    ):
+        return registry_name
+
+    thing_uid = (item_to_thing_uid or {}).get(item_name)
+    if thing_uid and host:
+        if registry_name := get_registry_entry_device_name(
+            dev_reg.async_get_device(
+                identifiers={build_thing_device_identifier(host, thing_uid)}
+            )
+        ):
+            return registry_name
+
+    thing = (things or {}).get(thing_uid or "")
+    if isinstance(thing, Mapping):
+        thing_name = get_thing_display_name(thing, fallback_device_name)
+        if thing_name:
+            return thing_name
+
+    return fallback_device_name
+def _should_migrate_entity_id(current_object_id: str, entity_slug: str) -> bool:
+    """Return True when the current object_id looks auto-generated for this item."""
+    if not current_object_id or not entity_slug:
+        return False
+    return (
+        current_object_id == entity_slug
+        or current_object_id.endswith(f"_{entity_slug}")
+    )

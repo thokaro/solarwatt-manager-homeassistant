@@ -14,7 +14,7 @@ from .const import (
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
 )
-from .naming import detect_multi_instance_device_types
+from .entity_helpers import detach_entityless_thing_devices, ensure_parent_devices_registered
 from .state_parser import SOLARWATTItem, parse_state
 
 
@@ -25,7 +25,6 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.things: dict[str, dict[str, Any]] = {}
         self.item_to_thing_uid: dict[str, str] = {}
         self.item_to_channel_metadata: dict[str, dict[str, str]] = {}
-        self.multi_instance_device_types: set[str] = set()
         self._discovery_callbacks: set[Callable[[], None]] = set()
 
         scan = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -57,22 +56,13 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             except Exception:
                 self.logger.exception("Error running discovery callback")
 
-    def refresh_multi_instance_device_types(self, *, notify: bool = False) -> bool:
-        """Recompute multi-instance device types from the current item snapshot."""
-        new_types = detect_multi_instance_device_types(self.data or {})
-        if new_types == self.multi_instance_device_types:
-            return False
-        self.multi_instance_device_types = new_types
-        if notify:
-            self.async_update_listeners()
-        return True
-
     async def async_refresh_discovery_data(self) -> None:
         """Refresh items/things and run one-shot entity discovery."""
         await self.async_request_refresh()
-        self.refresh_multi_instance_device_types(notify=True)
         await self.async_refresh_things()
+        ensure_parent_devices_registered(self.hass, self.entry, self.things)
         self._run_discovery_callbacks()
+        detach_entityless_thing_devices(self.hass, self.entry, self.things)
 
     async def _async_update_data(self) -> dict[str, SOLARWATTItem]:
         # Best practice for Home Assistant: do a single poll per update interval and
@@ -144,6 +134,7 @@ def _channel_item_metadata(channel: dict[str, Any]) -> dict[str, str]:
 
     metadata: dict[str, str] = {}
     channel_uid = str(channel.get("uid") or "").strip()
+    channel_type_uid = str(channel.get("channelTypeUID") or "").strip()
     item_type = str(channel.get("itemType") or "").strip()
     harmonized_item_type = str(props.get("kig.meta.harmonized.itemtype") or "").strip()
     scope = str(props.get("kig.meta.scope") or "").strip()
@@ -151,6 +142,8 @@ def _channel_item_metadata(channel: dict[str, Any]) -> dict[str, str]:
 
     if channel_uid:
         metadata["channel_uid"] = channel_uid
+    if channel_type_uid:
+        metadata["channel_type_uid"] = channel_type_uid
     if item_type:
         metadata["item_type"] = item_type
     if harmonized_item_type:
