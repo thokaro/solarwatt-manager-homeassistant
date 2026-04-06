@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Callable, Iterator, Mapping
+from typing import Any, TypeVar
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -19,6 +19,7 @@ from .const import (
 from .naming import clean_item_key
 
 _LOGGER = logging.getLogger(__name__)
+_ThingEntityT = TypeVar("_ThingEntityT")
 
 
 # Item helpers.
@@ -27,25 +28,63 @@ def build_item_sensor_unique_id(entry_id: str, item_name: str) -> str:
     return f"{entry_id}_{clean_item_key(item_name or '')}"
 
 
+def build_thing_sensor_unique_id(entry_id: str, thing_uid: str) -> str:
+    """Return the stable unique_id for a thing diagnostics sensor."""
+    return f"{entry_id}_thing_{thing_uid}"
+
+
+def build_thing_diagnostics_refresh_unique_id(entry_id: str, thing_uid: str) -> str:
+    """Return the stable unique_id for a thing diagnostics refresh button."""
+    return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_diagnostics_refresh"
+
+
 def is_switch_item(item: Any) -> bool:
     """Return True for switch-like OpenHAB items that are not exposed as sensors."""
     return (getattr(item, "oh_type", None) or "").startswith("Switch")
 
 
-def item_sensor_names(items: Mapping[str, Any] | None) -> list[str]:
-    """Return coordinator item names that should be exposed as sensors."""
-    return [
-        item_name
-        for item_name, item in (items or {}).items()
-        if not is_switch_item(item)
-    ]
+def iter_selected_item_sensor_names(
+    items: Mapping[str, Any] | None,
+    item_to_thing_uid: Mapping[str, str] | None = None,
+    selected_thing_uids: set[str] | None = None,
+) -> Iterator[str]:
+    """Yield coordinator item names that should be exposed as sensors."""
+    for item_name, item in (items or {}).items():
+        if is_switch_item(item):
+            continue
+        thing_uid = (item_to_thing_uid or {}).get(item_name)
+        if (
+            selected_thing_uids is not None
+            and thing_uid is not None
+            and thing_uid not in selected_thing_uids
+        ):
+            continue
+        yield item_name
+
+
+def collect_new_thing_entities(
+    things: Mapping[str, dict[str, Any]] | None,
+    selected_thing_uids: set[str] | None,
+    added_thing_uids: set[str],
+    entity_factory: Callable[[str, dict[str, Any]], _ThingEntityT],
+) -> list[_ThingEntityT]:
+    """Build thing-bound entities that were not added before."""
+    entities: list[_ThingEntityT] = []
+    for thing_uid, thing in (things or {}).items():
+        if selected_thing_uids is not None and thing_uid not in selected_thing_uids:
+            continue
+        if thing_uid in added_thing_uids:
+            continue
+        added_thing_uids.add(thing_uid)
+        entities.append(entity_factory(thing_uid, thing))
+    return entities
 
 
 def _thing_entity_unique_ids(entry_id: str, thing_uid: str) -> tuple[str, str]:
     """Return the managed entity unique_ids for one thing."""
     return (
-        f"{entry_id}_thing_{thing_uid}",
-        f"{entry_id}_thing_{thing_uid}_diagnostics_refresh",
+        build_thing_sensor_unique_id(entry_id, thing_uid),
+        build_thing_diagnostics_refresh_unique_id(entry_id, thing_uid),
     )
 
 
@@ -59,17 +98,17 @@ def _selected_entity_unique_ids(
     """Return the expected active entity unique IDs for the selected devices."""
     expected_unique_ids = {
         build_item_sensor_unique_id(entry.entry_id, item_name)
-        for item_name, item in (items or {}).items()
-        if not is_switch_item(item)
-        and (
-            (thing_uid := (item_to_thing_uid or {}).get(item_name)) is None
-            or thing_uid in selected_thing_uids
+        for item_name in iter_selected_item_sensor_names(
+            items,
+            item_to_thing_uid,
+            selected_thing_uids,
         )
     }
 
     for thing_uid in (things or {}).keys():
-        if thing_uid in selected_thing_uids:
-            expected_unique_ids.update(_thing_entity_unique_ids(entry.entry_id, thing_uid))
+        if thing_uid not in selected_thing_uids:
+            continue
+        expected_unique_ids.update(_thing_entity_unique_ids(entry.entry_id, thing_uid))
 
     return expected_unique_ids
 
@@ -115,7 +154,7 @@ def enable_item_sensor_entities(
     """Enable item sensor entities previously disabled by the integration."""
     expected_unique_ids = {
         build_item_sensor_unique_id(entry.entry_id, item_name)
-        for item_name in item_sensor_names(items)
+        for item_name in iter_selected_item_sensor_names(items)
     }
     if not expected_unique_ids:
         return

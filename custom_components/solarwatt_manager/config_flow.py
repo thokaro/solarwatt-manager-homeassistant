@@ -43,6 +43,13 @@ from .registry_migrations import mark_pending_registry_migration
 
 _LOGGER = logging.getLogger(__name__)
 _HOST_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_KNOWN_CLIENT_ERRORS: tuple[tuple[type[Exception], str, str], ...] = (
+    (ValueError, "invalid_input", "Invalid input while %s: %s"),
+    (SolarwattNotManagerError, "not_solarwatt", "Host is not a SOLARWATT Manager while %s: %s"),
+    (SolarwattAuthError, "invalid_auth", "Invalid SOLARWATT credentials while %s: %s"),
+    (SolarwattConnectionError, "cannot_connect", "Connection error while %s: %s"),
+    (SolarwattProtocolError, "connection_failed", "Unexpected SOLARWATT response while %s: %s"),
+)
 
 
 def _normalize_host(raw_host: str | None) -> str | None:
@@ -223,6 +230,32 @@ def _validate_user_data(
     return errors
 
 
+def _selected_checkbox_uids(
+    device_fields: Mapping[str, str],
+    user_input: Mapping[str, Any],
+) -> list[str]:
+    """Return selected thing UIDs from checkbox inputs."""
+    return [
+        uid
+        for field_name, uid in device_fields.items()
+        if bool(user_input.get(field_name))
+    ]
+
+
+def _build_thing_checkbox_schema(
+    things: list[tuple[str, dict[str, Any]]],
+    selected_uids: set[str],
+) -> tuple[dict[Any, Any], dict[str, str]]:
+    """Build checkbox fields for a list of things and return field-to-UID mapping."""
+    device_fields: dict[str, str] = {}
+    schema: dict[Any, Any] = {}
+    for uid, thing in things:
+        field_name = SOLARWATTItemsConfigFlow._thing_checkbox_label(uid, thing, device_fields)
+        device_fields[field_name] = uid
+        schema[vol.Optional(field_name, default=uid in selected_uids)] = bool
+    return schema, device_fields
+
+
 class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -251,6 +284,7 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
+        things: dict[str, dict[str, Any]] = {}
 
         if user_input is not None:
             entry_data, options = _normalize_user_input(user_input)
@@ -258,10 +292,12 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host = entry_data.get(CONF_HOST)
 
             if not errors and host is not None:
-                errors = await self._test_connection(
+                _, errors = await self._async_with_client(
                     host=host,
                     username=entry_data[CONF_USERNAME],
                     password=entry_data[CONF_PASSWORD],
+                    action=SOLARWATTClient.async_validate_connection,
+                    action_label="testing SOLARWATT connection",
                 )
 
             if not errors and host is not None:
@@ -293,7 +329,7 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_user()
 
         if user_input is not None:
-            selected = self._normalize_selected_device_fields(user_input)
+            selected = _selected_checkbox_uids(self._device_fields, user_input)
             return self._async_create_config_entry(selected)
 
         return self.async_show_form(
@@ -303,13 +339,10 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def _build_devices_schema(self) -> vol.Schema:
         """Build the device-selection schema."""
-        selected_by_default = set(self._default_selected_things(self._available_things))
-        self._device_fields = {}
-        schema: dict[Any, Any] = {}
-        for uid, thing in self._sorted_things(self._available_things):
-            field_name = self._thing_checkbox_label(uid, thing, self._device_fields)
-            self._device_fields[field_name] = uid
-            schema[vol.Optional(field_name, default=uid in selected_by_default)] = bool
+        schema, self._device_fields = _build_thing_checkbox_schema(
+            self._sorted_things(self._available_things),
+            set(self._default_selected_things(self._available_things)),
+        )
         return vol.Schema(schema)
 
     def _async_create_config_entry(self, selected_thing_uids: list[str] | None):
@@ -328,23 +361,6 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data=self._pending_entry_data,
             options=options,
         )
-
-    async def _test_connection(
-        self,
-        *,
-        host: str,
-        username: str,
-        password: str,
-    ) -> dict[str, str]:
-        """Test connection to SOLARWATT Manager using normalized credentials."""
-        _, errors = await self._async_with_client(
-            host=host,
-            username=username,
-            password=password,
-            action=SOLARWATTClient.async_validate_connection,
-            action_label="testing SOLARWATT connection",
-        )
-        return errors
 
     async def _async_fetch_things(
         self,
@@ -365,10 +381,11 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if errors:
             return things_by_uid, errors
 
-        for idx, thing in enumerate(result or []):
-            uid = str(thing.get("UID") or thing.get("uid") or f"unknown_{idx}").strip()
-            if uid:
-                things_by_uid[uid] = thing
+        things_by_uid = {
+            uid: thing
+            for idx, thing in enumerate(result or [])
+            if (uid := str(thing.get("UID") or thing.get("uid") or f"unknown_{idx}").strip())
+        }
 
         return things_by_uid, errors
 
@@ -393,22 +410,11 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await action(client), {}
             finally:
                 await client.async_close()
-        except ValueError as err:
-            _LOGGER.warning("Invalid input while %s: %s", action_label, err)
-            return None, {"base": "invalid_input"}
-        except SolarwattNotManagerError as err:
-            _LOGGER.warning("Host is not a SOLARWATT Manager while %s: %s", action_label, err)
-            return None, {"base": "not_solarwatt"}
-        except SolarwattAuthError as err:
-            _LOGGER.warning("Invalid SOLARWATT credentials while %s: %s", action_label, err)
-            return None, {"base": "invalid_auth"}
-        except SolarwattConnectionError as err:
-            _LOGGER.warning("Connection error while %s: %s", action_label, err)
-            return None, {"base": "cannot_connect"}
-        except SolarwattProtocolError as err:
-            _LOGGER.warning("Unexpected SOLARWATT response while %s: %s", action_label, err)
-            return None, {"base": "connection_failed"}
         except Exception as err:
+            for error_type, error_code, log_message in _KNOWN_CLIENT_ERRORS:
+                if isinstance(err, error_type):
+                    _LOGGER.warning(log_message, action_label, err)
+                    return None, {"base": error_code}
             _LOGGER.exception("Unexpected error while %s: %s", action_label, err)
             return None, {"base": "unknown_error"}
 
@@ -439,15 +445,12 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not isinstance(channels, list):
             return False
 
-        for channel in channels:
-            if not isinstance(channel, Mapping):
-                continue
-            linked_items = channel.get("linkedItems")
-            if not isinstance(linked_items, list):
-                continue
-            if any(str(linked_item).strip() for linked_item in linked_items):
-                return True
-        return False
+        return any(
+            isinstance(channel, Mapping)
+            and isinstance(linked_items := channel.get("linkedItems"), list)
+            and any(str(linked_item).strip() for linked_item in linked_items)
+            for channel in channels
+        )
 
     @classmethod
     def _selectable_things(
@@ -486,17 +489,6 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             for token in ("battery", "batteries", "dc_battery")
         )
         return is_location or is_battery
-
-    def _normalize_selected_device_fields(
-        self,
-        user_input: Mapping[str, Any],
-    ) -> list[str]:
-        """Return selected thing UIDs from checkbox inputs."""
-        return [
-            uid
-            for field_name, uid in self._device_fields.items()
-            if bool(user_input.get(field_name))
-        ]
 
     @classmethod
     def _thing_checkbox_label(
@@ -578,7 +570,6 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
             **_build_option_schema_fields(values),
         }
 
-        self._device_fields = {}
         available_things = self._available_things()
         selected_things = get_selected_thing_uids(values)
         if selected_things is None and CONF_ENABLED_THINGS not in values:
@@ -586,10 +577,11 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         elif selected_things is None:
             selected_things = set()
 
-        for uid, thing in available_things:
-            field_name = SOLARWATTItemsConfigFlow._thing_checkbox_label(uid, thing, self._device_fields)
-            self._device_fields[field_name] = uid
-            schema[vol.Optional(field_name, default=uid in selected_things)] = bool
+        thing_schema, self._device_fields = _build_thing_checkbox_schema(
+            available_things,
+            selected_things,
+        )
+        schema.update(thing_schema)
 
         return vol.Schema(schema)
 
@@ -597,11 +589,7 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         """Merge, normalize, and return user-visible options."""
         data = _normalize_options_input(user_input, self.config_entry.options)
         if self._device_fields:
-            data[CONF_ENABLED_THINGS] = [
-                uid
-                for field_name, uid in self._device_fields.items()
-                if bool(user_input.get(field_name))
-            ]
+            data[CONF_ENABLED_THINGS] = _selected_checkbox_uids(self._device_fields, user_input)
         elif CONF_ENABLED_THINGS in self.config_entry.options:
             data[CONF_ENABLED_THINGS] = self.config_entry.options[CONF_ENABLED_THINGS]
         return data

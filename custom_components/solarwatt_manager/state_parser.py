@@ -15,6 +15,29 @@ _UNIT_ALIASES = {
     "mOhm": "mΩ",
 }
 _UNAVAILABLE_STATES = {"NULL", "UNDEF", "UNINITIALIZED"}
+_SCALED_UNITS = {
+    "mA": (1_000.0, "A"),
+    "mV": (1_000.0, "V"),
+    "mW": (1_000.0, "W"),
+    "mWh": (1_000.0, "Wh"),
+    "mHz": (1_000.0, "Hz"),
+    "mΩ": (1_000.0, "Ω"),
+    "uA": (1_000_000.0, "A"),
+    "uV": (1_000_000.0, "V"),
+    "uW": (1_000_000.0, "W"),
+    "uWh": (1_000_000.0, "Wh"),
+    "uHz": (1_000_000.0, "Hz"),
+}
+_ROUND_DIGITS_BY_UNIT = {
+    "kWh": 3,
+    "kW": 3,
+    "W": 2,
+    "V": 2,
+    "A": 2,
+    "Hz": 2,
+    "%": 2,
+    "°C": 2,
+}
 
 
 @dataclass
@@ -58,29 +81,29 @@ def _normalize_unit(unit: str | None) -> str | None:
     return unit or None
 
 
-def _convert_milli_unit(value: float, unit: str | None) -> tuple[float, str | None]:
-    if unit == "mA":
-        return value / 1000.0, "A"
-    if unit == "mV":
-        return value / 1000.0, "V"
-    if unit == "mW":
-        return value / 1000.0, "W"
-    if unit == "mWh":
-        return value / 1000.0, "Wh"
-    if unit == "mHz":
-        return value / 1000.0, "Hz"
-    if unit == "mΩ":
-        return value / 1000.0, "Ω"
-    if unit == "uA":
-        return value / 1_000_000.0, "A"
-    if unit == "uV":
-        return value / 1_000_000.0, "V"
-    if unit == "uW":
-        return value / 1_000_000.0, "W"
-    if unit == "uWh":
-        return value / 1_000_000.0, "Wh"
-    if unit == "uHz":
-        return value / 1_000_000.0, "Hz"
+def _convert_scaled_unit(value: float, unit: str | None) -> tuple[float, str | None]:
+    if unit is None:
+        return value, None
+    if scaled_unit := _SCALED_UNITS.get(unit):
+        divisor, target_unit = scaled_unit
+        return value / divisor, target_unit
+    return value, unit
+
+
+def _normalize_numeric_state(value: float, unit: str | None) -> tuple[int | float, str | None]:
+    if unit == "Ws":
+        value /= 3600.0
+        unit = "Wh"
+    if unit == "Wh":
+        value /= 1000.0
+        unit = "kWh"
+    if unit == "C":
+        unit = "°C"
+
+    if (digits := _ROUND_DIGITS_BY_UNIT.get(unit or "")) is not None:
+        value = round(value, digits)
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
     return value, unit
 
 
@@ -131,30 +154,8 @@ def parse_state(
 
             # SOLARWATT/OpenHAB liefert teils Ws, Wh, kWh, kW, °C, etc.
             if unit:
-                val, unit = _convert_milli_unit(val, unit)
-
-            # Ws -> Wh (für HA besser)
-            if unit == "Ws":
-                val = val / 3600.0
-                unit = "Wh"
-
-            # Wh -> kWh (Energy Dashboard & Langzeitwerte)
-            if unit == "Wh":
-                val = val / 1000.0
-                unit = "kWh"
-
-            if unit == "kWh":
-                val = round(val, 3)
-            elif unit in ("kW",):
-                val = round(val, 3)
-            elif unit in ("W", "V", "A", "Hz", "%"):
-                val = round(val, 2)
-            elif unit in ("°C", "C"):
-                unit = "°C"
-                val = round(val, 2)
-
-            if isinstance(val, float) and val.is_integer():
-                val = int(val)
+                val, unit = _convert_scaled_unit(val, unit)
+            val, unit = _normalize_numeric_state(val, unit)
 
             return ParsedState(value=val, unit=unit)
         except ValueError:

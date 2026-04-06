@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.4.1
+
+### Changes
+- Discovery refresh: pressing `Update data` now waits for a full item refresh before `/rest/things` is refreshed and discovery callbacks run, so newly discovered item sensors and thing diagnostics entities are added immediately.
+- State parsing: numeric item states now also normalize milli- and micro-units such as `mA`, `mV`, `mW`, `mWh`, `mHz`, `mΩ`, `uA`, `uV`, `uW`, `uWh`, and `uHz` into Home Assistant-friendly base units with consistent rounding.
+- Diagnostics: compact item statistics, energy sensor write snapshots, and problem-item summaries are now built via shared helpers and tolerate missing or malformed `statusInfo` payloads more robustly.
+- Internal cleanup: shared helpers now centralize thing-entity discovery, unique ID construction, selected-device filtering, and repeated config-flow checkbox/error handling.
+
 ## 2026.4.0
 
 ### Changes

@@ -58,7 +58,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
 
     async def async_refresh_discovery_data(self) -> None:
         """Refresh items/things and run one-shot entity discovery."""
-        await self.async_request_refresh()
+        await self.async_refresh()
         await self.async_refresh_things()
         ensure_parent_devices_registered(self.hass, self.entry, self.things)
         self._run_discovery_callbacks()
@@ -131,28 +131,18 @@ def _channel_item_metadata(channel: dict[str, Any]) -> dict[str, str]:
     """Extract item-relevant metadata from a thing channel."""
     properties = channel.get("properties")
     props = properties if isinstance(properties, dict) else {}
-
-    metadata: dict[str, str] = {}
-    channel_uid = str(channel.get("uid") or "").strip()
-    channel_type_uid = str(channel.get("channelTypeUID") or "").strip()
-    item_type = str(channel.get("itemType") or "").strip()
-    harmonized_item_type = str(props.get("kig.meta.harmonized.itemtype") or "").strip()
-    scope = str(props.get("kig.meta.scope") or "").strip()
-    label = str(channel.get("label") or "").strip()
-
-    if channel_uid:
-        metadata["channel_uid"] = channel_uid
-    if channel_type_uid:
-        metadata["channel_type_uid"] = channel_type_uid
-    if item_type:
-        metadata["item_type"] = item_type
-    if harmonized_item_type:
-        metadata["harmonized_item_type"] = harmonized_item_type
-    if scope:
-        metadata["scope"] = scope
-    if label:
-        metadata["channel_label"] = label
-    return metadata
+    return {
+        key: text
+        for key, value in (
+            ("channel_uid", channel.get("uid")),
+            ("channel_type_uid", channel.get("channelTypeUID")),
+            ("item_type", channel.get("itemType")),
+            ("harmonized_item_type", props.get("kig.meta.harmonized.itemtype")),
+            ("scope", props.get("kig.meta.scope")),
+            ("channel_label", channel.get("label")),
+        )
+        if (text := str(value or "").strip())
+    }
 
 
 def _merge_channel_item_metadata(

@@ -27,19 +27,6 @@ def _redact(obj: Any) -> Any:
     return obj
 
 
-def _num_value(item: Any) -> float | None:
-    """Extract a numeric value from a SOLARWATTItem or similar wrapper."""
-    if item is None:
-        return None
-    if hasattr(item, "parsed"):
-        val = getattr(getattr(item, "parsed", None), "value", None)
-    else:
-        val = getattr(item, "value", None)
-    if isinstance(val, (int, float)):
-        return float(val)
-    return None
-
-
 def _item_payload(item: Any) -> dict[str, Any]:
     """Build a compact diagnostics payload for a SOLARWATTItem."""
     parsed = getattr(item, "parsed", None)
@@ -60,6 +47,97 @@ def _item_payload(item: Any) -> dict[str, Any]:
     }
 
 
+def _editable_count_key(editable: Any) -> str:
+    """Return the diagnostics bucket name for one editable flag."""
+    if editable is True:
+        return "true"
+    if editable is False:
+        return "false"
+    return "unknown"
+
+
+def _problem_item_issue(item_name: str, payload: dict[str, Any]) -> str | None:
+    """Return the most relevant diagnostics issue for one item payload."""
+    value = payload.get("parsed_value")
+    if value is None:
+        return "value is NULL"
+    if not isinstance(value, (int, float)):
+        return f"non-numeric value: {value!r}"
+    unit = payload.get("unit")
+    if unit in (None, "", "N") and any(token in item_name for token in ("power", "work", "energy")):
+        return "missing unit"
+    return None
+
+
+def _energy_sensor_write(state) -> dict[str, Any] | None:
+    """Return the diagnostics snapshot for one energy sensor state."""
+    attrs = state.attributes or {}
+    device_class = attrs.get("device_class")
+    state_class = attrs.get("state_class")
+    if device_class != "energy" and state_class not in ("total", "total_increasing"):
+        return None
+    return {
+        "name": state.name,
+        "device_class": device_class,
+        "state_class": state_class,
+        "unit": attrs.get("unit_of_measurement"),
+        "last_updated": state.last_updated.isoformat() if state.last_updated else None,
+        "last_changed": state.last_changed.isoformat() if state.last_changed else None,
+    }
+
+
+def _collect_item_diagnostics(items: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    """Collect compact item payloads, aggregate stats, and problem candidates."""
+    item_payloads: dict[str, Any] = {}
+    type_counts: Counter[str] = Counter()
+    category_counts: Counter[str] = Counter()
+    unit_counts: Counter[str] = Counter()
+    editable_counts: Counter[str] = Counter()
+    problem_items: list[dict[str, Any]] = []
+    numeric_count = 0
+    missing_label_count = 0
+    null_value_count = 0
+    non_numeric_count = 0
+
+    for item_name, item in items.items():
+        clean_name = (item_name or "").lstrip("#")
+        payload = _item_payload(item)
+        value = payload.get("parsed_value")
+        item_payloads[clean_name] = payload
+
+        if isinstance(value, (int, float)):
+            numeric_count += 1
+        elif value is None:
+            null_value_count += 1
+        else:
+            non_numeric_count += 1
+
+        type_counts[payload.get("type") or "unknown"] += 1
+        category_counts[payload.get("category") or "unknown"] += 1
+        unit_counts[payload.get("unit") or "none"] += 1
+        editable_counts[_editable_count_key(payload.get("editable"))] += 1
+
+        if not payload.get("label"):
+            missing_label_count += 1
+        if issue := _problem_item_issue(clean_name, payload):
+            problem_items.append({"name": clean_name, "issue": issue})
+
+    return (
+        item_payloads,
+        {
+            "numeric_items": numeric_count,
+            "types": dict(type_counts),
+            "categories": dict(category_counts),
+            "units": dict(unit_counts),
+            "editable": dict(editable_counts),
+            "missing_label": missing_label_count,
+            "null_value": null_value_count,
+            "non_numeric_value": non_numeric_count,
+        },
+        problem_items,
+    )
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: SOLARWATTConfigEntry
 ) -> dict[str, Any]:
@@ -71,109 +149,39 @@ async def async_get_config_entry_diagnostics(
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
 
-    device = None
     host = getattr(getattr(coordinator, "client", None), "host", None) or entry.entry_id
     dev = dev_reg.async_get_device(identifiers={(DOMAIN, host)})
-    if dev:
-        device = {
+    device = (
+        {
             "name": dev.name,
             "manufacturer": dev.manufacturer,
             "model": dev.model,
             "sw_version": dev.sw_version,
             "hw_version": dev.hw_version,
         }
+        if dev
+        else None
+    )
 
     items = coordinator.data or {}
-
     interval = getattr(coordinator, "update_interval", None)
     update_interval_seconds = int(interval.total_seconds()) if interval else None
     energy_delta_kwh = entry.options.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH)
 
-    energy_sensor_writes: dict[str, Any] = {}
-    for ent in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-        state = hass.states.get(ent.entity_id)
-        if state is None:
-            continue
-        attrs = state.attributes or {}
-        device_class = attrs.get("device_class")
-        state_class = attrs.get("state_class")
-        if device_class != "energy" and state_class not in ("total", "total_increasing"):
-            continue
-        last_updated = state.last_updated.isoformat() if state.last_updated else None
-        last_changed = state.last_changed.isoformat() if state.last_changed else None
-        energy_sensor_writes[ent.entity_id] = {
-            "name": state.name,
-            "device_class": device_class,
-            "state_class": state_class,
-            "unit": attrs.get("unit_of_measurement"),
-            "last_updated": last_updated,
-            "last_changed": last_changed,
-        }
-
-    item_payloads: dict[str, Any] = {}
-    numeric_count = 0
-    type_counts: Counter[str] = Counter()
-    category_counts: Counter[str] = Counter()
-    unit_counts: Counter[str] = Counter()
-    editable_counts: Counter[str] = Counter()
-    missing_label_count = 0
-    null_value_count = 0
-    non_numeric_count = 0
-
-    for k, it in items.items():
-        k_clean = (k or "").lstrip("#")
-        payload = _item_payload(it)
-        item_payloads[k_clean] = payload
-
-        if _num_value(it) is not None:
-            numeric_count += 1
-
-        type_counts[payload.get("type") or "unknown"] += 1
-        category_counts[payload.get("category") or "unknown"] += 1
-        unit_counts[payload.get("unit") or "none"] += 1
-
-        editable = payload.get("editable")
-        if editable is True:
-            editable_counts["true"] += 1
-        elif editable is False:
-            editable_counts["false"] += 1
-        else:
-            editable_counts["unknown"] += 1
-
-        if not payload.get("label"):
-            missing_label_count += 1
-
-        val = payload.get("parsed_value")
-        if val is None:
-            null_value_count += 1
-        elif not isinstance(val, (int, float)):
-            non_numeric_count += 1
-
-    # Highlight the most common problems to speed up support.
-    N = 20
-    problem_items: list[dict[str, Any]] = []
-    for k, it in items.items():
-        k_clean = (k or "").lstrip("#")
-        parsed = getattr(it, "parsed", None)
-        val = getattr(parsed, "value", None) if parsed is not None else getattr(it, "value", None)
-        unit = getattr(parsed, "unit", None) if parsed is not None else None
-
-        if val is None:
-            problem_items.append({"name": k_clean, "issue": "value is NULL"})
-            continue
-
-        if not isinstance(val, (int, float)):
-            problem_items.append({"name": k_clean, "issue": f"non-numeric value: {repr(val)}"})
-            continue
-
-        if unit in (None, "", "N") and any(tok in k_clean for tok in ("power", "work", "energy")):
-            problem_items.append({"name": k_clean, "issue": "missing unit"})
-            continue
+    energy_sensor_writes = {
+        registry_entry.entity_id: sensor_write
+        for registry_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+        if (state := hass.states.get(registry_entry.entity_id)) is not None
+        if (sensor_write := _energy_sensor_write(state)) is not None
+    }
+    item_payloads, item_stats, problem_items = _collect_item_diagnostics(items)
 
     things = getattr(coordinator, "things", None) or {}
     things_compact: dict[str, Any] = {}
     for uid, thing in things.items():
-        status_info = thing.get("statusInfo") or {}
+        status_info = thing.get("statusInfo")
+        if not isinstance(status_info, dict):
+            status_info = {}
         things_compact[uid] = {
             "label": thing.get("label"),
             "thing_type_uid": thing.get("thingTypeUID") or thing.get("thingTypeUid"),
@@ -198,28 +206,18 @@ async def async_get_config_entry_diagnostics(
             "last_update_success": getattr(coordinator, "last_update_success", None),
             "update_interval_seconds": update_interval_seconds,
             "data_items": len(items),
-            "numeric_items": numeric_count,
+            "numeric_items": item_stats["numeric_items"],
             "last_exception": repr(getattr(coordinator, "last_exception", None)) if getattr(coordinator, "last_exception", None) else None,
         },
         "energy_settings": {
             "energy_delta_kwh": energy_delta_kwh,
             "energy_sensors_last_write": _redact(energy_sensor_writes),
         },
-        "data_stats": _redact(
-            {
-                "types": dict(type_counts),
-                "categories": dict(category_counts),
-                "units": dict(unit_counts),
-                "editable": dict(editable_counts),
-                "missing_label": missing_label_count,
-                "null_value": null_value_count,
-                "non_numeric_value": non_numeric_count,
-            }
-        ),
+        "data_stats": _redact({key: value for key, value in item_stats.items() if key != "numeric_items"}),
         "data_items_compact": _redact(item_payloads),
         "problem_items": _redact(
             {
-                "problem_items_top_20": problem_items[:N],
+                "problem_items_top_20": problem_items[:20],
                 "problem_items_total": len(problem_items),
             }
         ),

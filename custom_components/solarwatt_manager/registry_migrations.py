@@ -18,8 +18,8 @@ from .const import (
 )
 from .entity_helpers import (
     build_item_sensor_unique_id,
+    iter_selected_item_sensor_names,
     item_sensor_entries,
-    item_sensor_names,
 )
 from .naming import (
     compose_entity_object_id,
@@ -205,7 +205,7 @@ def migrate_item_entities_to_thing_devices(
 
     dev_reg = dr.async_get(hass)
     moved = 0
-    for item_name in item_sensor_names(items):
+    for item_name in iter_selected_item_sensor_names(items):
         thing_uid = (item_to_thing_uid or {}).get(item_name)
         if not thing_uid:
             continue
@@ -331,6 +331,8 @@ def _target_device_name(
             return thing_name
 
     return fallback_device_name
+
+
 def _should_migrate_entity_id(current_object_id: str, entity_slug: str) -> bool:
     """Return True when the current object_id looks auto-generated for this item."""
     if not current_object_id or not entity_slug:

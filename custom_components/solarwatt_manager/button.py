@@ -11,52 +11,35 @@ from .const import (
     build_thing_device_info,
     get_selected_thing_uids,
 )
+from .entity_helpers import (
+    build_thing_diagnostics_refresh_unique_id,
+    collect_new_thing_entities,
+)
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: SOLARWATTConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data
-    entities: list[ButtonEntity] = []
     added_thing_uids: set[str] = set()
     selected_thing_uids = get_selected_thing_uids(entry.options)
 
-    for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
-        if selected_thing_uids is not None and thing_uid not in selected_thing_uids:
-            continue
-        added_thing_uids.add(thing_uid)
-        entities.append(
-            SOLARWATTDiagnosticsRefreshButton(
+    @callback
+    def _async_discover_new_entities() -> None:
+        if new_entities := collect_new_thing_entities(
+            coordinator.things,
+            selected_thing_uids,
+            added_thing_uids,
+            lambda thing_uid, thing: SOLARWATTDiagnosticsRefreshButton(
                 coordinator,
                 entry.entry_id,
                 thing_uid,
                 thing,
-            )
-        )
-
-    if entities:
-        async_add_entities(entities)
-
-    @callback
-    def _async_discover_new_entities() -> None:
-        new_entities: list[ButtonEntity] = []
-        for thing_uid, thing in (getattr(coordinator, "things", {}) or {}).items():
-            if selected_thing_uids is not None and thing_uid not in selected_thing_uids:
-                continue
-            if thing_uid in added_thing_uids:
-                continue
-            added_thing_uids.add(thing_uid)
-            new_entities.append(
-                SOLARWATTDiagnosticsRefreshButton(
-                    coordinator,
-                    entry.entry_id,
-                    thing_uid,
-                    thing,
-                )
-            )
-        if new_entities:
+            ),
+        ):
             async_add_entities(new_entities)
 
+    _async_discover_new_entities()
     entry.async_on_unload(coordinator.register_discovery_callback(_async_discover_new_entities))
 
 
@@ -68,14 +51,12 @@ class SOLARWATTDiagnosticsRefreshButton(CoordinatorEntity, ButtonEntity):
     def __init__(self, coordinator, entry_id: str, thing_uid: str, thing: dict):
         super().__init__(coordinator)
         self._thing_uid = thing_uid
-        self._attr_unique_id = f"{entry_id}_thing_{thing_uid}_diagnostics_refresh"
-
-        host = getattr(getattr(self.coordinator, "client", None), "host", None) or entry_id
+        self._attr_unique_id = build_thing_diagnostics_refresh_unique_id(entry_id, thing_uid)
         self._attr_device_info = build_thing_device_info(
-            getattr(self.coordinator, "hass", None),
-            host,
+            self.coordinator.hass,
+            str(self.coordinator.client.host or entry_id),
             thing,
-            getattr(self.coordinator, "things", {}) or {},
+            self.coordinator.things,
         )
 
     async def async_press(self) -> None:
