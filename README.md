@@ -1,10 +1,9 @@
 [![Version](https://img.shields.io/github/v/release/thokaro/solarwatt-manager-homeassistant)](https://github.com/thokaro/solarwatt-manager-homeassistant/releases)
-[![HACS Category](https://img.shields.io/badge/HACS-Integration-41BDF5.svg)](https://hacs.xyz/docs/categories/integration/)
 [![Platform](https://img.shields.io/badge/Platform-Home%20Assistant-41BDF5.svg)](https://www.home-assistant.io/)
 [![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/thokaro)
 [![Support via Buy Me a Coffee](https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/thokaro)
 
-# SOLARWATT Manager – Home Assistant Integration
+# SOLARWATT Manager – Home Assistant Integration [![HACS Default Repository](https://img.shields.io/badge/HACS-Default%20Repository-41BDF5.svg)](https://hacs.xyz)
 
 This custom integration connects a **SOLARWATT Manager** like FLEX or Rail to **Home Assistant** and provides energy- and power-related sensors.
 
@@ -31,37 +30,20 @@ Note for users with **vision** components: If you need write/control functions s
 
 ## 📦 Installation
 
-### Option 1: One‑click repository add via My Home Assistant (HACS)
+This integration is part of the default **HACS** repository list.
+
+### Option 1: Installation via HACS
 
 1. Make sure **HACS** is installed in your Home Assistant instance
-2. Click the button below and follow the prompts (this **adds the repository to HACS**; installation is still done in HACS):
-
-[![Open your Home Assistant instance and add this repository.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=thokaro&repository=solarwatt-manager-homeassistant&category=integration)
-
-3. In **HACS → Integrations**, search for **SOLARWATT Manager** and install it
-4. Restart Home Assistant
+2. Open **HACS**
+3. Search for **SOLARWATT Manager**
+4. If needed, filter by **Type: Integration**
+5. Install the integration
+6. Restart Home Assistant
 
 ---
 
-### Option 2: Installation via HACS (manual)
-
-1. Make sure **HACS** is installed in your Home Assistant instance
-2. Go to **HACS → Integrations**
-3. Open the menu (⋮) in the top right corner and select **Custom repositories**
-4. Add this repository URL:
-
-```
-https://github.com/thokaro/solarwatt-manager-homeassistant
-```
-
-5. Select **Integration** as the category
-6. Click **Add**
-7. Search for **SOLARWATT Manager** in HACS and install it
-8. Restart Home Assistant
-
----
-
-### Option 3: Manual Installation
+### Option 2: Manual Installation
 
 1. Download or clone this repository
 2. Copy the folder:
