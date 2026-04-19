@@ -18,6 +18,7 @@ from .const import (
     build_device_info,
     build_thing_device_identifier,
     build_thing_device_info,
+    get_disable_duplicate_item_entities,
     get_registry_device_name,
     get_selected_thing_uids,
     get_thing_display_name,
@@ -26,7 +27,7 @@ from .entity_helpers import (
     build_item_sensor_unique_id,
     build_thing_sensor_unique_id,
     collect_new_thing_entities,
-    iter_selected_item_sensor_names,
+    iter_item_sensor_names,
 )
 from .naming import (
     compose_entity_object_id,
@@ -79,7 +80,8 @@ def _collect_new_entities(
 ) -> list[SensorEntity]:
     """Build newly discovered item and thing sensors that are not added yet."""
     entities: list[SensorEntity] = []
-    for item_name in iter_selected_item_sensor_names(
+    disable_duplicate_item_entities = get_disable_duplicate_item_entities(entry.options)
+    for item_name in iter_item_sensor_names(
         coordinator.data,
         coordinator.item_to_thing_uid,
         selected_thing_uids,
@@ -88,6 +90,10 @@ def _collect_new_entities(
             continue
 
         added_item_names.add(item_name)
+        enabled_default = not (
+            disable_duplicate_item_entities
+            and item_name in coordinator.duplicate_item_targets
+        )
         entities.append(
             SOLARWATTItemSensor(
                 coordinator,
@@ -96,6 +102,8 @@ def _collect_new_entities(
                 device_name=entry.title,
                 energy_delta_kwh=energy_delta_kwh,
                 power_unavailable_threshold=power_unavailable_threshold,
+                enabled_default=enabled_default,
+                selected_thing_uids=selected_thing_uids,
             )
         )
 
@@ -109,6 +117,7 @@ def _collect_new_entities(
                 entry.entry_id,
                 thing_uid,
                 thing,
+                selected_thing_uids,
             ),
         )
     )
@@ -127,6 +136,8 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         device_name: str = "SOLARWATT Manager",
         energy_delta_kwh: float = DEFAULT_ENERGY_DELTA_KWH,
         power_unavailable_threshold: int = DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
+        enabled_default: bool = True,
+        selected_thing_uids: set[str] | None = None,
     ):
         super().__init__(coordinator)
         self._item_name = item_name
@@ -142,7 +153,7 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._is_power = False
 
         self._attr_unique_id = build_item_sensor_unique_id(entry_id, item_name)
-        self._attr_entity_registry_enabled_default = True
+        self._attr_entity_registry_enabled_default = enabled_default
 
         # Resolve the owning HA device once so naming and registry mapping stay aligned.
         things = self.coordinator.things
@@ -155,6 +166,7 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
                 self._host,
                 thing,
                 things,
+                selected_thing_uids,
             )
             if isinstance(thing, dict)
             else build_device_info(self._host, device_name)
@@ -315,6 +327,7 @@ class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):
         entry_id: str,
         thing_uid: str,
         thing: dict,
+        selected_thing_uids: set[str] | None,
     ):
         super().__init__(coordinator)
         self._thing_uid = thing_uid
@@ -326,6 +339,7 @@ class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):
             str(self.coordinator.client.host or entry_id),
             thing,
             self.coordinator.things,
+            selected_thing_uids,
         )
 
     def _thing(self) -> dict | None:

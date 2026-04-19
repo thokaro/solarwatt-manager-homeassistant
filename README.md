@@ -24,6 +24,7 @@ Note for users with **vision** components: If you need write/control functions s
 * Entities are assigned to their corresponding SOLARWATT devices
 * Human‑friendly display names (Title Case; BMS/SoC/SoH preserved)
 * Per-device diagnostics based on `/rest/things`, including status sensors with thing properties as attributes and refresh buttons to update item and thing discovery on demand
+* Optional duplicate item handling: keep one UID-based channel entity active and create the duplicates as disabled entities
 * Stable `unique_id`s (safe for long‑term statistics)
 * Works with Home Assistant statistics & history
 
@@ -74,6 +75,7 @@ After restarting Home Assistant:
    * **Host**: hostname or IPv4 address, optionally with `:port`
    * **Username** / **Password**: your SOLARWATT login credentials
    * Optional tuning values such as **Update interval**, **Energy delta**, and **Power unavailable threshold** can be set here already or adjusted later in the integration options
+   * If needed, you can later disable duplicate item entities in the integration options without removing them completely from Home Assistant
    * Do not enter a full URL. The integration automatically tries HTTP and HTTPS.
 5. Select the SOLARWATT devices you want to create (KiwiGrid and battery devices are preselected by default)
 
@@ -84,6 +86,7 @@ You can adjust these in the integration options:
 * **Update interval (seconds)** – polling interval
 * **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
 * **Power unavailable threshold (polls)** – applies to power sensors only. If SOLARWATT briefly returns `unavailable`, the last valid power value is kept until the configured consecutive poll limit is reached. Example: `3` means the 1st and 2nd `unavailable` poll keep the previous value, and the sensor only switches to `unavailable` on the 3rd poll. Set to `0` to disable this debounce completely.
+* **Disable duplicate item entities** – disabled by default. When enabled and a thing channel exposes multiple linked items for the same value, the integration keeps the UID-based channel item (for example `keba_wallbox_12345678_channels_state`) active and creates the additional item entities as disabled-by-default entries. They remain visible in Home Assistant and can still be enabled manually.
 * **Device selection** – choose which detected SOLARWATT devices should be created in Home Assistant
 * **Rebuild entity IDs when saving** – rebuild managed `entity_id`s using `device name + sensor name`
 

@@ -11,6 +11,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from .const import (
+    CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
     CONF_ENABLED_THINGS,
     CONF_ENERGY_DELTA_KWH,
     CONF_HOST,
@@ -19,6 +20,7 @@ from .const import (
     CONF_REBUILD_ENTITY_IDS,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
+    DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
     DEFAULT_ENERGY_DELTA_KWH,
     DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
@@ -121,6 +123,17 @@ def _normalize_float(value: Any, *, default: float) -> float | None:
         return None
 
 
+def _normalize_bool(value: Any, *, default: bool) -> bool:
+    """Normalize boolean form values."""
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def _is_invalid_scan_interval(value: Any) -> bool:
     """Return True if the configured scan interval is outside the allowed range."""
     return value is None or value < MIN_SCAN_INTERVAL or value > MAX_SCAN_INTERVAL
@@ -134,6 +147,11 @@ def _is_invalid_energy_delta(value: Any) -> bool:
 def _is_invalid_power_unavailable_threshold(value: Any) -> bool:
     """Return True if the power unavailable threshold is outside the allowed range."""
     return value is None or value < MIN_POWER_UNAVAILABLE_THRESHOLD
+
+
+def _is_never_invalid(_: Any) -> bool:
+    """Return False for options without a validation constraint."""
+    return False
 
 
 _OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
@@ -160,6 +178,14 @@ _OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
         "coerce": vol.Coerce(int),
         "error": "invalid_power_unavailable_threshold",
         "invalid": _is_invalid_power_unavailable_threshold,
+    },
+    {
+        "key": CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
+        "default": DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
+        "normalize": _normalize_bool,
+        "coerce": bool,
+        "error": "",
+        "invalid": _is_never_invalid,
     },
 )
 
@@ -532,6 +558,7 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                         coordinator.data,
                         coordinator.item_to_thing_uid,
                         coordinator.things,
+                        coordinator.duplicate_item_targets,
                         data,
                     )
                 if rebuild_requested:

@@ -25,7 +25,8 @@
           "password": "Password",
           "scan_interval": "Intervallo di aggiornamento (secondi)",
           "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
-          "power_unavailable_threshold": "Soglia unavailable potenza (poll). Mantieni l'ultimo valore fino all'N-esimo unavailable; 0 = disattiva"
+          "power_unavailable_threshold": "Soglia unavailable potenza (poll). Mantieni l'ultimo valore fino all'N-esimo unavailable; 0 = disattiva",
+          "disable_duplicate_item_entities": "Disattiva le entità item duplicate e preferisci l'item canale basato sull'UID"
         }
       },
       "devices": {
@@ -50,7 +51,8 @@
           "rebuild_entity_ids": "Ricostruisci gli ID entità al salvataggio (nome dispositivo + nome sensore)",
           "scan_interval": "Intervallo di aggiornamento (secondi)",
           "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
-          "power_unavailable_threshold": "Soglia unavailable potenza (poll). Mantieni l'ultimo valore fino all'N-esimo unavailable; 0 = disattiva"
+          "power_unavailable_threshold": "Soglia unavailable potenza (poll). Mantieni l'ultimo valore fino all'N-esimo unavailable; 0 = disattiva",
+          "disable_duplicate_item_entities": "Disattiva le entità item duplicate e preferisci l'item canale basato sull'UID"
         }
       }
     }

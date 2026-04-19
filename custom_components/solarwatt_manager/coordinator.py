@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+import re
 from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant
@@ -25,6 +26,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.things: dict[str, dict[str, Any]] = {}
         self.item_to_thing_uid: dict[str, str] = {}
         self.item_to_channel_metadata: dict[str, dict[str, str]] = {}
+        self.duplicate_item_targets: dict[str, str] = {}
         self._discovery_callbacks: set[Callable[[], None]] = set()
 
         scan = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -100,6 +102,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         out: dict[str, dict[str, Any]] = {}
         item_to_thing_uid: dict[str, str] = {}
         item_to_channel_metadata: dict[str, dict[str, str]] = {}
+        duplicate_item_targets: dict[str, str] = {}
+        kept_item_names: set[str] = set()
         for idx, thing in enumerate(things or []):
             uid = thing.get("UID") or thing.get("uid") or f"unknown_{idx}"
             out[uid] = thing
@@ -109,6 +113,9 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                 linked_items = channel.get("linkedItems")
                 if not isinstance(linked_items, list):
                     continue
+                kept_item_name = _find_kept_item_name(channel, linked_items)
+                if kept_item_name:
+                    kept_item_names.add(kept_item_name)
                 channel_metadata = _channel_item_metadata(channel)
                 for linked_item in linked_items:
                     if not linked_item:
@@ -116,6 +123,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                     item_name = str(linked_item)
                     if item_name not in item_to_thing_uid:
                         item_to_thing_uid[item_name] = uid
+                    if kept_item_name and item_name != kept_item_name:
+                        duplicate_item_targets.setdefault(item_name, kept_item_name)
                     _merge_channel_item_metadata(
                         item_to_channel_metadata,
                         item_name,
@@ -124,7 +133,56 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.things = out
         self.item_to_thing_uid = item_to_thing_uid
         self.item_to_channel_metadata = item_to_channel_metadata
+        self.duplicate_item_targets = {
+            item_name: target
+            for item_name, target in duplicate_item_targets.items()
+            if item_name not in kept_item_names
+        }
+
         self.async_update_listeners()
+
+
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _canonicalize_item_reference(value: Any) -> str:
+    """Return a case-insensitive identifier used to match channels to linked items."""
+    return _NON_ALNUM_RE.sub("_", str(value or "").strip().lower()).strip("_")
+
+
+def _find_kept_item_name(
+    channel: dict[str, Any],
+    linked_items: list[Any],
+) -> str | None:
+    """Return the UID-derived linked item that should represent one channel."""
+    item_names = [str(linked_item).strip() for linked_item in linked_items if str(linked_item).strip()]
+    if not item_names:
+        return None
+
+    canonical_items = {
+        _canonicalize_item_reference(item_name): item_name
+        for item_name in item_names
+    }
+
+    for candidate in (channel.get("uid"), channel.get("UID")):
+        canonical_candidate = _canonicalize_item_reference(candidate)
+        if canonical_candidate and canonical_candidate in canonical_items:
+            return canonical_items[canonical_candidate]
+
+    canonical_channel_id = _canonicalize_item_reference(channel.get("id"))
+    if canonical_channel_id:
+        suffix_matches = [
+            item_name
+            for item_name in item_names
+            if (
+                canonical_item_name := _canonicalize_item_reference(item_name)
+            ) == canonical_channel_id
+            or canonical_item_name.endswith(f"_{canonical_channel_id}")
+        ]
+        if len(suffix_matches) == 1:
+            return suffix_matches[0]
+
+    return None
 
 
 def _channel_item_metadata(channel: dict[str, Any]) -> dict[str, str]:

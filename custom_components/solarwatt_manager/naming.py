@@ -9,24 +9,22 @@ from functools import lru_cache
 # Current normalization removes technical prefixes entirely.
 CONDITIONAL_ID_RULES = [
     r"^kiwigrid_location_standard_([^_]+)_harmonized_",
+    r"^pvplant_standard_([^_]+)_", 
     r"^foxesshybrid_battery_([^_]+)_",
     r"^foxesshybrid_inverter_([^_]+)_",
     r"^foxesshybrid_meter_([^_]+)_",
-    r"^keba_wallbox_([^_]+)_",
+    r"^keba_wallbox_([^_]+)_",    
     r"^mystrom_switch_([^_]+)_",
     r"^modbus_sunspec_sma_inverter_([^_]+)_",
     r"^modbus_sunspec_fronius_inverter_([^_]+)_",
     r"^myreserveethernet_myreserve_([^_]+)_",
-    r"^myreserveethernet_acs_([^_]+)_0_",
-    r"^myreserveethernet_acs_([^_]+)_",
-    r"^pvplant_standard_([^_]+)_",
-    r"^batteryflex_battery_([^_]+)_harmonized_",
-    r"^batteryflex_battery_([^_]+)_batteryChannelGroup_",
-    r"^batteryflex_battery_([^_]+)_",
-    r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_harmonized_",
-    r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_batteryChannelGroup_",
-    r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_",
-    r"^sunspecnext_inverter_KACO_(.*?)_(?=(harmonized_|inverter_|limitable_|pv_power_production_))",
+    r"^myreserveethernet_acs_([^_]+)_(?:0_)?",
+    r"^kgshelly_gen2switch_([^_]+)_(?:0_)?",
+    # Strip the BatteryFlex device id and optional group prefix.
+    r"^batteryflex_battery_([^_]+)_(?:harmonized_|batteryChannelGroup_)?",
+    r"^solarwattBattery_batteryflex_BatteryFlex_([^_]+)_(?:harmonized_|batteryChannelGroup_)?",
+    # Drop the variable KACO device segment but keep the functional suffix block.
+    r"^sunspecnext_inverter_KACO_.*?_(?=(?:harmonized_|inverter_|limitable_|pv_power_production_))",
 ]
 
 

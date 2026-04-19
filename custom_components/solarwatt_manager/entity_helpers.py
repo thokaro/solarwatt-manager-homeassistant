@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable, Iterator, Mapping
 from typing import Any, TypeVar
 
@@ -13,12 +12,12 @@ from .const import (
     SOLARWATTConfigEntry,
     build_thing_device_identifier,
     build_thing_device_info,
+    get_disable_duplicate_item_entities,
     get_preferred_parent_thing_uid,
     get_selected_thing_uids,
 )
 from .naming import clean_item_key
 
-_LOGGER = logging.getLogger(__name__)
 _ThingEntityT = TypeVar("_ThingEntityT")
 
 
@@ -43,12 +42,12 @@ def is_switch_item(item: Any) -> bool:
     return (getattr(item, "oh_type", None) or "").startswith("Switch")
 
 
-def iter_selected_item_sensor_names(
+def iter_item_sensor_names(
     items: Mapping[str, Any] | None,
     item_to_thing_uid: Mapping[str, str] | None = None,
     selected_thing_uids: set[str] | None = None,
 ) -> Iterator[str]:
-    """Yield coordinator item names that should be exposed as sensors."""
+    """Yield non-switch item names that match the selected devices."""
     for item_name, item in (items or {}).items():
         if is_switch_item(item):
             continue
@@ -57,6 +56,23 @@ def iter_selected_item_sensor_names(
             selected_thing_uids is not None
             and thing_uid is not None
             and thing_uid not in selected_thing_uids
+        ):
+            continue
+        yield item_name
+
+
+def iter_selected_item_sensor_names(
+    items: Mapping[str, Any] | None,
+    item_to_thing_uid: Mapping[str, str] | None = None,
+    selected_thing_uids: set[str] | None = None,
+    duplicate_item_targets: Mapping[str, str] | None = None,
+    disable_duplicate_item_entities: bool = False,
+) -> Iterator[str]:
+    """Yield coordinator item names that should be exposed as sensors."""
+    for item_name in iter_item_sensor_names(items, item_to_thing_uid, selected_thing_uids):
+        if (
+            disable_duplicate_item_entities
+            and item_name in (duplicate_item_targets or {})
         ):
             continue
         yield item_name
@@ -94,6 +110,8 @@ def _selected_entity_unique_ids(
     item_to_thing_uid: Mapping[str, str] | None,
     selected_thing_uids: set[str],
     things: Mapping[str, Any] | None,
+    duplicate_item_targets: Mapping[str, str] | None = None,
+    disable_duplicate_item_entities: bool = False,
 ) -> set[str]:
     """Return the expected active entity unique IDs for the selected devices."""
     expected_unique_ids = {
@@ -102,6 +120,8 @@ def _selected_entity_unique_ids(
             items,
             item_to_thing_uid,
             selected_thing_uids,
+            duplicate_item_targets,
+            disable_duplicate_item_entities,
         )
     }
 
@@ -144,58 +164,6 @@ def item_sensor_entries(
         if not registry_entry.unique_id.startswith(thing_prefix)
     ]
     return ent_reg, entries
-
-
-def enable_item_sensor_entities(
-    hass: HomeAssistant,
-    entry: SOLARWATTConfigEntry,
-    items: Mapping[str, Any] | None,
-) -> None:
-    """Enable item sensor entities previously disabled by the integration."""
-    expected_unique_ids = {
-        build_item_sensor_unique_id(entry.entry_id, item_name)
-        for item_name in iter_selected_item_sensor_names(items)
-    }
-    if not expected_unique_ids:
-        return
-
-    ent_reg, entries = item_sensor_entries(hass, entry)
-    enabled = 0
-    for registry_entry in entries:
-        if registry_entry.unique_id not in expected_unique_ids:
-            continue
-        if registry_entry.disabled_by != er.RegistryEntryDisabler.INTEGRATION:
-            continue
-
-        ent_reg.async_update_entity(registry_entry.entity_id, disabled_by=None)
-        enabled += 1
-
-    if enabled:
-        _LOGGER.info(
-            "Enabled %s SOLARWATT sensor entities disabled by integration for entry %s",
-            enabled,
-            entry.entry_id,
-        )
-
-
-def _enable_selected_thing_registry_entries(
-    hass: HomeAssistant,
-    entry: SOLARWATTConfigEntry,
-    thing_uids: set[str],
-) -> None:
-    """Enable thing entities disabled by the integration."""
-    expected_unique_ids = {
-        unique_id
-        for thing_uid in thing_uids
-        for unique_id in _thing_entity_unique_ids(entry.entry_id, thing_uid)
-    }
-    ent_reg, entries = _managed_registry_entries(hass, entry, domains={"sensor", "button"})
-    for registry_entry in entries:
-        if registry_entry.disabled_by != er.RegistryEntryDisabler.INTEGRATION:
-            continue
-        if registry_entry.unique_id not in expected_unique_ids:
-            continue
-        ent_reg.async_update_entity(registry_entry.entity_id, disabled_by=None)
 
 
 def _apply_expected_entity_selection(
@@ -246,6 +214,7 @@ def ensure_parent_devices_registered(
         for thing_uid, thing in things_by_uid.items()
         if selected_thing_uids is None or thing_uid in selected_thing_uids
         if (parent_uid := get_preferred_parent_thing_uid(thing, things_by_uid))
+        if selected_thing_uids is None or parent_uid in selected_thing_uids
     }
 
     for parent_uid in parent_uids:
@@ -253,7 +222,13 @@ def ensure_parent_devices_registered(
         if parent_thing is None:
             continue
 
-        device_info = build_thing_device_info(hass, host, parent_thing, things_by_uid)
+        device_info = build_thing_device_info(
+            hass,
+            host,
+            parent_thing,
+            things_by_uid,
+            selected_thing_uids,
+        )
         dev_reg.async_get_or_create(
             config_entry_id=entry.entry_id,
             **{
@@ -332,19 +307,25 @@ def sync_selected_thing_entities(
     items: Mapping[str, Any] | None,
     item_to_thing_uid: Mapping[str, str] | None,
     things: Mapping[str, Any] | None,
+    duplicate_item_targets: Mapping[str, str] | None = None,
     options: Mapping[str, Any] | None = None,
 ) -> None:
     """Enable selected devices and disable deselected ones in the entity registry."""
-    selected_thing_uids = get_selected_thing_uids(
-        options if options is not None else entry.options
-    )
+    resolved_options = options if options is not None else entry.options
+    selected_thing_uids = get_selected_thing_uids(resolved_options)
+    disable_duplicate_item_entities = get_disable_duplicate_item_entities(resolved_options)
     if selected_thing_uids is None:
-        enable_item_sensor_entities(hass, entry, items)
-        _enable_selected_thing_registry_entries(
-            hass,
+        selected_thing_uids = set((things or {}).keys())
+        expected_unique_ids = _selected_entity_unique_ids(
             entry,
-            thing_uids=set((things or {}).keys()),
+            items,
+            item_to_thing_uid,
+            selected_thing_uids,
+            things,
+            duplicate_item_targets,
+            disable_duplicate_item_entities,
         )
+        _apply_expected_entity_selection(hass, entry, expected_unique_ids)
         _sync_thing_device_assignments(hass, entry, things, None)
         return
 
@@ -354,6 +335,8 @@ def sync_selected_thing_entities(
         item_to_thing_uid,
         selected_thing_uids,
         things,
+        duplicate_item_targets,
+        disable_duplicate_item_entities,
     )
     _apply_expected_entity_selection(hass, entry, expected_unique_ids)
     _sync_thing_device_assignments(hass, entry, things, selected_thing_uids)

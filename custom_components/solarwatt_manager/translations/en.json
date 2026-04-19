@@ -25,7 +25,8 @@
           "password": "Password",
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
-          "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable"
+          "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable",
+          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item"
         }
       },
       "devices": {
@@ -50,7 +51,8 @@
           "rebuild_entity_ids": "Rebuild entity IDs when saving (device name + sensor name)",
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
-          "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable"
+          "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable",
+          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item"
         }
       }
     }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.4.2
+
+### Changes
+- Updated the README to document the new duplicate-item option and the new installation method via the HACS default repository list.
+- Added a new option to disable duplicate item entities by default while keeping the UID-based channel item active as the preferred entity; this also improves handling for duplicate-linked channels such as Shelly devices.
+- Thing sensors, diagnostics buttons, and parent-device registration now respect the selected device set more strictly, avoiding `via_device` links to deselected parent devices.
+- Expanded item-name normalization for additional patterns, including new `kgshelly` handling, plus `pvplant`, `batteryflex`, `solarwattBattery BatteryFlex`, `myreserveethernet_acs`, and variable KACO SunSpec segments.
+
 ## 2026.4.1
 
 ### Changes

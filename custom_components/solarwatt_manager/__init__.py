@@ -47,6 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) ->
             coordinator.data,
             coordinator.item_to_thing_uid,
             coordinator.things,
+            coordinator.duplicate_item_targets,
         )
         ensure_parent_devices_registered(hass, entry, coordinator.things)
 

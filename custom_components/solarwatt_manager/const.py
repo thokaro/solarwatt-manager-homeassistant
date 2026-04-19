@@ -22,6 +22,7 @@ CONF_PASSWORD = "password"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_ENERGY_DELTA_KWH = "energy_delta_kwh"
 CONF_POWER_UNAVAILABLE_THRESHOLD = "power_unavailable_threshold"
+CONF_DISABLE_DUPLICATE_ITEM_ENTITIES = "disable_duplicate_item_entities"
 CONF_ENABLED_THINGS = "enabled_things"
 CONF_REBUILD_ENTITY_IDS = "rebuild_entity_ids"
 
@@ -33,6 +34,7 @@ DEFAULT_ENERGY_DELTA_KWH = 0.01
 MIN_ENERGY_DELTA_KWH = 0.0
 DEFAULT_POWER_UNAVAILABLE_THRESHOLD = 3
 MIN_POWER_UNAVAILABLE_THRESHOLD = 0
+DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES = False
 
 DEVICE_MANUFACTURER = "SOLARWATT"
 DEVICE_MODEL = "Manager flex / rail"
@@ -137,6 +139,7 @@ def build_thing_device_info(
     host: str,
     thing: dict[str, Any],
     things: Mapping[str, dict[str, Any]] | None = None,
+    selected_thing_uids: set[str] | None = None,
 ) -> DeviceInfo:
     """Build device metadata for a SOLARWATT thing node."""
     thing_uid = str(thing.get("UID") or thing.get("uid") or "").strip()
@@ -164,6 +167,8 @@ def build_thing_device_info(
 
     via_device = None
     parent_thing_uid = get_preferred_parent_thing_uid(thing, things)
+    if selected_thing_uids is not None and parent_thing_uid not in selected_thing_uids:
+        parent_thing_uid = None
     if hass is not None and parent_thing_uid:
         parent_identifier = build_thing_device_identifier(host, parent_thing_uid)
         parent_device = dr.async_get(hass).async_get_device(identifiers={parent_identifier})
@@ -203,3 +208,16 @@ def get_selected_thing_uids(options: Mapping[str, Any] | None) -> set[str] | Non
         for item in values
         if (value := str(item).strip())
     }
+
+
+def get_disable_duplicate_item_entities(options: Mapping[str, Any] | None) -> bool:
+    """Return whether duplicate item entities should be disabled."""
+    value = (options or {}).get(
+        CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
+        DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
+    )
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)

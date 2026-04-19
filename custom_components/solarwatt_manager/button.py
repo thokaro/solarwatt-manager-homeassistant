@@ -35,6 +35,7 @@ async def async_setup_entry(
                 entry.entry_id,
                 thing_uid,
                 thing,
+                selected_thing_uids,
             ),
         ):
             async_add_entities(new_entities)
@@ -48,7 +49,14 @@ class SOLARWATTDiagnosticsRefreshButton(CoordinatorEntity, ButtonEntity):
     _attr_translation_key = "diagnostics_refresh"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator, entry_id: str, thing_uid: str, thing: dict):
+    def __init__(
+        self,
+        coordinator,
+        entry_id: str,
+        thing_uid: str,
+        thing: dict,
+        selected_thing_uids: set[str] | None,
+    ):
         super().__init__(coordinator)
         self._thing_uid = thing_uid
         self._attr_unique_id = build_thing_diagnostics_refresh_unique_id(entry_id, thing_uid)
@@ -57,6 +65,7 @@ class SOLARWATTDiagnosticsRefreshButton(CoordinatorEntity, ButtonEntity):
             str(self.coordinator.client.host or entry_id),
             thing,
             self.coordinator.things,
+            selected_thing_uids,
         )
 
     async def async_press(self) -> None:

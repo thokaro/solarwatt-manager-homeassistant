@@ -18,7 +18,7 @@ from .const import (
 )
 from .entity_helpers import (
     build_item_sensor_unique_id,
-    iter_selected_item_sensor_names,
+    iter_item_sensor_names,
     item_sensor_entries,
 )
 from .naming import (
@@ -205,7 +205,7 @@ def migrate_item_entities_to_thing_devices(
 
     dev_reg = dr.async_get(hass)
     moved = 0
-    for item_name in iter_selected_item_sensor_names(items):
+    for item_name in iter_item_sensor_names(items):
         thing_uid = (item_to_thing_uid or {}).get(item_name)
         if not thing_uid:
             continue
