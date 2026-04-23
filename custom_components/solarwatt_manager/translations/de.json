@@ -47,6 +47,11 @@
     "step": {
       "init": {
         "title": "Optionen",
+        "sections": {
+          "device_selection": {
+            "name": "Geräte aktivieren oder deaktivieren"
+          }
+        },
         "data": {
           "rebuild_entity_ids": "Entitäts-IDs beim Speichern neu aufbauen (Gerätename + Sensorname)",
           "scan_interval": "Update-Intervall (Sekunden)",

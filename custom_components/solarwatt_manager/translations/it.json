@@ -47,6 +47,11 @@
     "step": {
       "init": {
         "title": "Opzioni",
+        "sections": {
+          "device_selection": {
+            "name": "Attiva o disattiva dispositivi"
+          }
+        },
         "data": {
           "rebuild_entity_ids": "Ricostruisci gli ID entità al salvataggio (nome dispositivo + nome sensore)",
           "scan_interval": "Intervallo di aggiornamento (secondi)",

@@ -10,6 +10,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from .const import (
     CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
     CONF_ENABLED_THINGS,
@@ -45,6 +46,7 @@ from .registry_migrations import mark_pending_registry_migration
 
 _LOGGER = logging.getLogger(__name__)
 _HOST_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_DEVICE_SELECTION_SECTION = "device_selection"
 _KNOWN_CLIENT_ERRORS: tuple[tuple[type[Exception], str, str], ...] = (
     (ValueError, "invalid_input", "Invalid input while %s: %s"),
     (SolarwattNotManagerError, "not_solarwatt", "Host is not a SOLARWATT Manager while %s: %s"),
@@ -261,10 +263,14 @@ def _selected_checkbox_uids(
     user_input: Mapping[str, Any],
 ) -> list[str]:
     """Return selected thing UIDs from checkbox inputs."""
+    checkbox_values = user_input.get(_DEVICE_SELECTION_SECTION)
+    if not isinstance(checkbox_values, Mapping):
+        checkbox_values = user_input
+
     return [
         uid
         for field_name, uid in device_fields.items()
-        if bool(user_input.get(field_name))
+        if bool(checkbox_values.get(field_name))
     ]
 
 
@@ -280,6 +286,20 @@ def _build_thing_checkbox_schema(
         device_fields[field_name] = uid
         schema[vol.Optional(field_name, default=uid in selected_uids)] = bool
     return schema, device_fields
+
+
+def _build_thing_checkbox_section_schema(
+    things: list[tuple[str, dict[str, Any]]],
+    selected_uids: set[str],
+) -> tuple[dict[Any, Any], dict[str, str]]:
+    """Build a named section containing thing checkbox fields."""
+    checkbox_schema, device_fields = _build_thing_checkbox_schema(things, selected_uids)
+    return {
+        vol.Required(_DEVICE_SELECTION_SECTION): section(
+            vol.Schema(checkbox_schema),
+            {"collapsed": True},
+        )
+    }, device_fields
 
 
 class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -598,13 +618,16 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         }
 
         available_things = self._available_things()
-        selected_things = get_selected_thing_uids(values)
-        if selected_things is None and CONF_ENABLED_THINGS not in values:
-            selected_things = {uid for uid, _ in available_things}
-        elif selected_things is None:
-            selected_things = set()
+        if user_input is not None and self._device_fields:
+            selected_things = set(_selected_checkbox_uids(self._device_fields, user_input))
+        else:
+            selected_things = get_selected_thing_uids(values)
+            if selected_things is None and CONF_ENABLED_THINGS not in values:
+                selected_things = {uid for uid, _ in available_things}
+            elif selected_things is None:
+                selected_things = set()
 
-        thing_schema, self._device_fields = _build_thing_checkbox_schema(
+        thing_schema, self._device_fields = _build_thing_checkbox_section_schema(
             available_things,
             selected_things,
         )

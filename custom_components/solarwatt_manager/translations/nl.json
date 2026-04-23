@@ -47,6 +47,11 @@
     "step": {
       "init": {
         "title": "Opties",
+        "sections": {
+          "device_selection": {
+            "name": "Apparaten in- of uitschakelen"
+          }
+        },
         "data": {
           "rebuild_entity_ids": "Entiteits-ID's opnieuw opbouwen bij opslaan (apparaatnaam + sensornaam)",
           "scan_interval": "Update-interval (seconden)",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.4.3
+
+### Changes
+- Options UI: grouped the device enable/disable checkboxes into a dedicated collapsible section so the form stays shorter and easier to scan.
+- Translations: added localized section labels for the device-selection block in `de`, `en`, `fr`, `it`, and `nl`.
+
 ## 2026.4.2
 
 ### Changes

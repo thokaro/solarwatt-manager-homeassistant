@@ -47,6 +47,11 @@
     "step": {
       "init": {
         "title": "Options",
+        "sections": {
+          "device_selection": {
+            "name": "Activer ou désactiver les appareils"
+          }
+        },
         "data": {
           "rebuild_entity_ids": "Reconstruire les identifiants d'entité lors de l'enregistrement (nom de l'appareil + nom du capteur)",
           "scan_interval": "Intervalle de mise à jour (secondes)",

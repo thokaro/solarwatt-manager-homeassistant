@@ -47,6 +47,11 @@
     "step": {
       "init": {
         "title": "Options",
+        "sections": {
+          "device_selection": {
+            "name": "Enable or disable devices"
+          }
+        },
         "data": {
           "rebuild_entity_ids": "Rebuild entity IDs when saving (device name + sensor name)",
           "scan_interval": "Update interval (seconds)",
