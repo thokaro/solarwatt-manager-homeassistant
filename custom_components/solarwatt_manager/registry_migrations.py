@@ -81,6 +81,9 @@ def cleanup_legacy_device_registry_entries(
     entry: SOLARWATTConfigEntry,
 ) -> None:
     """Remove obsolete registry entries left behind by older releases."""
+    # Added in 2026.3.4 for upgrades from releases that created root-level
+    # diagnostics/rebuild entities. Remove no earlier than 2026.7.0 after
+    # dropping direct upgrade support from <2026.3.4.
     ent_reg = er.async_get(hass)
     legacy_unique_ids = {
         f"{entry.entry_id}_diagnostics_refresh",
@@ -190,6 +193,9 @@ def migrate_item_entities_to_thing_devices(
     item_to_thing_uid: Mapping[str, str] | None,
 ) -> None:
     """Move existing item entities from the legacy root device to their thing device."""
+    # Added in 2026.3.4 for upgrades from the legacy root-device layout.
+    # Remove no earlier than 2026.7.0 after dropping direct upgrade support
+    # from <2026.3.4.
     host = str(entry.data.get("host") or "").strip().lower()
     if not host:
         return

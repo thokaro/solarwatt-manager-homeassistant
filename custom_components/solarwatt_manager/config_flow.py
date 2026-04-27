@@ -581,6 +581,7 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                         coordinator.duplicate_item_targets,
                         data,
                     )
+                    coordinator.run_discovery_callbacks(data)
                 if rebuild_requested:
                     current_options = dict(self.config_entry.options)
                     if data != current_options:

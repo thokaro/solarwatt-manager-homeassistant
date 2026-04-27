@@ -292,7 +292,7 @@ class SOLARWATTClient:
             await self.async_login()
 
     async def _async_get_json_endpoint(self, path: str, *, where: str) -> Any:
-        """Fetch a JSON endpoint with one reauthentication retry on 401/HTML."""
+        """Fetch a JSON endpoint with one reauthentication retry on auth/HTML."""
         await self._ensure_session()
 
         for attempt in range(2):
@@ -306,7 +306,7 @@ class SOLARWATTClient:
                 if redirected_base:
                     self._set_base(redirected_base)
 
-                if resp.status == 401:
+                if resp.status in (401, 403):
                     if attempt == 0:
                         await self.async_login()
                         continue

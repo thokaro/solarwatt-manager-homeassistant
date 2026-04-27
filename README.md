@@ -18,15 +18,12 @@ Note for users with **vision** components: If you need write/control functions s
 
 * Local polling of SOLARWATT Manager data
 * Energy Dashboard ready (correct `device_class` & `state_class`)
-* Automatic unit normalization (Wh → kWh)
-* Item names are normalized and installation-specific IDs are removed.
-* Item `entity_id`s are derived from the Home Assistant device name and the normalized channel name, following the device-based naming structure planned for future Home Assistant releases
-* Entities are assigned to their corresponding SOLARWATT devices
-* Human‑friendly display names (Title Case; BMS/SoC/SoH preserved)
-* Per-device diagnostics based on `/rest/things`, including status sensors with thing properties as attributes and refresh buttons to update item and thing discovery on demand
-* Optional duplicate item handling: keep one UID-based channel entity active and create the duplicates as disabled entities
-* Stable `unique_id`s (safe for long‑term statistics)
-* Works with Home Assistant statistics & history
+* Automatic normalization of units and item names, including Wh → kWh conversion, removal of installation-specific IDs, collapsed duplicate fragments, and preserved abbreviations such as BMS/SoC/SoH
+* Device-based entity structure: entities are assigned to their SOLARWATT devices and `entity_id`s are built from the Home Assistant device name plus the normalized channel name
+* Human-friendly display names (Title Case; BMS/SoC/SoH preserved)
+* Per-device diagnostics from `/rest/things`, with status sensors, thing properties as attributes, and refresh buttons for item and thing discovery
+* Optional duplicate item handling: keep one UID-based channel entity active and create duplicates as disabled entities
+* Stable `unique_id`s and metadata for long-term statistics, history, and Home Assistant statistics
 
 ---
 

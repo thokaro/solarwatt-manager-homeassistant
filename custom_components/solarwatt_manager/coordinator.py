@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
 import logging
 import re
@@ -27,7 +28,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.item_to_thing_uid: dict[str, str] = {}
         self.item_to_channel_metadata: dict[str, dict[str, str]] = {}
         self.duplicate_item_targets: dict[str, str] = {}
-        self._discovery_callbacks: set[Callable[[], None]] = set()
+        self._discovery_callbacks: set[Callable[[Mapping[str, Any] | None], None]] = set()
 
         scan = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         # Validate scan interval: min MIN_SCAN_INTERVAL (10s), max MAX_SCAN_INTERVAL (1h)
@@ -42,7 +43,10 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             update_interval=timedelta(seconds=int(scan)),
         )
 
-    def register_discovery_callback(self, callback: Callable[[], None]) -> Callable[[], None]:
+    def register_discovery_callback(
+        self,
+        callback: Callable[[Mapping[str, Any] | None], None],
+    ) -> Callable[[], None]:
         """Register a callback that discovers new entities on demand."""
         self._discovery_callbacks.add(callback)
 
@@ -51,10 +55,11 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
 
         return _remove
 
-    def _run_discovery_callbacks(self) -> None:
+    def run_discovery_callbacks(self, options: Mapping[str, Any] | None = None) -> None:
+        """Run registered entity discovery callbacks."""
         for callback in tuple(self._discovery_callbacks):
             try:
-                callback()
+                callback(options)
             except Exception:
                 self.logger.exception("Error running discovery callback")
 
@@ -63,7 +68,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         await self.async_refresh()
         await self.async_refresh_things()
         ensure_parent_devices_registered(self.hass, self.entry, self.things)
-        self._run_discovery_callbacks()
+        self.run_discovery_callbacks()
         detach_entityless_thing_devices(self.hass, self.entry, self.things)
 
     async def _async_update_data(self) -> dict[str, SOLARWATTItem]:

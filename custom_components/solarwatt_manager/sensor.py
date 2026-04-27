@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import math
+from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.core import HomeAssistant, callback
@@ -50,13 +52,15 @@ async def async_setup_entry(
 
     added_item_names: set[str] = set()
     added_thing_uids: set[str] = set()
-    selected_thing_uids = get_selected_thing_uids(entry.options)
 
     @callback
-    def _async_discover_new_entities() -> None:
+    def _async_discover_new_entities(options: Mapping[str, Any] | None = None) -> None:
+        resolved_options = options if options is not None else entry.options
+        selected_thing_uids = get_selected_thing_uids(resolved_options)
         if new_entities := _collect_new_entities(
             coordinator,
             entry,
+            resolved_options,
             selected_thing_uids,
             energy_delta_kwh,
             power_unavailable_threshold,
@@ -72,6 +76,7 @@ async def async_setup_entry(
 def _collect_new_entities(
     coordinator,
     entry: SOLARWATTConfigEntry,
+    options: Mapping[str, Any],
     selected_thing_uids: set[str] | None,
     energy_delta_kwh: float,
     power_unavailable_threshold: int,
@@ -80,7 +85,7 @@ def _collect_new_entities(
 ) -> list[SensorEntity]:
     """Build newly discovered item and thing sensors that are not added yet."""
     entities: list[SensorEntity] = []
-    disable_duplicate_item_entities = get_disable_duplicate_item_entities(entry.options)
+    disable_duplicate_item_entities = get_disable_duplicate_item_entities(options)
     for item_name in iter_item_sensor_names(
         coordinator.data,
         coordinator.item_to_thing_uid,

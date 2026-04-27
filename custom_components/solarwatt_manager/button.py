@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
@@ -22,10 +25,12 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     added_thing_uids: set[str] = set()
-    selected_thing_uids = get_selected_thing_uids(entry.options)
 
     @callback
-    def _async_discover_new_entities() -> None:
+    def _async_discover_new_entities(options: Mapping[str, Any] | None = None) -> None:
+        selected_thing_uids = get_selected_thing_uids(
+            options if options is not None else entry.options
+        )
         if new_entities := collect_new_thing_entities(
             coordinator.things,
             selected_thing_uids,
