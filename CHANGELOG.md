@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026.5.0
+
+### Changes
+- Options flow: saving device-selection or duplicate-item settings now immediately re-runs entity discovery with the just-saved options, so newly enabled devices and duplicate item entities are reflected without waiting for a reload.
+- Client robustness: JSON endpoint requests now retry login on `403` responses as well as `401`/HTML login responses.
+- Testing: added a local pytest setup with coverage for item naming, state parsing, and translation key consistency, and added the test job to the GitHub validation workflow.
+- CI maintenance: updated GitHub workflow actions to the current Node.js 24-compatible action versions.
+- Documentation: refreshed the README feature summary and corrected the evcc guide battery SoC example entity.
+
 ## 2026.4.3
 
 ### Changes
