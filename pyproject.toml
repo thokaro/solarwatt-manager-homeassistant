@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "solarwatt-manager-homeassistant"
 version = "2026.5.0"
 description = "SOLARWATT Manager custom integration for Home Assistant"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = []
 
