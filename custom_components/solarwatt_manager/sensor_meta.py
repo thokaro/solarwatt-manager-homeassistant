@@ -282,6 +282,10 @@ def _is_total_increasing_energy(
         "kumulativ",
         "extrapolated",
         "lifetime",
+        "_today",
+        "today_",
+        "_daily",
+        "daily_",
     )
     if any(token in item_name for token in total_tokens):
         return True

@@ -186,6 +186,96 @@ def battery_soc_to_legacy_items(
     ]
 
 
+def extended_modbus_to_legacy_items(
+    things: Sequence[Any],
+    values: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Build legacy-compatible item names for optional read-only Modbus data."""
+    ids_by_category = _thing_ids_by_category(things)
+    items: list[dict[str, Any]] = []
+
+    def add(
+        category: str,
+        suffix: str,
+        label: str,
+        key: str,
+        item_type: str,
+        unit: str | None = None,
+        pattern: str | None = None,
+    ) -> None:
+        thing_id = ids_by_category.get(category)
+        if not thing_id or key not in values:
+            return
+        items.append(
+            _typed_item(
+                f"{_item_prefix(thing_id)}_{suffix}",
+                label,
+                values[key],
+                item_type,
+                unit,
+                pattern,
+                "modbus",
+            )
+        )
+
+    for category, suffix, label in (
+        ("inverter", "inverter_work_pv_total", "Inverter PV Energy Total"),
+        ("pvplant", "harmonized_work_out_total", "PV Energy Total"),
+        ("location", "harmonized_work_produced_total", "PV Energy Total"),
+    ):
+        add(category, suffix, label, "solar_energy_total", "Number:Energy", "kWh", "%.2f kWh")
+    for category, suffix, label in (
+        ("inverter", "modbus_solar_energy_today", "Solar Energy Today"),
+        ("pvplant", "modbus_solar_energy_today", "Solar Energy Today"),
+    ):
+        add(category, suffix, label, "solar_energy_today", "Number:Energy", "kWh", "%.2f kWh")
+
+    add("battery", "battery_work_in_total", "Battery Charge Energy Total", "battery_charge_total", "Number:Energy", "kWh", "%.2f kWh")
+    add("battery", "modbus_battery_charge_today", "Battery Charge Energy Today", "battery_charge_today", "Number:Energy", "kWh", "%.2f kWh")
+    add("battery", "battery_work_out_total", "Battery Discharge Energy Total", "battery_discharge_total", "Number:Energy", "kWh", "%.2f kWh")
+    add("battery", "modbus_battery_discharge_today", "Battery Discharge Energy Today", "battery_discharge_today", "Number:Energy", "kWh", "%.2f kWh")
+
+    add("meter", "meter_work_out_total", "Meter Feed-in Energy Total", "feed_in_energy_total", "Number:Energy", "kWh", "%.2f kWh")
+    add("meter", "modbus_feed_in_energy_today", "Feed-in Energy Today", "feed_in_energy_today", "Number:Energy", "kWh", "%.2f kWh")
+    add("meter", "meter_work_in_total", "Meter Grid Consumption Energy Total", "grid_consumption_energy_total", "Number:Energy", "kWh", "%.2f kWh")
+    add("meter", "modbus_grid_consumption_energy_today", "Grid Consumption Energy Today", "grid_consumption_energy_today", "Number:Energy", "kWh", "%.2f kWh")
+
+    add("inverter", "inverter_work_out_total", "Inverter Yield Total", "total_yield_total", "Number:Energy", "kWh", "%.2f kWh")
+    add("inverter", "modbus_total_yield_today", "Inverter Yield Today", "total_yield_today", "Number:Energy", "kWh", "%.2f kWh")
+    add("inverter", "inverter_work_in_total", "Inverter Input Energy Total", "input_energy_total", "Number:Energy", "kWh", "%.2f kWh")
+    add("inverter", "modbus_input_energy_today", "Inverter Input Energy Today", "input_energy_today", "Number:Energy", "kWh", "%.2f kWh")
+
+    add("battery", "battery_bms_1_voltage", "Battery BMS 1 Voltage", "battery_bms_1_voltage", "Number:ElectricPotential", "V", "%.1f V")
+    add("battery", "battery_bms_1_current", "Battery BMS 1 Current", "battery_bms_1_current", "Number:ElectricCurrent", "A", "%.1f A")
+    add("battery", "battery_bms_1_temperature", "Battery BMS 1 Temperature", "battery_bms_1_temperature", "Number:Temperature", "°C", "%.1f °C")
+    add("battery", "battery_bms_1_soh", "Battery BMS 1 SoH", "battery_bms_1_soh", "Number:Dimensionless", "%", "%.0f %%")
+    add("battery", "battery_bms_1_kwh_remaining", "Battery BMS 1 kWh Remaining", "battery_bms_1_kwh_remaining", "Number:Energy", "kWh", "%.2f kWh")
+    add("battery", "battery_bms_1_cell_temperature_high", "Battery BMS 1 Cell Temperature High", "battery_bms_1_cell_temperature_high", "Number:Temperature", "°C", "%.1f °C")
+    add("battery", "battery_bms_1_cell_temperature_low", "Battery BMS 1 Cell Temperature Low", "battery_bms_1_cell_temperature_low", "Number:Temperature", "°C", "%.1f °C")
+    add("battery", "battery_bms_1_cell_voltage_high", "Battery BMS 1 Cell Voltage High", "battery_bms_1_cell_voltage_high", "Number:ElectricPotential", "V", "%.2f V")
+    add("battery", "battery_bms_1_cell_voltage_low", "Battery BMS 1 Cell Voltage Low", "battery_bms_1_cell_voltage_low", "Number:ElectricPotential", "V", "%.2f V")
+    add("battery", "bmsInfo_bms1_status", "BMS 1 Status", "bms_1_status", "String")
+
+    add("inverter", "modbus_inverter_temperature", "Inverter Temperature", "inverter_temperature", "Number:Temperature", "°C", "%.1f °C")
+    add("inverter", "modbus_inverter_state_code", "Inverter State Code", "inverter_state_code", "Number")
+    add("inverter", "modbus_inverter_fault_1_code", "Inverter Fault 1 Code", "inverter_fault_1_code", "Number")
+    add("inverter", "modbus_inverter_fault_2_code", "Inverter Fault 2 Code", "inverter_fault_2_code", "Number")
+    add("inverter", "modbus_inverter_fault_3_code", "Inverter Fault 3 Code", "inverter_fault_3_code", "Number")
+    add("inverter", "modbus_inverter_faults", "Inverter Faults", "inverter_faults", "String")
+
+    add("battery", "battery_min_soc", "Battery Min SoC", "min_soc", "Number:Dimensionless", "%", "%.0f %%")
+    add("battery", "battery_max_soc", "Battery Max SoC", "max_soc", "Number:Dimensionless", "%", "%.0f %%")
+    add("battery", "battery_min_soc_on_grid", "Battery Min SoC On Grid", "min_soc_on_grid", "Number:Dimensionless", "%", "%.0f %%")
+    add("battery", "battery_battery_maximum_charging_current", "Battery Maximum Charging Current", "max_charge_current", "Number:ElectricCurrent", "A", "%.1f A")
+    add("battery", "battery_battery_maximum_discharging_current", "Battery Maximum Discharging Current", "max_discharge_current", "Number:ElectricCurrent", "A", "%.1f A")
+    add("inverter", "modbus_work_mode_code", "Work Mode Code", "work_mode_code", "Number")
+    add("inverter", "modbus_work_mode", "Work Mode", "work_mode", "String")
+    add("inverter", "modbus_import_power_limit", "Import Power Limit", "import_power_limit", "Number:Power", "W", "%.0f W")
+    add("inverter", "modbus_export_power_limit", "Export Power Limit", "export_power_limit", "Number:Power", "W", "%.0f W")
+
+    return items
+
+
 def things_to_openhab_things(payload: Sequence[Any]) -> list[dict[str, Any]]:
     """Convert newer HEMS thing records to the shape used by existing diagnostics."""
     things: list[dict[str, Any]] = []
@@ -253,6 +343,28 @@ def _battery_item(
         "category": "energy_overview",
         "stateDescription": {"pattern": "%.0f %%"},
     }
+
+
+def _typed_item(
+    name: str,
+    label: str,
+    value: Any,
+    item_type: str,
+    unit: str | None,
+    pattern: str | None,
+    category: str,
+) -> dict[str, Any]:
+    item = {
+        "name": name,
+        "label": label,
+        "state": _typed_state(value, unit),
+        "type": item_type,
+        "editable": False,
+        "category": category,
+    }
+    if pattern:
+        item["stateDescription"] = {"pattern": pattern}
+    return item
 
 
 def _legacy_power_items(
@@ -323,6 +435,18 @@ def _percentage_state(value: int | float) -> str:
     if numeric.is_integer():
         return f"{int(numeric)} %"
     return f"{numeric} %"
+
+
+def _typed_state(value: Any, unit: str | None) -> str:
+    if isinstance(value, bool) or value is None:
+        return "NULL"
+    if isinstance(value, (int, float)):
+        if not isinstance(value, bool) and float(value).is_integer():
+            rendered = str(int(value))
+        else:
+            rendered = str(value)
+        return f"{rendered} {unit}" if unit else rendered
+    return str(value)
 
 
 def _numeric_value(payload: Mapping[str, Any], key: str) -> float | None:

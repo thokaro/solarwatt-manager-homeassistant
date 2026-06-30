@@ -13,6 +13,7 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from .const import (
     CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
+    CONF_ENABLE_EXTENDED_MODBUS,
     CONF_ENABLED_THINGS,
     CONF_ENERGY_DELTA_KWH,
     CONF_HOST,
@@ -22,6 +23,7 @@ from .const import (
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
     DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
+    DEFAULT_ENABLE_EXTENDED_MODBUS,
     DEFAULT_ENERGY_DELTA_KWH,
     DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
@@ -184,6 +186,14 @@ _OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
     {
         "key": CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
         "default": DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
+        "normalize": _normalize_bool,
+        "coerce": bool,
+        "error": "",
+        "invalid": _is_never_invalid,
+    },
+    {
+        "key": CONF_ENABLE_EXTENDED_MODBUS,
+        "default": DEFAULT_ENABLE_EXTENDED_MODBUS,
         "normalize": _normalize_bool,
         "coerce": bool,
         "error": "",

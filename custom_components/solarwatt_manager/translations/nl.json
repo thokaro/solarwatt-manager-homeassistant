@@ -26,7 +26,8 @@
           "scan_interval": "Update-interval (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
           "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen",
-          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren"
+          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren",
+          "enable_extended_modbus": "Extra omvormer- en batterijgegevens via Modbus lezen (alleen-lezen)"
         }
       },
       "devices": {
@@ -57,7 +58,8 @@
           "scan_interval": "Update-interval (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
           "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen",
-          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren"
+          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren",
+          "enable_extended_modbus": "Extra omvormer- en batterijgegevens via Modbus lezen (alleen-lezen)"
         }
       }
     }

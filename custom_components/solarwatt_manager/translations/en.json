@@ -26,7 +26,8 @@
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable",
-          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item"
+          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item",
+          "enable_extended_modbus": "Read additional inverter and battery data via Modbus (read-only)"
         }
       },
       "devices": {
@@ -57,7 +58,8 @@
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable",
-          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item"
+          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item",
+          "enable_extended_modbus": "Read additional inverter and battery data via Modbus (read-only)"
         }
       }
     }

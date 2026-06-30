@@ -23,6 +23,7 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_ENERGY_DELTA_KWH = "energy_delta_kwh"
 CONF_POWER_UNAVAILABLE_THRESHOLD = "power_unavailable_threshold"
 CONF_DISABLE_DUPLICATE_ITEM_ENTITIES = "disable_duplicate_item_entities"
+CONF_ENABLE_EXTENDED_MODBUS = "enable_extended_modbus"
 CONF_ENABLED_THINGS = "enabled_things"
 CONF_REBUILD_ENTITY_IDS = "rebuild_entity_ids"
 
@@ -35,6 +36,7 @@ MIN_ENERGY_DELTA_KWH = 0.0
 DEFAULT_POWER_UNAVAILABLE_THRESHOLD = 3
 MIN_POWER_UNAVAILABLE_THRESHOLD = 0
 DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES = False
+DEFAULT_ENABLE_EXTENDED_MODBUS = False
 
 DEVICE_MANUFACTURER = "SOLARWATT"
 DEVICE_MODEL = "Manager flex / rail"
@@ -215,6 +217,19 @@ def get_disable_duplicate_item_entities(options: Mapping[str, Any] | None) -> bo
     value = (options or {}).get(
         CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
         DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
+    )
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def get_enable_extended_modbus(options: Mapping[str, Any] | None) -> bool:
+    """Return whether read-only extended Modbus sensors are enabled."""
+    value = (options or {}).get(
+        CONF_ENABLE_EXTENDED_MODBUS,
+        DEFAULT_ENABLE_EXTENDED_MODBUS,
     )
     if isinstance(value, bool):
         return value

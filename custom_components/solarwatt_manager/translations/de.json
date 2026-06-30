@@ -26,7 +26,8 @@
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
           "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert",
-          "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen"
+          "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen",
+          "enable_extended_modbus": "Zusätzliche Wechselrichter- und Speicherdaten per Modbus lesen (nur lesend)"
         }
       },
       "devices": {
@@ -57,7 +58,8 @@
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
           "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert",
-          "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen"
+          "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen",
+          "enable_extended_modbus": "Zusätzliche Wechselrichter- und Speicherdaten per Modbus lesen (nur lesend)"
         }
       }
     }

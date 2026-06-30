@@ -18,6 +18,7 @@ Note for users with **vision** components: If you need write/control functions s
 
 * Local polling of SOLARWATT Manager data
 * Compatibility with newer KiwOS Edge systems that expose live power data via the HEMS configurator API
+* Optional read-only Modbus polling for compatible vision/FoxESS-style systems, adding extra PV/grid/battery energy totals, BMS health/electrical sensors, inverter status/fault sensors, and battery policy/limit sensors
 * Energy Dashboard ready (correct `device_class` & `state_class`)
 * Automatic normalization of units and item names, including Wh → kWh conversion, removal of installation-specific IDs, collapsed duplicate fragments, and preserved abbreviations such as BMS/SoC/SoH
 * Device-based entity structure: entities are assigned to their SOLARWATT devices and `entity_id`s are built from the Home Assistant device name plus the normalized channel name
@@ -85,6 +86,7 @@ You can adjust these in the integration options:
 * **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
 * **Power unavailable threshold (polls)** – applies to power sensors only. If SOLARWATT briefly returns `unavailable`, the last valid power value is kept until the configured consecutive poll limit is reached. Example: `3` means the 1st and 2nd `unavailable` poll keep the previous value, and the sensor only switches to `unavailable` on the 3rd poll. Set to `0` to disable this debounce completely.
 * **Disable duplicate item entities** – disabled by default. When enabled and a thing channel exposes multiple linked items for the same value, the integration keeps the UID-based channel item (for example `keba_wallbox_12345678_channels_state`) active and creates the additional item entities as disabled-by-default entries. They remain visible in Home Assistant and can still be enabled manually.
+* **Read additional inverter and battery data via Modbus** – disabled by default. On compatible vision/FoxESS-style systems, this adds read-only Modbus-backed sensors for energy totals, battery/BMS health, battery electrical state, inverter status/faults, and battery limits. No write/control Modbus commands are used.
 * **Device selection** – choose which detected SOLARWATT devices should be created in Home Assistant
 * **Rebuild entity IDs when saving** – rebuild managed `entity_id`s using `device name + sensor name`
 

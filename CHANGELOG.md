@@ -4,6 +4,7 @@
 
 ### Changes
 - Client compatibility: when newer KiwOS Edge systems no longer expose `/rest/items` or `/rest/things`, fall back to `/rest/hems-configurator/energy-overview` for live power sensors and `/rest/hems-configurator/things` for diagnostics metadata.
+- Options UI: added an opt-in, read-only Modbus data setting for compatible vision/FoxESS-style systems. When enabled, the HEMS fallback also creates additional PV/grid/battery energy totals, BMS health/electrical sensors, inverter status/fault sensors, and battery policy/limit sensors where the registers validate.
 
 ## 2026.5.0
 

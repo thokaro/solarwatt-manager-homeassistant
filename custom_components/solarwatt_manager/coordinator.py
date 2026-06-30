@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
+    get_enable_extended_modbus,
 )
 from .entity_helpers import detach_entityless_thing_devices, ensure_parent_devices_registered
 from .state_parser import SOLARWATTItem, parse_state
@@ -74,7 +75,9 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     async def _async_update_data(self) -> dict[str, SOLARWATTItem]:
         # Best practice for Home Assistant: do a single poll per update interval and
         # let all entities read from the same snapshot.
-        items = await self.client.async_get_items()
+        items = await self.client.async_get_items(
+            include_extended_modbus=get_enable_extended_modbus(self.entry.options),
+        )
 
         def _to_item(name: str, it: dict[str, Any]) -> SOLARWATTItem:
             pattern = (it.get("stateDescription") or {}).get("pattern")
@@ -136,6 +139,12 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                         channel_metadata,
                     )
         self.things = out
+        _merge_synthetic_item_thing_mappings(
+            item_to_thing_uid,
+            item_to_channel_metadata,
+            out,
+            self.data,
+        )
         self.item_to_thing_uid = item_to_thing_uid
         self.item_to_channel_metadata = item_to_channel_metadata
         self.duplicate_item_targets = {
@@ -232,3 +241,53 @@ def _merge_channel_item_metadata(
 
     for key, value in channel_metadata.items():
         existing.setdefault(key, value)
+
+
+def _merge_synthetic_item_thing_mappings(
+    item_to_thing_uid: dict[str, str],
+    item_to_channel_metadata: dict[str, dict[str, str]],
+    things: Mapping[str, dict[str, Any]],
+    items: Mapping[str, Any] | None,
+) -> None:
+    """Map HEMS fallback and Modbus synthetic item names back to their things."""
+    thing_prefixes = {
+        uid: _synthetic_item_prefix(uid)
+        for uid in things
+        if uid and _synthetic_item_prefix(uid)
+    }
+    if not thing_prefixes:
+        return
+
+    for item_name, item in (items or {}).items():
+        if item_name in item_to_thing_uid:
+            continue
+        item_prefix = _matching_thing_prefix(str(item_name), thing_prefixes)
+        if item_prefix is None:
+            continue
+        thing_uid, _ = item_prefix
+        item_to_thing_uid[item_name] = thing_uid
+        item_to_channel_metadata.setdefault(
+            item_name,
+            {
+                "item_type": str(getattr(item, "oh_type", "") or ""),
+                "channel_label": str(getattr(item, "label", "") or ""),
+            },
+        )
+
+
+def _matching_thing_prefix(
+    item_name: str,
+    thing_prefixes: Mapping[str, str],
+) -> tuple[str, str] | None:
+    matches = [
+        (uid, prefix)
+        for uid, prefix in thing_prefixes.items()
+        if item_name == prefix or item_name.startswith(f"{prefix}_")
+    ]
+    if not matches:
+        return None
+    return max(matches, key=lambda item: len(item[1]))
+
+
+def _synthetic_item_prefix(thing_uid: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", thing_uid).strip("_")
