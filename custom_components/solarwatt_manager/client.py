@@ -2,11 +2,25 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import struct
 import time
 from typing import Any
 
 from aiohttp import ClientError, ClientResponseError, ClientSession, CookieJar
 from homeassistant.helpers.update_coordinator import UpdateFailed
+
+from .hems_api import (
+    ENERGY_OVERVIEW_PATH,
+    THINGS_PATH,
+    battery_soc_to_legacy_items,
+    energy_overview_to_items,
+    energy_overview_to_legacy_items,
+    things_to_openhab_things,
+)
+
+_FOXESS_BATTERY_SOC_ADDRESSES = (37612, 31024, 31038, 38310)
+_MODBUS_READ_HOLDING_REGISTERS = 3
+_MODBUS_READ_INPUT_REGISTERS = 4
 
 
 class SolarwattError(UpdateFailed):
@@ -336,6 +350,113 @@ class SOLARWATTClient:
                 f"Cannot connect to SOLARWATT Manager: {str(e)}"
             ) from e
 
+    async def async_get_energy_overview_items(self) -> list[dict[str, Any]]:
+        try:
+            payload = await self._async_get_json_endpoint(
+                ENERGY_OVERVIEW_PATH,
+                where=f"GET {ENERGY_OVERVIEW_PATH}",
+            )
+            if not isinstance(payload, dict):
+                raise SolarwattProtocolError("Energy overview response is not an object")
+
+            items = energy_overview_to_items(payload)
+            try:
+                things = await self._async_get_json_endpoint(
+                    THINGS_PATH,
+                    where=f"GET {THINGS_PATH}",
+                )
+                if isinstance(things, list):
+                    legacy_items = energy_overview_to_legacy_items(payload, things)
+                    existing_names = {item.get("name") for item in items}
+                    items.extend(
+                        item
+                        for item in legacy_items
+                        if item.get("name") not in existing_names
+                    )
+                    if (soc := await self.async_get_hems_battery_soc(things)) is not None:
+                        existing_names.update(item.get("name") for item in items)
+                        items.extend(
+                            item
+                            for item in battery_soc_to_legacy_items(things, soc)
+                            if item.get("name") not in existing_names
+                        )
+            except SolarwattError as err:
+                self._log.debug("Unable to build legacy HEMS item aliases: %s", err)
+
+            if not items:
+                raise SolarwattProtocolError("Energy overview response contains no supported values")
+            return items
+        except SolarwattError:
+            raise
+        except ClientResponseError as e:
+            if e.status in (401, 403):
+                raise SolarwattAuthError("HTTP error fetching HEMS energy overview") from e
+            if e.status == 404:
+                raise SolarwattNotManagerError("HEMS energy overview endpoint not found") from e
+            raise SolarwattConnectionError(f"HTTP error {e.status} fetching HEMS energy overview") from e
+        except (ClientError, asyncio.TimeoutError) as e:
+            raise SolarwattConnectionError(f"Connection error fetching HEMS energy overview: {e}") from e
+
+    async def async_get_hems_things(self) -> list[dict[str, Any]]:
+        try:
+            payload = await self._async_get_json_endpoint(
+                THINGS_PATH,
+                where=f"GET {THINGS_PATH}",
+            )
+            if not isinstance(payload, list):
+                raise SolarwattProtocolError("HEMS things response is not a list")
+            return things_to_openhab_things(payload)
+        except SolarwattError:
+            raise
+        except ClientResponseError as e:
+            if e.status in (401, 403):
+                raise SolarwattAuthError("HTTP error fetching HEMS things") from e
+            if e.status == 404:
+                raise SolarwattProtocolError("HEMS things endpoint not found") from e
+            raise SolarwattConnectionError(f"HTTP error {e.status} fetching HEMS things") from e
+        except (ClientError, asyncio.TimeoutError) as e:
+            raise SolarwattConnectionError(f"Connection error fetching HEMS things: {e}") from e
+
+    async def async_get_hems_battery_soc(self, things: list[Any]) -> int | None:
+        connection = _hems_modbus_connection(things)
+        if connection is None:
+            return None
+
+        host, port, unit = connection
+        valid_values: list[int] = []
+        for address in _FOXESS_BATTERY_SOC_ADDRESSES:
+            for function in (
+                _MODBUS_READ_HOLDING_REGISTERS,
+                _MODBUS_READ_INPUT_REGISTERS,
+            ):
+                try:
+                    value = await _async_read_modbus_register(
+                        host,
+                        port,
+                        unit,
+                        function,
+                        address,
+                    )
+                except Exception as err:
+                    self._log.debug(
+                        "Unable to read battery SoC via Modbus %s:%s unit %s address %s function %s: %s",
+                        host,
+                        port,
+                        unit,
+                        address,
+                        function,
+                        err,
+                    )
+                    continue
+
+                if 0 <= value <= 100:
+                    valid_values.append(value)
+
+        for value in valid_values:
+            if value > 0:
+                return value
+        return valid_values[0] if valid_values else None
+
     async def async_get_items(self) -> list[dict[str, Any]]:
         try:
             return await self._async_get_json_endpoint(
@@ -345,11 +466,15 @@ class SOLARWATTClient:
         except SolarwattError:
             raise
         except ClientResponseError as e:
-            self._log.error(f"HTTP error {e.status} fetching items from {self.host}")
             if e.status in (401, 403):
                 raise SolarwattAuthError(f"HTTP {e.status} fetching items") from e
             if e.status == 404:
-                raise SolarwattNotManagerError("Items endpoint not found") from e
+                self._log.debug(
+                    "Legacy /rest/items endpoint not found on %s; trying HEMS energy overview",
+                    self.host,
+                )
+                return await self.async_get_energy_overview_items()
+            self._log.error(f"HTTP error {e.status} fetching items from {self.host}")
             raise SolarwattConnectionError(f"HTTP error {e.status}") from e
         except (ClientError, asyncio.TimeoutError) as e:
             self._log.exception(f"Connection error fetching items from {self.host}: {e}")
@@ -370,9 +495,90 @@ class SOLARWATTClient:
             if e.status in (401, 403):
                 raise SolarwattAuthError("HTTP error fetching things") from e
             if e.status == 404:
-                raise SolarwattProtocolError("Things endpoint not found") from e
+                self._log.debug(
+                    "Legacy /rest/things endpoint not found on %s; trying HEMS things",
+                    self.host,
+                )
+                return await self.async_get_hems_things()
             raise SolarwattConnectionError(f"HTTP error {e.status}") from e
         except (ClientError, asyncio.TimeoutError) as e:
             raise SolarwattConnectionError(f"Connection error fetching things: {e}") from e
         except Exception as e:
             raise SolarwattConnectionError(f"Error fetching things: {e}") from e
+
+
+def _hems_modbus_connection(things: list[Any]) -> tuple[str, int, int] | None:
+    for thing in things:
+        if not isinstance(thing, dict):
+            continue
+        config = thing.get("config")
+        if not isinstance(config, dict):
+            continue
+        host = str(config.get("host") or "").strip()
+        if not host:
+            continue
+        try:
+            port = int(config.get("port") or 502)
+            unit = int(config.get("unitId") or 247)
+        except (TypeError, ValueError):
+            continue
+        return host, port, unit
+    return None
+
+
+async def _async_read_modbus_register(
+    host: str,
+    port: int,
+    unit: int,
+    function: int,
+    address: int,
+) -> int:
+    reader: asyncio.StreamReader | None = None
+    writer: asyncio.StreamWriter | None = None
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port),
+            timeout=3,
+        )
+        transaction_id = (address + function) & 0xFFFF
+        request = struct.pack(
+            ">HHHBBHH",
+            transaction_id,
+            0,
+            6,
+            unit,
+            function,
+            address,
+            1,
+        )
+        writer.write(request)
+        await asyncio.wait_for(writer.drain(), timeout=3)
+
+        header = await asyncio.wait_for(reader.readexactly(7), timeout=3)
+        response_transaction_id, protocol_id, length, response_unit = struct.unpack(
+            ">HHHB",
+            header,
+        )
+        if (
+            response_transaction_id != transaction_id
+            or protocol_id != 0
+            or response_unit != unit
+            or length < 3
+        ):
+            raise SolarwattProtocolError("Invalid Modbus response header")
+
+        pdu = await asyncio.wait_for(reader.readexactly(length - 1), timeout=3)
+        response_function = pdu[0]
+        if response_function & 0x80:
+            code = pdu[1] if len(pdu) > 1 else "<missing>"
+            raise SolarwattProtocolError(f"Modbus exception {code}")
+        if response_function != function or len(pdu) < 4 or pdu[1] < 2:
+            raise SolarwattProtocolError("Invalid Modbus response payload")
+        return struct.unpack(">H", pdu[2:4])[0]
+    finally:
+        if writer is not None:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass

@@ -17,6 +17,7 @@ Note for users with **vision** components: If you need write/control functions s
 ## ✨ Features
 
 * Local polling of SOLARWATT Manager data
+* Compatibility with newer KiwOS Edge systems that expose live power data via the HEMS configurator API
 * Energy Dashboard ready (correct `device_class` & `state_class`)
 * Automatic normalization of units and item names, including Wh → kWh conversion, removal of installation-specific IDs, collapsed duplicate fragments, and preserved abbreviations such as BMS/SoC/SoH
 * Device-based entity structure: entities are assigned to their SOLARWATT devices and `entity_id`s are built from the Home Assistant device name plus the normalized channel name

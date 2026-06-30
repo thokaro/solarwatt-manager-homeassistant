@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+- Client compatibility: when newer KiwOS Edge systems no longer expose `/rest/items` or `/rest/things`, fall back to `/rest/hems-configurator/energy-overview` for live power sensors and `/rest/hems-configurator/things` for diagnostics metadata.
+
 ## 2026.5.0
 
 ### Changes
