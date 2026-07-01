@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026.6.0
+
+### Changes
+- Firmware compatibility: added fallbacks for SOLARWATT managers where authenticated requests to the previous `/rest/items` and `/rest/things` endpoints now return `404`.
+- On a tested SOLARWATT Manager with KiwOS Edge `10.26.24.4` / EM setup feature `4.64.1.45`, `/rest/hems-configurator/energy-overview` returns live production, grid, household, and battery power values, while `/rest/hems-configurator/things` replaces the previous thing metadata endpoint.
+- With SOLARWATT firmware `10.26.24.4`, only the Energy Overview item values can currently be read; the full legacy item list is no longer exposed through `/rest/items`.
+- HEMS fallback entities now include a dedicated `Energy Overview` device with sensors named after the JSON fields: `production`, `feedIn`, `feedOut`, `householdConsumption`, `storagePowerIn`, and `storagePowerOut`.
+- The `Energy Overview` device must be enabled in the integration options/device selection for those sensors to be created.
+- Existing legacy-style power aliases are still generated where possible so existing SOLARWATT devices and entity IDs can keep working with the new firmware.
+- Documentation: added guidance for exposing SOLARWATT Vision battery SoC via the FoxESS Modbus integration or the `WiIIiam278/foxess_modbus` `feat/ivo-and-ivt` fork, and clarified that the `10` in the SoC template represents the storage reserve configured in EnergyManager.
+
 ## 2026.5.0
 
 ### Changes

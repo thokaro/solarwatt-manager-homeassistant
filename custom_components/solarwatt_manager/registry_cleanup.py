@@ -13,6 +13,7 @@ from .const import (
     SOLARWATTConfigEntry,
     build_thing_device_identifier,
 )
+from .hems_api import is_hems_thing
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def cleanup_empty_channel_thing_diagnostics(
     empty_channel_thing_uids = {
         str(thing.get("UID") or thing.get("uid") or thing_uid).strip()
         for thing_uid, thing in (things or {}).items()
+        if not is_hems_thing(thing)
         if not isinstance(thing.get("channels"), list) or not thing.get("channels")
     }
     if not empty_channel_thing_uids:

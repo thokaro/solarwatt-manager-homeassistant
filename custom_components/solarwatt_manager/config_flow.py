@@ -42,6 +42,7 @@ from .client import (
     SolarwattProtocolError,
 )
 from .entity_helpers import sync_selected_thing_entities
+from .hems_api import is_energy_overview_thing, is_hems_thing
 from .registry_migrations import mark_pending_registry_migration
 
 _LOGGER = logging.getLogger(__name__)
@@ -487,6 +488,9 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def _thing_has_linked_items(thing: Mapping[str, Any]) -> bool:
         """Return True if any channel of this thing is linked to at least one item."""
+        if is_hems_thing(thing):
+            return True
+
         channels = thing.get("channels")
         if not isinstance(channels, list):
             return False
@@ -521,6 +525,9 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def _is_default_selected_thing(thing: Mapping[str, Any]) -> bool:
         """Return True for things enabled by default during setup."""
+        if is_energy_overview_thing(thing):
+            return True
+
         label = str(thing.get("label") or "").lower()
         thing_type_uid = str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "").lower()
         properties = thing.get("properties")

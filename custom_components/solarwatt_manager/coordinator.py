@@ -17,6 +17,7 @@ from .const import (
     MIN_SCAN_INTERVAL,
 )
 from .entity_helpers import detach_entityless_thing_devices, ensure_parent_devices_registered
+from .hems_api import item_names_to_thing_uids
 from .state_parser import SOLARWATTItem, parse_state
 
 
@@ -135,6 +136,12 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                         item_name,
                         channel_metadata,
                     )
+        for item_name, thing_uid in item_names_to_thing_uids(
+            tuple((self.data or {}).keys()),
+            tuple(out.values()),
+        ).items():
+            item_to_thing_uid.setdefault(item_name, thing_uid)
+
         self.things = out
         self.item_to_thing_uid = item_to_thing_uid
         self.item_to_channel_metadata = item_to_channel_metadata

@@ -8,7 +8,7 @@
 
 This custom integration connects a **SOLARWATT Manager** like FLEX or Rail to **Home Assistant** and provides energy- and power-related sensors.
 
-Note for users with **vision** components: If you need write/control functions such as work mode, maximum charge current, or discharge current, try https://github.com/nathanmarlor/foxess_modbus
+Note for users with **vision** components: If you need write/control functions such as work mode, maximum charge current, discharge current, or battery SoC via Modbus, try [nathanmarlor/foxess_modbus](https://github.com/nathanmarlor/foxess_modbus). For SOLARWATT Vision battery setups, the fork [WiIIiam278:feat/ivo-and-ivt](https://github.com/WiIIiam278/foxess_modbus/tree/feat/ivo-and-ivt) may be the better fit.
 
 ⚠️ **EnergyManager pro** is not supported by this integration, use https://github.com/Mas2112/solarwatt-energymanager-homeassistant instead.
 
@@ -17,6 +17,7 @@ Note for users with **vision** components: If you need write/control functions s
 ## ✨ Features
 
 * Local polling of SOLARWATT Manager data
+* Fallback for newer firmware that exposes `/rest/hems-configurator/things` and `/rest/hems-configurator/energy-overview` instead of the previous `/rest/things` and `/rest/items` endpoints
 * Energy Dashboard ready (correct `device_class` & `state_class`)
 * Automatic normalization of units and item names, including Wh → kWh conversion, removal of installation-specific IDs, collapsed duplicate fragments, and preserved abbreviations such as BMS/SoC/SoH
 * Device-based entity structure: entities are assigned to their SOLARWATT devices and `entity_id`s are built from the Home Assistant device name plus the normalized channel name
@@ -92,6 +93,59 @@ You can adjust these in the integration options:
 ## 🔋 Energy Dashboard
 
 Energy sensors are provided in kWh and prepared for the Energy Dashboard (`device_class: energy`, `state_class: total` or `total_increasing`, depending on whether the value is cumulative or strictly increasing). Which sensors you use depends on your setup.
+
+---
+
+## SOLARWATT Firmware 10.26.24.4
+
+On a tested SOLARWATT Manager with KiwOS Edge `10.26.24.4` / EM setup feature `4.64.1.45`, authenticated requests to the previous endpoints return `404`:
+
+* `/rest/items`
+* `/rest/things`
+
+The newer firmware exposes replacement data under:
+
+* `/rest/hems-configurator/energy-overview` - live production, grid, household, and battery power values
+* `/rest/hems-configurator/things` - thing/device metadata
+
+This integration falls back to those HEMS configurator endpoints automatically. The direct energy overview values are exposed under a dedicated `Energy Overview` device with sensors named like the JSON fields:
+
+* `production`
+* `feedIn`
+* `feedOut`
+* `householdConsumption`
+* `storagePowerIn`
+* `storagePowerOut`
+
+The `Energy Overview` device must be enabled in the integration options/device selection for those sensors to be created. With SOLARWATT firmware `10.26.24.4`, these Energy Overview items are currently the only item values that can be read because the full legacy `/rest/items` payload is no longer available.
+
+For SOLARWATT Vision battery SoC, use the FoxESS integration [nathanmarlor/foxess_modbus](https://github.com/nathanmarlor/foxess_modbus/) or preferably the fork [WiIIiam278:feat/ivo-and-ivt](https://github.com/WiIIiam278/foxess_modbus/tree/feat/ivo-and-ivt). You can then create a SOLARWATT-adjusted SoC as a template sensor.
+
+In `configuration.yaml`:
+
+```yaml
+template:
+  - sensor:
+      - name: "SOLARWATT Speicher SoC"
+        unique_id: solarwatt_speicher_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        availability: "{{ is_number(states('sensor.foxess_battery_soc')) }}"
+        state: >
+          {% set reserve = 10 %}
+          {% set fox = states('sensor.foxess_battery_soc') | float %}
+          {% set solarwatt = ((fox - reserve) / (100 - reserve)) * 100 %}
+          {{ solarwatt | clamp(0, 100) | round(0) }}
+```
+
+Adjust only this entity ID to match your FoxESS SoC sensor:
+
+```yaml
+sensor.foxess_battery_soc
+```
+
+The `reserve` value (`10` in the example) represents the storage reserve configured in EnergyManager. Adjust it if your EnergyManager reserve is different.
 
 ---
 
@@ -171,6 +225,7 @@ The integration version is defined in:
 
 ```
 custom_components/solarwatt_manager/manifest.json
+pyproject.toml
 ```
 
 See `CHANGELOG.md` for release notes. GitHub releases follow calendar-based versioning 📅:
