@@ -64,37 +64,15 @@ class SOLARWATTClient:
 
     @staticmethod
     def _base_from_url(url) -> str | None:
-        try:
-            scheme = url.scheme
-            host = url.host
-            port = url.port
-        except Exception:
-            return None
-
-        if not scheme or not host:
-            return None
-        default_port = 80 if scheme == "http" else 443 if scheme == "https" else None
-        if port and port != default_port:
-            return f"{scheme}://{host}:{port}"
-        return f"{scheme}://{host}"
+        return SolarwattHttpClient.base_from_url(url)
 
     @staticmethod
     def _looks_like_login_page(snippet: str) -> bool:
-        lower = snippet.lower()
-        return any(
-            marker in lower
-            for marker in (
-                'action="/auth/login"',
-                "please enter the gateway password",
-                "<h3 class=\"primary-color\">sign in</h3>",
-                "kiwios-app-frame",
-            )
-        )
+        return SolarwattHttpClient.looks_like_login_page(snippet)
 
     @staticmethod
     def _request_kwargs(url: str) -> dict[str, Any]:
-        # Newer managers can redirect to or expose HTTPS with a self-signed cert.
-        return {"ssl": False} if url.startswith("https://") else {}
+        return SolarwattHttpClient.request_kwargs(url)
 
     def _has_session_cookies(self) -> bool:
         try:
@@ -112,17 +90,10 @@ class SOLARWATTClient:
             return "<unknown>"
 
     async def _read_snippet(self, resp, limit: int = 300) -> str:
-        try:
-            text = await resp.text()
-            text = text.replace("\n", " ").replace("\r", " ")
-            return text[:limit]
-        except Exception:
-            return "<unreadable>"
+        return await self.http.read_snippet(resp, limit)
 
     def _request(self, method: str, url: str, **kwargs):
-        request_kwargs = dict(kwargs)
-        request_kwargs.update(self._request_kwargs(url))
-        return self._session.request(method, url, **request_kwargs)
+        return self.http.request(method, url, **kwargs)
 
     async def async_close(self) -> None:
         if not self._session.closed:
@@ -300,37 +271,12 @@ class SOLARWATTClient:
             await self.async_login()
 
     async def _async_get_json_endpoint(self, path: str, *, where: str) -> Any:
-        """Fetch a JSON endpoint with one reauthentication retry on auth/HTML."""
         await self._ensure_session()
-
-        for attempt in range(2):
-            url = f"{self.base}{path}"
-            async with self._request(
-                "GET",
-                url,
-                timeout=5,
-            ) as resp:
-                redirected_base = self._base_from_url(resp.url)
-                if redirected_base:
-                    self._set_base(redirected_base)
-
-                if resp.status in (401, 403):
-                    if attempt == 0:
-                        await self.async_login()
-                        continue
-                    resp.raise_for_status()
-
-                ct = (resp.headers.get("Content-Type") or "").lower()
-                if "text/html" in ct and attempt == 0:
-                    await self.async_login()
-                    continue
-                if "text/html" in ct:
-                    snippet = await self._read_snippet(resp)
-                    if self._looks_like_login_page(snippet):
-                        raise SolarwattAuthError(f"Session expired while requesting {where}")
-
-                resp.raise_for_status()
-                return await self._ensure_json(resp, where)
+        return await self.http.get_json_endpoint(
+            path,
+            where=where,
+            cookie_debug=self._cookie_debug(),
+        )
 
     async def async_validate_connection(self) -> None:
         """Test connection to SOLARWATT Manager."""
