@@ -18,16 +18,22 @@ _ENERGY_OVERVIEW_ITEM_NAMES = (
     "householdConsumption",
     "storagePowerIn",
     "storagePowerOut",
+    "gridPower",
+    "batteryPower",
+    "selfConsumedPower",
+    "batteryChargePower",
+    "batteryDischargePower",
 )
 _ENERGY_OVERVIEW_ITEM_NAME_SET = set(_ENERGY_OVERVIEW_ITEM_NAMES)
 
 
 def energy_overview_to_items(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Convert the HEMS energy overview response to OpenHAB-like items."""
+    values = _energy_overview_values(payload)
     return [
-        _power_item(item_name, item_name, payload.get(item_name), "energy_overview")
+        _power_item(item_name, item_name, values.get(item_name), "energy_overview")
         for item_name in _ENERGY_OVERVIEW_ITEM_NAMES
-        if item_name in payload
+        if item_name in values
     ]
 
 
@@ -56,6 +62,37 @@ def energy_overview_to_legacy_items(
 
     return items
 
+def _energy_overview_values(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Return raw and derived values from the HEMS energy overview response."""
+    values: dict[str, Any] = {
+        item_name: payload.get(item_name)
+        for item_name in (
+            "production",
+            "feedIn",
+            "feedOut",
+            "householdConsumption",
+            "storagePowerIn",
+            "storagePowerOut",
+        )
+        if item_name in payload
+    }
+
+    derived_values = {
+        "gridPower": _net_grid_power(payload),
+        "batteryPower": _net_battery_power(payload),
+        "selfConsumedPower": _self_consumed_power(payload),
+        "batteryChargePower": _battery_charge_power(payload),
+        "batteryDischargePower": _battery_discharge_power(payload),
+    }
+
+    values.update(
+        {
+            key: value
+            for key, value in derived_values.items()
+            if value is not None
+        }
+    )
+    return values
 
 def item_names_to_thing_uids(
     item_names: Sequence[Any],
@@ -414,6 +451,12 @@ def _self_consumed_power(payload: Mapping[str, Any]) -> float | None:
         return None
     return max((production or 0) - (feed_in or 0), 0)
 
+def _battery_charge_power(payload: Mapping[str, Any]) -> float | None:
+    return _numeric_value(payload, "storagePowerIn")
+
+
+def _battery_discharge_power(payload: Mapping[str, Any]) -> float | None:
+    return _numeric_value(payload, "storagePowerOut")
 
 def _thing_properties(
     raw_thing: Mapping[str, Any],
