@@ -10,23 +10,30 @@
       "invalid_power_unavailable_threshold": "Power unavailable threshold must be 0 or greater.",
       "invalid_input": "Invalid input.",
       "invalid_auth": "Invalid username or password.",
+      "invalid_local_auth": "Invalid username or password for the local SOLARWATT Manager.",
+      "invalid_hems_auth": "Invalid username or password for KiwiGrid HEMS (SOLARWATT Manager Portal).",
       "not_solarwatt": "Host does not appear to be a SOLARWATT Manager.",
       "cannot_connect": "Unable to connect to the SOLARWATT Manager.",
       "connection_failed": "Connection to SOLARWATT Manager failed.",
-      "unknown_error": "Unknown error occurred."
+      "unknown_error": "Unknown error occurred.",
+      "missing_connection": "Configure a local manager, KiwiGrid HEMS, or both."
     },
     "step": {
       "user": {
         "title": "Connect SOLARWATT",
         "description": "Enter IP/Host and login credentials.",
         "data": {
-          "host": "IP/Host",
-          "username": "Username",
-          "password": "Password",
+          "host": "Local SOLARWATT Manager IP/Host",
+          "username": "Local SOLARWATT Manager username",
+          "password": "Local SOLARWATT Manager password",
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable",
-          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item"
+          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item",
+          "kiwigrid_hems_enabled": "Enable KiwiGrid HEMS (SOLARWATT Manager Portal)",
+          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager Portal) username or email address",
+          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager Portal) password",
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS poll interval (seconds)"
         }
       },
       "devices": {
@@ -53,11 +60,18 @@
           }
         },
         "data": {
+          "host": "Local SOLARWATT Manager IP/Host",
+          "username": "Local SOLARWATT Manager username",
+          "password": "Local SOLARWATT Manager password",
           "rebuild_entity_ids": "Rebuild entity IDs when saving (device name + sensor name)",
           "scan_interval": "Update interval (seconds)",
           "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
           "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable",
-          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item"
+          "disable_duplicate_item_entities": "Disable duplicate item entities and prefer the UID-based channel item",
+          "kiwigrid_hems_enabled": "Enable KiwiGrid HEMS (SOLARWATT Manager Portal)",
+          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager Portal) username or email address",
+          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager Portal) password",
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS poll interval (seconds)"
         }
       }
     }
@@ -66,6 +80,21 @@
     "button": {
       "diagnostics_refresh": {
         "name": "Update data"
+      }
+    },
+    "switch": {
+      "hems_optimization_switch": {
+        "name": "Switch"
+      }
+    },
+    "select": {
+      "evstation_optimization_mode": {
+        "name": "Optimization mode",
+        "state": {
+          "not_optimized": "Not optimized",
+          "pv_excess": "PV optimized",
+          "departure_time": "Departure time"
+        }
       }
     }
   }

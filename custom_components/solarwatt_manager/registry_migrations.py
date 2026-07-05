@@ -22,6 +22,8 @@ from .entity_helpers import (
     item_sensor_entries,
 )
 from .naming import (
+    hems_entity_object_id,
+    hems_item_suffix,
     compose_entity_object_id,
     item_entity_name,
     slugify_entity_name,
@@ -56,6 +58,7 @@ def finalize_registry_migrations(
         entry,
         things,
     )
+    cleanup_legacy_kiwigrid_flow_entities(hass, entry)
     cleanup_legacy_device_registry_entries(hass, entry)
 
 
@@ -109,6 +112,54 @@ def cleanup_legacy_device_registry_entries(
     _remove_orphaned_root_device(hass, entry)
 
 
+def cleanup_legacy_kiwigrid_flow_entities(
+    hass: HomeAssistant,
+    entry: SOLARWATTConfigEntry,
+) -> None:
+    """Remove obsolete derived KiwiGrid Flow entities from the registry."""
+    legacy_item_names = {
+        "hems_flow_production",
+        "hems_flow_feedIn",
+        "hems_flow_feedOut",
+        "hems_flow_householdConsumption",
+        "hems_flow_storagePowerIn",
+        "hems_flow_storagePowerOut",
+        "hems_flow_gridPower",
+        "hems_flow_batteryPower",
+        "hems_flow_selfConsumedPower",
+        "hems_flow_batteryChargePower",
+        "hems_flow_batteryDischargePower",
+        "hems_flow_householdFromBatteryPower",
+        "hems_flow_householdFromGridPower",
+        "hems_flow_householdFromPvPower",
+        "hems_flow_batterySoc",
+    }
+    legacy_unique_ids = {
+        build_item_sensor_unique_id(entry.entry_id, item_name)
+        for item_name in legacy_item_names
+    }
+    legacy_device_prefix = build_item_sensor_unique_id(entry.entry_id, "hems_flow_device_")
+    ent_reg = er.async_get(hass)
+    removed = 0
+    for registry_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if registry_entry.platform != DOMAIN or not registry_entry.unique_id:
+            continue
+        if (
+            registry_entry.unique_id not in legacy_unique_ids
+            and not registry_entry.unique_id.startswith(legacy_device_prefix)
+        ):
+            continue
+        ent_reg.async_remove(registry_entry.entity_id)
+        removed += 1
+
+    if removed:
+        _LOGGER.info(
+            "Removed %s obsolete derived KiwiGrid Flow entities for entry %s",
+            removed,
+            entry.entry_id,
+        )
+
+
 def migrate_item_sensor_entity_ids(
     hass: HomeAssistant,
     entry: SOLARWATTConfigEntry,
@@ -150,12 +201,24 @@ def migrate_item_sensor_entity_ids(
         )
         entity_name = item_entity_name(item_name)
         entity_slug = slugify_entity_name(entity_name)
-        target_object_id = compose_entity_object_id(device_name, entity_name)
+        target_object_id = hems_entity_object_id(
+            device_name,
+            item_name,
+        ) or compose_entity_object_id(device_name, entity_name)
         current_object_id = registry_entry.entity_id.removeprefix("sensor.")
 
         if not target_object_id or current_object_id == target_object_id:
             continue
-        if not force_rebuild and not _should_migrate_entity_id(current_object_id, entity_slug):
+        hems_suffix_slug = slugify_entity_name(
+            (hems_item_suffix(item_name) or "").replace("_", " ")
+        )
+        should_migrate = _should_migrate_entity_id(current_object_id, entity_slug)
+        if hems_suffix_slug:
+            should_migrate = should_migrate or _should_migrate_entity_id(
+                current_object_id,
+                hems_suffix_slug,
+            )
+        if not force_rebuild and not should_migrate:
             skipped += 1
             continue
 

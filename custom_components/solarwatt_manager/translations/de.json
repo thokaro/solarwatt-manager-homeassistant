@@ -10,23 +10,30 @@
       "invalid_power_unavailable_threshold": "Der Power-unavailable-Schwellwert muss größer oder gleich 0 sein.",
       "invalid_input": "Ungültige Eingabe.",
       "invalid_auth": "Benutzername oder Passwort ungültig.",
+      "invalid_local_auth": "Benutzername oder Passwort für den lokalen SOLARWATT Manager ungültig.",
+      "invalid_hems_auth": "Benutzername oder Passwort für KiwiGrid HEMS (SOLARWATT Manager Portal) ungültig.",
       "not_solarwatt": "Der Host scheint kein SOLARWATT Manager zu sein.",
       "cannot_connect": "Kann keine Verbindung zum SOLARWATT Manager herstellen.",
       "connection_failed": "Verbindung zum SOLARWATT Manager fehlgeschlagen.",
-      "unknown_error": "Unbekannter Fehler aufgetreten."
+      "unknown_error": "Unbekannter Fehler aufgetreten.",
+      "missing_connection": "Bitte lokalen Manager, KiwiGrid HEMS oder beides konfigurieren."
     },
     "step": {
       "user": {
         "title": "SOLARWATT verbinden",
-        "description": "IP/Host und Login angeben.",
+        "description": "Lokalen Manager, KiwiGrid HEMS oder beides angeben.",
         "data": {
-          "host": "Host/IP",
-          "username": "Benutzername",
-          "password": "Passwort",
+          "host": "Lokaler SOLARWATT Manager Host/IP",
+          "username": "Lokaler SOLARWATT Manager Benutzername",
+          "password": "Lokales SOLARWATT Manager Passwort",
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
           "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert",
-          "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen"
+          "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen",
+          "kiwigrid_hems_enabled": "KiwiGrid HEMS aktivieren (SOLARWATT Manager Portal)",
+          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager Portal) Benutzername oder E-Mailadresse",
+          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager Portal) Passwort",
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS Poll-Intervall (Sekunden)"
         }
       },
       "devices": {
@@ -53,11 +60,18 @@
           }
         },
         "data": {
+          "host": "Lokaler SOLARWATT Manager Host/IP",
+          "username": "Lokaler SOLARWATT Manager Benutzername",
+          "password": "Lokales SOLARWATT Manager Passwort",
           "rebuild_entity_ids": "Entitäts-IDs beim Speichern neu aufbauen (Gerätename + Sensorname)",
           "scan_interval": "Update-Intervall (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
           "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert",
-          "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen"
+          "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen",
+          "kiwigrid_hems_enabled": "KiwiGrid HEMS aktivieren (SOLARWATT Manager Portal)",
+          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager Portal) Benutzername oder E-Mailadresse",
+          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager Portal) Passwort",
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS Poll-Intervall (Sekunden)"
         }
       }
     }
@@ -66,6 +80,21 @@
     "button": {
       "diagnostics_refresh": {
         "name": "Daten aktualisieren"
+      }
+    },
+    "switch": {
+      "hems_optimization_switch": {
+        "name": "Schalten"
+      }
+    },
+    "select": {
+      "evstation_optimization_mode": {
+        "name": "Optimierungsmodus",
+        "state": {
+          "not_optimized": "Nicht optimiert",
+          "pv_excess": "PV-optimiert",
+          "departure_time": "Abfahrtszeit"
+        }
       }
     }
   }

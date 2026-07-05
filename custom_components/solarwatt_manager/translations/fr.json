@@ -10,23 +10,30 @@
       "invalid_power_unavailable_threshold": "Le seuil d'indisponibilité de puissance doit être supérieur ou égal à 0.",
       "invalid_input": "Entrée invalide.",
       "invalid_auth": "Nom d'utilisateur ou mot de passe invalide.",
+      "invalid_local_auth": "Nom d'utilisateur ou mot de passe invalide pour le SOLARWATT Manager local.",
+      "invalid_hems_auth": "Nom d'utilisateur ou mot de passe invalide pour KiwiGrid HEMS (portail SOLARWATT Manager).",
       "not_solarwatt": "L'hôte ne semble pas être un SOLARWATT Manager.",
       "cannot_connect": "Impossible de se connecter au SOLARWATT Manager.",
       "connection_failed": "Échec de la connexion au SOLARWATT Manager.",
-      "unknown_error": "Une erreur inconnue est survenue."
+      "unknown_error": "Une erreur inconnue est survenue.",
+      "missing_connection": "Configurez le gestionnaire local, KiwiGrid HEMS ou les deux."
     },
     "step": {
       "user": {
         "title": "Connecter SOLARWATT",
         "description": "Saisissez l'IP/l'hôte et les identifiants de connexion.",
         "data": {
-          "host": "IP/Hôte",
-          "username": "Nom d'utilisateur",
-          "password": "Mot de passe",
+          "host": "IP/Hôte du SOLARWATT Manager local",
+          "username": "Nom d'utilisateur du SOLARWATT Manager local",
+          "password": "Mot de passe du SOLARWATT Manager local",
           "scan_interval": "Intervalle de mise à jour (secondes)",
           "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
           "power_unavailable_threshold": "Seuil d'indisponibilité de puissance (polls). Conserver la dernière valeur jusqu'à la N-ième indisponibilité ; 0 = désactiver",
-          "disable_duplicate_item_entities": "Désactiver les entités item dupliquées et préférer l'item de canal basé sur l'UID"
+          "disable_duplicate_item_entities": "Désactiver les entités item dupliquées et préférer l'item de canal basé sur l'UID",
+          "kiwigrid_hems_enabled": "Activer KiwiGrid HEMS (portail SOLARWATT Manager)",
+          "kiwigrid_hems_username": "KiwiGrid (portail SOLARWATT Manager) nom d'utilisateur ou adresse e-mail",
+          "kiwigrid_hems_password": "KiwiGrid (portail SOLARWATT Manager) mot de passe",
+          "kiwigrid_hems_scan_interval": "Intervalle de polling KiwiGrid HEMS (secondes)"
         }
       },
       "devices": {
@@ -53,11 +60,18 @@
           }
         },
         "data": {
+          "host": "IP/Hôte du SOLARWATT Manager local",
+          "username": "Nom d'utilisateur du SOLARWATT Manager local",
+          "password": "Mot de passe du SOLARWATT Manager local",
           "rebuild_entity_ids": "Reconstruire les identifiants d'entité lors de l'enregistrement (nom de l'appareil + nom du capteur)",
           "scan_interval": "Intervalle de mise à jour (secondes)",
           "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
           "power_unavailable_threshold": "Seuil d'indisponibilité de puissance (polls). Conserver la dernière valeur jusqu'à la N-ième indisponibilité ; 0 = désactiver",
-          "disable_duplicate_item_entities": "Désactiver les entités item dupliquées et préférer l'item de canal basé sur l'UID"
+          "disable_duplicate_item_entities": "Désactiver les entités item dupliquées et préférer l'item de canal basé sur l'UID",
+          "kiwigrid_hems_enabled": "Activer KiwiGrid HEMS (portail SOLARWATT Manager)",
+          "kiwigrid_hems_username": "KiwiGrid (portail SOLARWATT Manager) nom d'utilisateur ou adresse e-mail",
+          "kiwigrid_hems_password": "KiwiGrid (portail SOLARWATT Manager) mot de passe",
+          "kiwigrid_hems_scan_interval": "Intervalle de polling KiwiGrid HEMS (secondes)"
         }
       }
     }
@@ -66,6 +80,21 @@
     "button": {
       "diagnostics_refresh": {
         "name": "Mettre à jour les données"
+      }
+    },
+    "switch": {
+      "hems_optimization_switch": {
+        "name": "Commutation"
+      }
+    },
+    "select": {
+      "evstation_optimization_mode": {
+        "name": "Mode d'optimisation",
+        "state": {
+          "not_optimized": "Non optimisé",
+          "pv_excess": "Optimisé PV",
+          "departure_time": "Heure de départ"
+        }
       }
     }
   }

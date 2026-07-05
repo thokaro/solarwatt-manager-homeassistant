@@ -32,6 +32,7 @@ from .entity_helpers import (
     iter_item_sensor_names,
 )
 from .naming import (
+    hems_entity_object_id,
     compose_entity_object_id,
     item_entity_name,
 )
@@ -180,6 +181,8 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         channel_metadata = self.coordinator.item_to_channel_metadata.get(item_name)
 
         self._attr_name = item_entity_name(self._item_name)
+        if item and item.raw.get("entityCategory") == "diagnostic":
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
         # Cache sensor metadata once; update handling below only works with these flags.
         if item:
@@ -227,8 +230,11 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def suggested_object_id(self) -> str | None:
+        device_name = self._build_device_name()
+        if hems_object_id := hems_entity_object_id(device_name, self._item_name):
+            return hems_object_id
         return compose_entity_object_id(
-            self._build_device_name(),
+            device_name,
             item_entity_name(self._item_name),
         ) or None
 

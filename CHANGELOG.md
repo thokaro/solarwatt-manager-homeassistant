@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026.7.0
+
+### Changes
+- Added optional KiwiGrid HEMS / SOLARWATT Manager Portal support for HEMS devices, analytics, finance values, PV optimization consumption, live flow values, and supported optimization or switching controls.
+- Added separate HEMS polling and setup fields so local Manager access, HEMS Portal access, or both can be configured. The default HEMS poll interval is now 60 seconds.
+- Improved setup device selection by merging local and HEMS device variants where possible and preselecting `Energy Overview`.
+- Added month and year energy totals from HEMS analytics.
+- Added a dedicated `KiwiGrid Flow` device for live `/v11/energy-flow`, including named per-device flow sensors based on HEMS device metadata.
+- Removed obsolete derived and UUID-based legacy KiwiGrid Flow entities during registry migration.
+- Documentation: refreshed the README and updated the evcc guide to use the built-in Grid/Battery/PV sensors where available.
+
 ## 2026.6.0
 
 ### Changes

@@ -1,98 +1,44 @@
-# 🔌 SOLARWATT-Manager Integration von Home Assistant für evcc
+# SOLARWATT-Manager Integration von Home Assistant fuer evcc
 
-Diese Anleitung beschreibt, wie die Custom-Integration **SOLARWATT Manager** in **Home Assistant** genutzt wird, um Messwerte für **evcc** bereitzustellen ⚡️.
+Diese Anleitung beschreibt, wie Sensoren der Custom-Integration **SOLARWATT Manager** in **evcc** verwendet werden koennen.
 
-Da der SOLARWATT Manager einige Leistungswerte nicht direkt im von evcc erwarteten Format liefert, müssen **zwei zusätzliche Template-Sensoren (Helfer)** angelegt werden.
+Aktuelle Versionen der Integration stellen die fuer evcc wichtigen Leistungswerte bereits als eigene Sensoren bereit. Die frueher noetigen Template-Helfer fuer saldierte Netzleistung und Batterieleistung sind daher normalerweise nicht mehr notwendig.
 
----
+## 1. Geeignete Sensoren in Home Assistant finden
 
-## 1. Benötigte Helfer (Template-Sensoren) 🧩
+Oeffne in Home Assistant das jeweilige SOLARWATT Geraet und suche nach diesen Sensoren:
 
-### Warum sind diese Helfer notwendig?
+| evcc Verwendung | Empfohlener Sensor |
+|---|---|
+| Grid Power | `Grid Power` |
+| PV Power | `Production` oder `Power Produced Latest` |
+| Battery Power | `Battery Power` |
+| Battery SoC | `Battery SoC`, `State Of Charge` oder der SoC-Sensor deiner Batterie |
+| Grid Energy | Netzbezug/Energieverbrauch aus dem Netz |
+| PV Energy | PV-Erzeugung/Energieproduktion |
+| Battery Energy | Batterieentladung oder Speicherverbrauch, falls gewuenscht |
 
-- **Netzleistung (Grid)**  
-  Der SOLARWATT Manager stellt Netzbezug und Netzeinspeisung als **zwei getrennte Sensoren** bereit.  
-  evcc erwartet jedoch von dem *power* Sensor **einen saldierten Leistungswert**:
-  - positiver Wert = Netzbezug  
-  - negativer Wert = Einspeisung  
+Je nach Konfiguration koennen die Entity-IDs unterschiedlich aussehen. Beispiele:
 
-- **Batterieleistung (Battery)**  
-  Die Batterieleistung wird aus **zwei Sensoren** gebildet: Pufferung und Verbrauch aus dem Speicher 🔋. 
-
----
-
-## 1.1 Helfer: Grid Power für evcc
-
-**Pfad in Home Assistant:**  
-`Einstellungen → Geräte & Dienste → Helfer → Template → Sensor`
-
-### Zustand (Template)
-
-```jinja2
-{{ states('sensor.vision_kiwigrid_power_in')|int(0)
-   - states('sensor.vision_kiwigrid_power_out')|int(0) }}
+```text
+sensor.energy_overview_grid_power
+sensor.energy_overview_battery_power
+sensor.energy_overview_production
+sensor.energy_overview_battery_soc
+sensor.kiwigrid_hems_powerproduced_latest_today
+sensor.kiwigrid_hems_workproduced_aggregated_year
 ```
 
-Die Entitäts-IDs können bei euch natürlich abweichen.
+Wichtig fuer evcc:
 
-### Einstellungen
+- Grid Power: positiver Wert = Netzbezug, negativer Wert = Einspeisung
+- Battery Power: positiver Wert = Batterie entlaedt, negativer Wert = Batterie laedt
+- PV Power: aktueller PV-Erzeugungswert in W
+- Energiezaehler sollten kWh liefern und fuer Langzeitstatistiken geeignet sein
 
-| Feld | Wert |
-|------|------|
-| Name | Kiwigrid evcc Power Grid |
-| Entitäts-ID | `sensor.kiwigrid_evcc_power_grid` |
-| Maßeinheit | `W` |
-| Geräteklasse | Leistung |
-| Zustandsklasse | – |
-| Gerät | Vision (hier idealerweise das SOLARWATT Manager Gerät wählen) |
+## 2. Beispiel fuer evcc
 
-**Ergebnis:**
-
-- positiver Wert → Netzbezug  
-- negativer Wert → Einspeisung  
-
----
-
-## 1.2 Helfer: Battery Power für evcc
-
-**Pfad in Home Assistant:**  
-`Einstellungen → Geräte & Dienste → Helfer → Template → Sensor`
-
-### Zustand (Template)
-
-```jinja2
-{{ states('sensor.vision_kiwigrid_power_consumed_from_storage')|int(0)
-   - states('sensor.vision_kiwigrid_power_buffered')|int(0) }}
-```
-
-Setzt sich wie folgt zusammen:
-
-- `sensor.vision_kiwigrid_power_consumed_from_storage` = Batterieentladung (Verbrauch aus dem Speicher)
-- `sensor.vision_kiwigrid_power_buffered` = Batterieladung (Pufferung)
-
-### Einstellungen
-
-| Feld | Wert |
-|------|------|
-| Name | Kiwigrid evcc Power Battery |
-| Entitäts-ID | `sensor.kiwigrid_evcc_power_battery` |
-| Maßeinheit | `W` |
-| Geräteklasse | Leistung |
-| Zustandsklasse | – |
-| Gerät | Vision (hier idealerweise das SOLARWATT Manager Gerät wählen) |
-
-**Ergebnis:**
-
-- positiver Wert → Batterie entlädt  
-- negativer Wert → Batterie lädt  
-
----
-
-## 2. evcc: Messpunkte aus Home Assistant ⚙️
-
-Nachdem die beiden Helfer angelegt wurden, können diese in evcc als Messpunkte für **Grid** und **Battery** verwendet werden. Für **PV** benötigen wir keinen zusätzlichen Helfer.
-
-### Beispiel: `meters`-Konfiguration
+Passe die Entity-IDs an deine Home-Assistant-Installation an.
 
 ```yaml
 meters:
@@ -101,41 +47,56 @@ meters:
     template: homeassistant
     usage: grid
     uri: http://homeassistant.local:8123/
-    power: sensor.kiwigrid_evcc_power_grid
-    energy: sensor.vision_kiwigrid_work_consumed_from_grid_total
+    power: sensor.energy_overview_grid_power
+    energy: sensor.kiwigrid_hems_workin_aggregated_year
 
   - name: pv
     type: template
     template: homeassistant
     usage: pv
     uri: http://homeassistant.local:8123/
-    power: sensor.vision_kiwigrid_power_produced
-    energy: sensor.vision_kiwigrid_work_produced_total
+    power: sensor.energy_overview_production
+    energy: sensor.kiwigrid_hems_workproduced_aggregated_year
 
   - name: battery
     type: template
     template: homeassistant
     usage: battery
     uri: http://homeassistant.local:8123/
-    power: sensor.kiwigrid_evcc_power_battery
-    energy: sensor.vision_kiwigrid_work_consumed_from_storage_total
-    soc: sensor.vision_battery_bms_soc
+    power: sensor.energy_overview_battery_power
+    soc: sensor.energy_overview_battery_soc
 ```
 
----
+Wenn du lokale Manager-Sensoren statt HEMS-Sensoren nutzt, ersetze die `energy`-Eintraege durch die passenden lokalen Energiezaehler.
 
-## 3. evcc neu starten & Home Assistant autorisieren 🔄
+## 3. Optional: Template-Helfer fuer aeltere Sensoren
 
-Nach dem Anpassen der Konfiguration muss **evcc neu gestartet** werden, damit die Änderungen wirksam werden.
+Nur wenn deine Installation noch keine direkten `Grid Power`- oder `Battery Power`-Sensoren hat, kannst du weiterhin Template-Sensoren verwenden.
 
-**Empfohlener Weg:**
+### Grid Power
 
-1. Öffne die **evcc Weboberfläche**
-2. Wechsle zu **Konfiguration**
-3. Scrolle ganz nach unten und klicke auf **Neustarten**
+```jinja2
+{{ states('sensor.DEIN_NETZBEZUG_SENSOR')|float(0)
+   - states('sensor.DEINE_EINSPEISUNG_SENSOR')|float(0) }}
+```
 
-Nach dem Neustart erscheint im Bereich **Integration** ein Hinweis zum **Home-Assistant Autorisierungsstatus**.
+### Battery Power
 
-➡️ Dort muss einmalig eine **Autorisierung auf der Home-Assistant-Instanz** durchgeführt werden, damit evcc auf die Sensoren zugreifen darf.
+```jinja2
+{{ states('sensor.DEINE_BATTERIE_ENTLADUNG')|float(0)
+   - states('sensor.DEINE_BATTERIE_LADUNG')|float(0) }}
+```
 
----
+Lege diese Helfer in Home Assistant unter `Einstellungen -> Geraete & Dienste -> Helfer -> Template -> Sensor` an, setze die Einheit auf `W` und die Geraeteklasse auf `Leistung`.
+
+## 4. evcc neu starten und Home Assistant autorisieren
+
+Nach dem Anpassen der evcc-Konfiguration muss evcc neu gestartet werden.
+
+Empfohlener Weg:
+
+1. Oeffne die evcc Weboberflaeche.
+2. Wechsle zu **Konfiguration**.
+3. Scrolle nach unten und klicke auf **Neustarten**.
+
+Nach dem Neustart erscheint im Bereich **Integration** ein Hinweis zum Home-Assistant-Autorisierungsstatus. Dort muss einmalig eine Autorisierung auf der Home-Assistant-Instanz durchgefuehrt werden, damit evcc auf die Sensoren zugreifen darf.

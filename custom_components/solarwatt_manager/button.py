@@ -24,17 +24,17 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: SOLARWATTConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data
-    added_thing_uids: set[str] = set()
+    added_diagnostics_thing_uids: set[str] = set()
 
     @callback
     def _async_discover_new_entities(options: Mapping[str, Any] | None = None) -> None:
         selected_thing_uids = get_selected_thing_uids(
             options if options is not None else entry.options
         )
-        if new_entities := collect_new_thing_entities(
+        new_entities: list[ButtonEntity] = collect_new_thing_entities(
             coordinator.things,
             selected_thing_uids,
-            added_thing_uids,
+            added_diagnostics_thing_uids,
             lambda thing_uid, thing: SOLARWATTDiagnosticsRefreshButton(
                 coordinator,
                 entry.entry_id,
@@ -42,7 +42,8 @@ async def async_setup_entry(
                 thing,
                 selected_thing_uids,
             ),
-        ):
+        )
+        if new_entities:
             async_add_entities(new_entities)
 
     _async_discover_new_entities()
@@ -74,4 +75,6 @@ class SOLARWATTDiagnosticsRefreshButton(CoordinatorEntity, ButtonEntity):
         )
 
     async def async_press(self) -> None:
+        self.coordinator.invalidate_hems_cache()
         await self.coordinator.async_refresh_discovery_data()
+        await self.coordinator.async_request_refresh()

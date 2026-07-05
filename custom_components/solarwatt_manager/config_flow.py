@@ -16,6 +16,10 @@ from .const import (
     CONF_ENABLED_THINGS,
     CONF_ENERGY_DELTA_KWH,
     CONF_HOST,
+    CONF_KIWIGRID_HEMS_ENABLED,
+    CONF_KIWIGRID_HEMS_PASSWORD,
+    CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
+    CONF_KIWIGRID_HEMS_USERNAME,
     CONF_PASSWORD,
     CONF_POWER_UNAVAILABLE_THRESHOLD,
     CONF_REBUILD_ENTITY_IDS,
@@ -23,6 +27,8 @@ from .const import (
     CONF_USERNAME,
     DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
     DEFAULT_ENERGY_DELTA_KWH,
+    DEFAULT_KIWIGRID_HEMS_ENABLED,
+    DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
     DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -42,16 +48,17 @@ from .client import (
     SolarwattProtocolError,
 )
 from .entity_helpers import sync_selected_thing_entities
-from .hems_api import is_energy_overview_thing, is_hems_thing
+from .hems_api import is_energy_overview_thing, is_hems_thing, is_kiwigrid_flow_thing
 from .registry_migrations import mark_pending_registry_migration
 
 _LOGGER = logging.getLogger(__name__)
 _HOST_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _DEVICE_SELECTION_SECTION = "device_selection"
+_KIWIGRID_HEMS_THING_UID = "kiwigrid-hems"
+_RAW_HOST_KEY = "_raw_host"
 _KNOWN_CLIENT_ERRORS: tuple[tuple[type[Exception], str, str], ...] = (
     (ValueError, "invalid_input", "Invalid input while %s: %s"),
     (SolarwattNotManagerError, "not_solarwatt", "Host is not a SOLARWATT Manager while %s: %s"),
-    (SolarwattAuthError, "invalid_auth", "Invalid SOLARWATT credentials while %s: %s"),
     (SolarwattConnectionError, "cannot_connect", "Connection error while %s: %s"),
     (SolarwattProtocolError, "connection_failed", "Unexpected SOLARWATT response while %s: %s"),
 )
@@ -103,9 +110,10 @@ def _normalize_host(raw_host: str | None) -> str | None:
     return f"{host_part}:{port_part}" if port_part is not None else host_part
 
 
-def _normalize_text(value: Any) -> str:
+def _normalize_text(value: Any, *, default: str = "") -> str:
     """Normalize free-text form values."""
-    return str(value or "").strip()
+    raw_value = default if value is None else value
+    return str(raw_value).strip()
 
 
 def _normalize_int(value: Any, *, default: int) -> int | None:
@@ -158,6 +166,38 @@ def _is_never_invalid(_: Any) -> bool:
 
 
 _OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
+    {
+        "key": CONF_KIWIGRID_HEMS_ENABLED,
+        "default": DEFAULT_KIWIGRID_HEMS_ENABLED,
+        "normalize": _normalize_bool,
+        "coerce": bool,
+        "error": "",
+        "invalid": _is_never_invalid,
+    },
+    {
+        "key": CONF_KIWIGRID_HEMS_USERNAME,
+        "default": "",
+        "normalize": _normalize_text,
+        "coerce": str,
+        "error": "",
+        "invalid": _is_never_invalid,
+    },
+    {
+        "key": CONF_KIWIGRID_HEMS_PASSWORD,
+        "default": "",
+        "normalize": _normalize_text,
+        "coerce": str,
+        "error": "",
+        "invalid": _is_never_invalid,
+    },
+    {
+        "key": CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
+        "default": DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
+        "normalize": _normalize_int,
+        "coerce": vol.Coerce(int),
+        "error": "invalid_scan_interval",
+        "invalid": _is_invalid_scan_interval,
+    },
     {
         "key": CONF_SCAN_INTERVAL,
         "default": DEFAULT_SCAN_INTERVAL,
@@ -224,8 +264,10 @@ def _normalize_options_input(
 
 def _normalize_user_input(user_input: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Normalize config-entry data and options from the user step."""
+    raw_host = _normalize_text(user_input.get(CONF_HOST))
     entry_data = {
-        CONF_HOST: _normalize_host(user_input.get(CONF_HOST)),
+        CONF_HOST: _normalize_host(raw_host),
+        _RAW_HOST_KEY: raw_host,
         CONF_USERNAME: _normalize_text(user_input.get(CONF_USERNAME)),
         CONF_PASSWORD: _normalize_text(user_input.get(CONF_PASSWORD)),
     }
@@ -233,13 +275,39 @@ def _normalize_user_input(user_input: Mapping[str, Any]) -> tuple[dict[str, Any]
     return entry_data, options
 
 
+def _normalize_options_entry_data(
+    user_input: Mapping[str, Any],
+    current_data: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Normalize config-entry data from the options step."""
+    raw_host = _normalize_text(
+        user_input.get(CONF_HOST, current_data.get(CONF_HOST, ""))
+    )
+    return {
+        CONF_HOST: _normalize_host(raw_host),
+        _RAW_HOST_KEY: raw_host,
+        CONF_USERNAME: _normalize_text(
+            user_input.get(CONF_USERNAME, current_data.get(CONF_USERNAME, "installer"))
+        ),
+        CONF_PASSWORD: _normalize_text(
+            user_input.get(CONF_PASSWORD, current_data.get(CONF_PASSWORD, ""))
+        ),
+    }
+
+
 def _validate_options_data(options: Mapping[str, Any]) -> dict[str, str]:
     """Validate normalized option values."""
-    return {
+    errors = {
         field["key"]: field["error"]
         for field in _OPTION_FIELD_SPECS
         if field["invalid"](options.get(field["key"]))
     }
+    if options.get(CONF_KIWIGRID_HEMS_ENABLED):
+        if not str(options.get(CONF_KIWIGRID_HEMS_USERNAME) or "").strip():
+            errors[CONF_KIWIGRID_HEMS_USERNAME] = "invalid_username"
+        if not str(options.get(CONF_KIWIGRID_HEMS_PASSWORD) or "").strip():
+            errors[CONF_KIWIGRID_HEMS_PASSWORD] = "invalid_password"
+    return errors
 
 
 def _validate_user_data(
@@ -249,12 +317,25 @@ def _validate_user_data(
     """Validate normalized user-step data."""
     errors = _validate_options_data(options)
 
-    if entry_data.get(CONF_HOST) is None:
+    local_host = entry_data.get(CONF_HOST)
+    local_username = str(entry_data.get(CONF_USERNAME) or "").strip()
+    local_password = str(entry_data.get(CONF_PASSWORD) or "").strip()
+    hems_enabled = bool(options.get(CONF_KIWIGRID_HEMS_ENABLED))
+    hems_username = str(options.get(CONF_KIWIGRID_HEMS_USERNAME) or "").strip()
+    hems_password = str(options.get(CONF_KIWIGRID_HEMS_PASSWORD) or "").strip()
+
+    if local_host is None and str(entry_data.get(_RAW_HOST_KEY) or "").strip():
         errors[CONF_HOST] = "invalid_host"
-    if not entry_data.get(CONF_USERNAME):
+    if local_host and not local_username:
         errors[CONF_USERNAME] = "invalid_username"
-    if not entry_data.get(CONF_PASSWORD):
+    if local_host and not local_password:
         errors[CONF_PASSWORD] = "invalid_password"
+    if hems_enabled and not hems_username:
+        errors[CONF_KIWIGRID_HEMS_USERNAME] = "invalid_username"
+    if hems_enabled and not hems_password:
+        errors[CONF_KIWIGRID_HEMS_PASSWORD] = "invalid_password"
+    if not local_host and not hems_enabled:
+        errors["base"] = "missing_connection"
 
     return errors
 
@@ -285,7 +366,16 @@ def _build_thing_checkbox_schema(
     for uid, thing in things:
         field_name = SOLARWATTItemsConfigFlow._thing_checkbox_label(uid, thing, device_fields)
         device_fields[field_name] = uid
-        schema[vol.Optional(field_name, default=uid in selected_uids)] = bool
+        schema[
+            vol.Optional(
+                field_name,
+                default=(
+                    is_energy_overview_thing(thing)
+                    or is_kiwigrid_flow_thing(thing)
+                    or uid in selected_uids
+                ),
+            )
+        ] = bool
     return schema, device_fields
 
 
@@ -301,6 +391,248 @@ def _build_thing_checkbox_section_schema(
             {"collapsed": True},
         )
     }, device_fields
+
+
+def _merge_selection_things(
+    base_things: Mapping[str, dict[str, Any]],
+    incoming_things: Mapping[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Merge duplicate local/HEMS things for one selection checkbox per device."""
+    merged: dict[str, dict[str, Any]] = dict(base_things)
+    for raw_uid, thing in incoming_things.items():
+        uid = _selection_merge_uid(merged, thing, raw_uid)
+        if uid != raw_uid:
+            thing = dict(thing)
+            thing["UID"] = uid
+            thing["uid"] = uid
+        if uid in merged:
+            thing = _merge_thing_records_for_selection(merged[uid], thing)
+        merged[uid] = thing
+    return merged
+
+
+def _selection_merge_uid(
+    existing_things: Mapping[str, dict[str, Any]],
+    incoming: Mapping[str, Any],
+    fallback_uid: str,
+) -> str:
+    """Return an existing UID for a matching incoming thing."""
+    if _is_local_bridge_thing(incoming):
+        return fallback_uid
+
+    incoming_serial = _selection_serial_key(incoming)
+    incoming_label = _selection_label_key(incoming)
+    incoming_name = _selection_name_key(incoming)
+    incoming_type = _selection_type_key(incoming)
+    if not incoming_serial and not incoming_label and not incoming_name:
+        return fallback_uid
+
+    for existing_uid, existing in existing_things.items():
+        if (
+            not isinstance(existing, Mapping)
+            or _is_kiwigrid_hems_thing(existing)
+            or _is_local_bridge_thing(existing)
+        ):
+            continue
+        existing_serial = _selection_serial_key(existing)
+        if incoming_serial and existing_serial and incoming_serial == existing_serial:
+            return existing_uid
+        if incoming_serial and existing_serial and incoming_serial != existing_serial:
+            continue
+        existing_label = _selection_label_key(existing)
+        if incoming_label and existing_label and incoming_label == existing_label:
+            return existing_uid
+        existing_name = _selection_name_key(existing)
+        if (
+            incoming_name
+            and existing_name
+            and incoming_name == existing_name
+            and _selection_types_compatible(incoming_type, _selection_type_key(existing))
+        ):
+            return existing_uid
+    return fallback_uid
+
+
+def _is_kiwigrid_hems_thing(thing: Mapping[str, Any]) -> bool:
+    properties = thing.get("properties")
+    props = properties if isinstance(properties, Mapping) else {}
+    return bool(str(props.get("kiwigridKind") or props.get("kiwigridEndpoint") or "").strip())
+
+
+def _is_local_bridge_thing(thing: Mapping[str, Any]) -> bool:
+    """Return True for local HEMS configurator bridge/container things."""
+    if not is_hems_thing(thing):
+        return False
+    thing_type_uid = str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "").lower()
+    return ":bridge" in thing_type_uid or thing_type_uid.endswith(":bridge")
+
+
+def _selection_label_key(thing: Mapping[str, Any]) -> str:
+    return _canonical_selection_key(thing.get("label"))
+
+
+def _selection_name_key(thing: Mapping[str, Any]) -> str:
+    label = str(thing.get("label") or "").strip()
+    if not label:
+        return ""
+    normalized = re.sub(
+        r"\s*\(([^)]*)\)\s*",
+        lambda match: " " if _is_selection_detail_text(match.group(1)) else f" {match.group(1)} ",
+        label,
+    )
+    return _canonical_selection_key(normalized)
+
+
+def _is_selection_detail_text(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return True
+    if re.search(r"\d", text) and len(_canonical_selection_key(text)) >= 6:
+        return True
+    return any(
+        token in text
+        for token in (
+            "battery",
+            "ev_station",
+            "inverter",
+            "kecontact",
+            "manager",
+            "meter",
+            "plug",
+            "pv",
+            "solarwatt",
+            "switch",
+            "wallbox",
+            "wechselrichter",
+        )
+    )
+
+
+def _selection_type_key(thing: Mapping[str, Any]) -> str:
+    properties = thing.get("properties")
+    props = properties if isinstance(properties, Mapping) else {}
+    candidates = (
+        props.get("thingTypeCategory"),
+        props.get("model"),
+        props.get("generatedLabel"),
+        props.get("thingTypeTitle"),
+        thing.get("thingTypeUID"),
+        thing.get("thingTypeUid"),
+    )
+    text = " ".join(str(value or "") for value in candidates).lower()
+    for key, tokens in {
+        "battery": ("battery",),
+        "evstation": ("ev_station", "evstation", "wallbox", "keba", "kecontact"),
+        "inverter": ("inverter", "wechselrichter"),
+        "meter": ("meter", "zaehler", "zähler"),
+        "plug": ("plug", "mystrom", "switch", "steckdose"),
+        "pv": ("pv", "photovoltaic"),
+        "energy_manager": ("energy_manager", "manager"),
+    }.items():
+        if any(token in text for token in tokens):
+            return key
+    return ""
+
+
+def _selection_types_compatible(left: str, right: str) -> bool:
+    return not left or not right or left == right
+
+
+def _selection_serial_key(thing: Mapping[str, Any]) -> str:
+    properties = thing.get("properties")
+    props = properties if isinstance(properties, Mapping) else {}
+    return _canonical_selection_key(
+        props.get("serialNumber")
+        or props.get("serial")
+        or _selection_label_serial(thing)
+    )
+
+
+def _selection_label_serial(thing: Mapping[str, Any]) -> str:
+    label = str(thing.get("label") or "").strip()
+    for detail in re.findall(r"\(([^)]*)\)", label):
+        text = str(detail or "").strip()
+        if re.search(r"\d", text) and len(_canonical_selection_key(text)) >= 6:
+            return text
+    return ""
+
+
+def _canonical_selection_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+
+
+def _merge_thing_records_for_selection(
+    existing: dict[str, Any],
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge enough thing metadata for a single useful selection entry."""
+    merged = dict(existing)
+    existing_props = existing.get("properties") if isinstance(existing.get("properties"), dict) else {}
+    incoming_props = incoming.get("properties") if isinstance(incoming.get("properties"), dict) else {}
+    merged["properties"] = {**existing_props, **incoming_props}
+    merged["channels"] = _merge_selection_channels(
+        existing.get("channels") if isinstance(existing.get("channels"), list) else [],
+        incoming.get("channels") if isinstance(incoming.get("channels"), list) else [],
+    )
+    return merged
+
+
+def _merge_selection_channels(
+    existing_channels: list[Any],
+    incoming_channels: list[Any],
+) -> list[Any]:
+    channels = list(existing_channels)
+    seen = {
+        str(channel.get("uid") or channel.get("id") or "")
+        for channel in channels
+        if isinstance(channel, Mapping)
+    }
+    for channel in incoming_channels:
+        if not isinstance(channel, Mapping):
+            continue
+        key = str(channel.get("uid") or channel.get("id") or "")
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        channels.append(dict(channel))
+    return channels
+
+
+def _kiwigrid_hems_selection_thing() -> dict[str, Any]:
+    """Return the synthetic KiwiGrid HEMS device used during device selection."""
+    return {
+        "UID": _KIWIGRID_HEMS_THING_UID,
+        "uid": _KIWIGRID_HEMS_THING_UID,
+        "label": "KiwiGrid HEMS",
+        "thingTypeUID": "kiwigrid-hems:analytics_consumption",
+        "thingTypeUid": "kiwigrid-hems:analytics_consumption",
+        "statusInfo": {"status": "UNKNOWN", "statusDetail": "NONE"},
+        "properties": {
+            "thingTypeTitle": "KiwiGrid HEMS",
+            "thingTypeCategory": "KIWIGRID_HEMS",
+            "kiwigridEndpoint": "/v11/analytics/consumption",
+            "kiwigridKind": "analytics_consumption",
+            "generatedLabel": "KiwiGrid HEMS v11",
+            "model": "KiwiGrid HEMS v11",
+        },
+        "channels": [
+            {
+                "id": "hems_analytics_consumption",
+                "uid": f"{_KIWIGRID_HEMS_THING_UID}:hems_analytics_consumption",
+                "label": "HEMS analytics",
+                "itemType": "Number:Energy",
+                "linkedItems": [
+                    "hems_analytics_consumption_today_today_powerconsumed_aggregated"
+                ],
+                "properties": {
+                    "kiwigrid.endpoint": "/v11/analytics/consumption",
+                    "kiwigrid.kind": "analytics_consumption",
+                    "kig.meta.scope": "kiwigrid_hems",
+                },
+            }
+        ],
+    }
 
 
 class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -319,12 +651,12 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         values = dict(user_input or {})
         return vol.Schema(
             {
-                vol.Required(CONF_HOST, default=values.get(CONF_HOST, "")): str,
-                vol.Required(
+                vol.Optional(CONF_HOST, default=values.get(CONF_HOST, "")): str,
+                vol.Optional(
                     CONF_USERNAME,
                     default=values.get(CONF_USERNAME, "installer"),
                 ): str,
-                vol.Required(CONF_PASSWORD, default=values.get(CONF_PASSWORD, "")): str,
+                vol.Optional(CONF_PASSWORD, default=values.get(CONF_PASSWORD, "")): str,
                 **_build_option_schema_fields(values),
             }
         )
@@ -355,9 +687,26 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     username=entry_data[CONF_USERNAME],
                     password=entry_data[CONF_PASSWORD],
                 )
+                things = _merge_selection_things({}, things)
+            elif not errors:
+                await self.async_set_unique_id("kiwigrid_hems")
+                self._abort_if_unique_id_configured()
+
+            if not errors and options.get(CONF_KIWIGRID_HEMS_ENABLED):
+                hems_things, errors = await self._async_fetch_hems_things(
+                    username=options[CONF_KIWIGRID_HEMS_USERNAME],
+                    password=options[CONF_KIWIGRID_HEMS_PASSWORD],
+                    include_energy_flow=True,
+                )
+                things = _merge_selection_things(things, hems_things)
 
             if not errors:
                 selectable_things = self._selectable_things(things)
+                if options.get(CONF_KIWIGRID_HEMS_ENABLED):
+                    selectable_things.setdefault(
+                        _KIWIGRID_HEMS_THING_UID,
+                        _kiwigrid_hems_selection_thing(),
+                    )
                 self._pending_entry_data = entry_data
                 self._pending_options = options
                 self._available_things = selectable_things
@@ -398,14 +747,20 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self._pending_options is not None
 
         host = self._pending_entry_data[CONF_HOST]
+        entry_data = {
+            key: value
+            for key, value in self._pending_entry_data.items()
+            if key != _RAW_HOST_KEY
+        }
         options = dict(self._pending_options)
         if selected_thing_uids is None:
             options.pop(CONF_ENABLED_THINGS, None)
         else:
             options[CONF_ENABLED_THINGS] = selected_thing_uids
+        title = f"SOLARWATT ({host})" if host else "SOLARWATT KiwiGrid HEMS"
         return self.async_create_entry(
-            title=f"SOLARWATT ({host})",
-            data=self._pending_entry_data,
+            title=title,
+            data=entry_data,
             options=options,
         )
 
@@ -436,6 +791,38 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return things_by_uid, errors
 
+    async def _async_fetch_hems_things(
+        self,
+        *,
+        username: str,
+        password: str,
+        include_energy_flow: bool = False,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+        """Fetch KiwiGrid HEMS device metadata for the device selection step."""
+        things_by_uid: dict[str, dict[str, Any]] = {}
+        result, errors = await self._async_with_client(
+            host="",
+            username="",
+            password="",
+            action=lambda client: client.async_get_hems_things(
+                username=username,
+                password=password,
+                include_energy_flow=include_energy_flow,
+            ),
+            action_label="fetching KiwiGrid HEMS devices",
+            auth_error_code="invalid_hems_auth",
+        )
+        if errors:
+            return things_by_uid, errors
+
+        things_by_uid = {
+            uid: thing
+            for idx, thing in enumerate(result or [])
+            if (uid := str(thing.get("UID") or thing.get("uid") or f"hems_unknown_{idx}").strip())
+        }
+
+        return things_by_uid, errors
+
     async def _async_with_client(
         self,
         *,
@@ -444,6 +831,7 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         password: str,
         action: Callable[[SOLARWATTClient], Awaitable[Any]],
         action_label: str,
+        auth_error_code: str = "invalid_local_auth",
     ) -> tuple[Any | None, dict[str, str]]:
         """Run one client action and map known failures to config-flow errors."""
         try:
@@ -457,6 +845,9 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await action(client), {}
             finally:
                 await client.async_close()
+        except SolarwattAuthError as err:
+            _LOGGER.warning("Invalid SOLARWATT credentials while %s: %s", action_label, err)
+            return None, {"base": auth_error_code}
         except Exception as err:
             for error_type, error_code, log_message in _KNOWN_CLIENT_ERRORS:
                 if isinstance(err, error_type):
@@ -488,6 +879,10 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def _thing_has_linked_items(thing: Mapping[str, Any]) -> bool:
         """Return True if any channel of this thing is linked to at least one item."""
+        if is_energy_overview_thing(thing) or is_kiwigrid_flow_thing(thing):
+            return True
+        if _is_local_bridge_thing(thing):
+            return False
         if is_hems_thing(thing):
             return True
 
@@ -507,11 +902,12 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         cls, things: Mapping[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
         """Return only things that should appear in the device selector."""
-        return {
+        selectable = {
             uid: thing
             for uid, thing in things.items()
             if cls._thing_has_linked_items(thing)
         }
+        return _merge_selection_things({}, selectable)
 
     @classmethod
     def _default_selected_things(cls, things: Mapping[str, dict[str, Any]]) -> list[str]:
@@ -525,7 +921,7 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def _is_default_selected_thing(thing: Mapping[str, Any]) -> bool:
         """Return True for things enabled by default during setup."""
-        if is_energy_overview_thing(thing):
+        if is_energy_overview_thing(thing) or is_kiwigrid_flow_thing(thing):
             return True
 
         label = str(thing.get("label") or "").lower()
@@ -536,12 +932,13 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         balancing_type = str(props.get("kig.meta.balancingtype") or "").lower()
 
         is_location = "location" in label or "location" in thing_type_uid
+        is_hems = thing_type_uid.startswith("kiwigrid-hems:")
         is_battery = any(
             token in candidate
             for candidate in (label, thing_type_uid, ui_category, balancing_type)
             for token in ("battery", "batteries", "dc_battery")
         )
-        return is_location or is_battery
+        return is_location or is_hems or is_battery
 
     @classmethod
     def _thing_checkbox_label(
@@ -570,8 +967,9 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         if user_input is not None:
+            entry_data = _normalize_options_entry_data(user_input, self.config_entry.data)
             data = self._build_options_data(user_input)
-            errors = _validate_options_data(data)
+            errors = _validate_user_data(entry_data, data)
 
             if not errors:
                 rebuild_requested = bool(user_input.get(CONF_REBUILD_ENTITY_IDS))
@@ -591,14 +989,30 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                     coordinator.run_discovery_callbacks(data)
                 if rebuild_requested:
                     current_options = dict(self.config_entry.options)
-                    if data != current_options:
+                    clean_entry_data = {
+                        key: value
+                        for key, value in entry_data.items()
+                        if key != _RAW_HOST_KEY
+                    }
+                    if data != current_options or clean_entry_data != dict(self.config_entry.data):
                         self.hass.config_entries.async_update_entry(
                             self.config_entry,
+                            data=clean_entry_data,
                             options=data,
                         )
                     else:
                         await self.hass.config_entries.async_reload(self.config_entry.entry_id)
                     return self.async_abort(reason="rebuild_entity_ids_done")
+                clean_entry_data = {
+                    key: value
+                    for key, value in entry_data.items()
+                    if key != _RAW_HOST_KEY
+                }
+                if clean_entry_data != dict(self.config_entry.data):
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry,
+                        data=clean_entry_data,
+                    )
                 return self.async_create_entry(title="", data=data)
 
             return self.async_show_form(
@@ -616,8 +1030,18 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         self, user_input: Mapping[str, Any] | None = None
     ) -> vol.Schema:
         """Build the options schema."""
-        values = dict(user_input or self.config_entry.options)
+        values = {
+            **dict(self.config_entry.data),
+            **dict(self.config_entry.options),
+            **dict(user_input or {}),
+        }
         schema: dict[Any, Any] = {
+            vol.Optional(CONF_HOST, default=values.get(CONF_HOST) or ""): str,
+            vol.Optional(
+                CONF_USERNAME,
+                default=values.get(CONF_USERNAME) or "installer",
+            ): str,
+            vol.Optional(CONF_PASSWORD, default=values.get(CONF_PASSWORD) or ""): str,
             vol.Optional(
                 CONF_REBUILD_ENTITY_IDS,
                 default=False,
@@ -625,7 +1049,7 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
             **_build_option_schema_fields(values),
         }
 
-        available_things = self._available_things()
+        available_things = self._available_things(values)
         if user_input is not None and self._device_fields:
             selected_things = set(_selected_checkbox_uids(self._device_fields, user_input))
         else:
@@ -652,10 +1076,19 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
             data[CONF_ENABLED_THINGS] = self.config_entry.options[CONF_ENABLED_THINGS]
         return data
 
-    def _available_things(self) -> list[tuple[str, dict[str, Any]]]:
+    def _available_things(
+        self,
+        values: Mapping[str, Any] | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
         """Return known things for the options form."""
         coordinator = getattr(self.config_entry, "runtime_data", None)
         things = getattr(coordinator, "things", {}) or {}
+        selectable_things = SOLARWATTItemsConfigFlow._selectable_things(things)
+        if (values or {}).get(CONF_KIWIGRID_HEMS_ENABLED):
+            selectable_things.setdefault(
+                _KIWIGRID_HEMS_THING_UID,
+                _kiwigrid_hems_selection_thing(),
+            )
         return SOLARWATTItemsConfigFlow._sorted_things(
-            SOLARWATTItemsConfigFlow._selectable_things(things)
+            selectable_things
         )

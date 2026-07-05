@@ -37,6 +37,36 @@ def build_thing_diagnostics_refresh_unique_id(entry_id: str, thing_uid: str) -> 
     return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_diagnostics_refresh"
 
 
+def build_thing_evstation_optimization_select_unique_id(entry_id: str, thing_uid: str) -> str:
+    """Return the stable unique_id for a KiwiGrid HEMS optimization select."""
+    return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_evstation_optimization_mode"
+
+
+def build_thing_optimization_switch_unique_id(entry_id: str, thing_uid: str) -> str:
+    """Return the stable unique_id for a KiwiGrid HEMS switch."""
+    return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_optimization_switch"
+
+
+def is_hems_switchable_thing(thing: Mapping[str, Any]) -> bool:
+    """Return True for KiwiGrid HEMS things that support switching."""
+    properties = thing.get("properties")
+    props = properties if isinstance(properties, Mapping) else {}
+    supports_switching = str(props.get("optimizationSupportsSwitching") or "").strip().lower()
+    return supports_switching == "true"
+
+
+def is_hems_optimizable_thing(thing: Mapping[str, Any]) -> bool:
+    """Return True for KiwiGrid HEMS things with switchable optimization."""
+    properties = thing.get("properties")
+    props = properties if isinstance(properties, Mapping) else {}
+    supported_modes = {
+        mode.strip().upper()
+        for mode in str(props.get("optimizationSupportedModes") or "").split(",")
+        if mode.strip()
+    }
+    return is_hems_switchable_thing(thing) and len(supported_modes) > 1
+
+
 def is_switch_item(item: Any) -> bool:
     """Return True for switch-like OpenHAB items that are not exposed as sensors."""
     return (getattr(item, "oh_type", None) or "").startswith("Switch")
@@ -126,9 +156,18 @@ def _selected_entity_unique_ids(
     }
 
     for thing_uid in (things or {}).keys():
+        thing = (things or {}).get(thing_uid)
         if thing_uid not in selected_thing_uids:
             continue
         expected_unique_ids.update(_thing_entity_unique_ids(entry.entry_id, thing_uid))
+        if isinstance(thing, Mapping) and is_hems_optimizable_thing(thing):
+            expected_unique_ids.add(
+                build_thing_evstation_optimization_select_unique_id(entry.entry_id, thing_uid)
+            )
+        if isinstance(thing, Mapping) and is_hems_switchable_thing(thing):
+            expected_unique_ids.add(
+                build_thing_optimization_switch_unique_id(entry.entry_id, thing_uid)
+            )
 
     return expected_unique_ids
 
@@ -172,7 +211,9 @@ def _apply_expected_entity_selection(
     expected_unique_ids: set[str],
 ) -> None:
     """Enable expected entities and disable managed entities outside the selection."""
-    ent_reg, entries = _managed_registry_entries(hass, entry, domains={"sensor", "button"})
+    ent_reg, entries = _managed_registry_entries(
+        hass, entry, domains={"sensor", "button", "select", "switch"}
+    )
     managed_prefix = f"{entry.entry_id}_"
     for registry_entry in entries:
         if registry_entry.unique_id in expected_unique_ids:

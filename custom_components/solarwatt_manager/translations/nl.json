@@ -10,23 +10,30 @@
       "invalid_power_unavailable_threshold": "De power-unavailable-drempel moet 0 of hoger zijn.",
       "invalid_input": "Ongeldige invoer.",
       "invalid_auth": "Ongeldige gebruikersnaam of wachtwoord.",
+      "invalid_local_auth": "Ongeldige gebruikersnaam of wachtwoord voor de lokale SOLARWATT Manager.",
+      "invalid_hems_auth": "Ongeldige gebruikersnaam of wachtwoord voor KiwiGrid HEMS (SOLARWATT Manager-portaal).",
       "not_solarwatt": "Host lijkt geen SOLARWATT Manager te zijn.",
       "cannot_connect": "Kan geen verbinding maken met de SOLARWATT Manager.",
       "connection_failed": "Verbinding met SOLARWATT Manager mislukt.",
-      "unknown_error": "Er is een onbekende fout opgetreden."
+      "unknown_error": "Er is een onbekende fout opgetreden.",
+      "missing_connection": "Configureer de lokale manager, KiwiGrid HEMS of beide."
     },
     "step": {
       "user": {
         "title": "Verbind SOLARWATT",
         "description": "Voer IP/host en inloggegevens in.",
         "data": {
-          "host": "IP/Host",
-          "username": "Gebruikersnaam",
-          "password": "Wachtwoord",
+          "host": "Lokale SOLARWATT Manager IP/Host",
+          "username": "Lokale SOLARWATT Manager gebruikersnaam",
+          "password": "Lokale SOLARWATT Manager wachtwoord",
           "scan_interval": "Update-interval (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
           "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen",
-          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren"
+          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren",
+          "kiwigrid_hems_enabled": "KiwiGrid HEMS inschakelen (SOLARWATT Manager-portaal)",
+          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
+          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord",
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS pollinterval (seconden)"
         }
       },
       "devices": {
@@ -53,11 +60,18 @@
           }
         },
         "data": {
+          "host": "Lokale SOLARWATT Manager IP/Host",
+          "username": "Lokale SOLARWATT Manager gebruikersnaam",
+          "password": "Lokale SOLARWATT Manager wachtwoord",
           "rebuild_entity_ids": "Entiteits-ID's opnieuw opbouwen bij opslaan (apparaatnaam + sensornaam)",
           "scan_interval": "Update-interval (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
           "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen",
-          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren"
+          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren",
+          "kiwigrid_hems_enabled": "KiwiGrid HEMS inschakelen (SOLARWATT Manager-portaal)",
+          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
+          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord",
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS pollinterval (seconden)"
         }
       }
     }
@@ -66,6 +80,21 @@
     "button": {
       "diagnostics_refresh": {
         "name": "Gegevens bijwerken"
+      }
+    },
+    "switch": {
+      "hems_optimization_switch": {
+        "name": "Schakelaar"
+      }
+    },
+    "select": {
+      "evstation_optimization_mode": {
+        "name": "Optimalisatiemodus",
+        "state": {
+          "not_optimized": "Niet geoptimaliseerd",
+          "pv_excess": "PV-geoptimaliseerd",
+          "departure_time": "Vertrektijd"
+        }
       }
     }
   }

@@ -4,7 +4,10 @@ from .module_loader import load_component_module
 
 naming = load_component_module("naming")
 clean_item_key = naming.clean_item_key
+compose_slug_parts = naming.compose_slug_parts
 compose_entity_object_id = naming.compose_entity_object_id
+hems_entity_object_id = naming.hems_entity_object_id
+hems_item_suffix = naming.hems_item_suffix
 format_display_name = naming.format_display_name
 item_entity_name = naming.item_entity_name
 normalize_item_name = naming.normalize_item_name
@@ -40,6 +43,12 @@ def test_slugify_entity_name_removes_unsafe_characters():
     )
 
 
+def test_compose_slug_parts_accepts_slugged_and_display_parts():
+    assert compose_slug_parts("kiwigrid_hems", "Today Powerconsumed") == (
+        "kiwigrid_hems_today_powerconsumed"
+    )
+
+
 def test_trim_device_tokens_removes_overlapping_device_prefix():
     assert trim_device_tokens("Battery BMS SoC", "Vision Battery") == "bms_soc"
 
@@ -48,3 +57,85 @@ def test_compose_entity_object_id_uses_device_name_without_duplicate_tokens():
     assert compose_entity_object_id("Vision Battery", "Battery BMS SoC") == (
         "vision_battery_bms_soc"
     )
+
+
+def test_hems_item_suffix_removes_hems_uuid_prefix():
+    item_name = (
+        "hems_battery_9c319824_bda6_4bbd_ac20_764dc1cfa34c_state_of_charge"
+    )
+
+    assert hems_item_suffix(item_name) == "state_of_charge"
+    assert item_entity_name(item_name) == "State Of Charge"
+
+
+def test_hems_entity_object_id_uses_device_hems_property_schema():
+    item_name = (
+        "hems_battery_9c319824_bda6_4bbd_ac20_764dc1cfa34c_state_of_charge"
+    )
+
+    assert hems_entity_object_id(
+        "SOLARWATT Battery vision three",
+        item_name,
+    ) == "solarwatt_battery_vision_three_state_of_charge"
+
+
+def test_hems_entity_object_id_removes_physical_device_name_repetition():
+    item_name = "hems_plug_15922327_c7d9_4fb9_ba65_9073bb627993_requires_override"
+
+    assert hems_entity_object_id(
+        "KiwiGrid myStrom (Waschmaschine)",
+        item_name,
+    ) == "kiwigrid_mystrom_waschmaschine_requires_override"
+
+
+def test_hems_entity_object_id_trims_repeated_physical_device_tokens_from_suffix():
+    item_name = (
+        "hems_plug_15922327_c7d9_4fb9_ba65_9073bb627993_"
+        "mystrom_waschmaschine_hems_requires_override"
+    )
+
+    assert hems_entity_object_id(
+        "KiwiGrid myStrom (Waschmaschine)",
+        item_name,
+    ) == "kiwigrid_mystrom_waschmaschine_requires_override"
+
+
+def test_hems_entity_object_id_supports_analytics_production_items():
+    assert hems_entity_object_id(
+        "KiwiGrid HEMS",
+        "hems_analytics_production_today_today_powerproduced_aggregated",
+    ) == "kiwigrid_hems_powerproduced_aggregated_today"
+
+
+def test_analytics_hems_item_name_does_not_duplicate_hems():
+    assert item_entity_name(
+        "hems_analytics_production_today_today_powerproduced_aggregated"
+    ) == "Today Powerproduced Aggregated"
+
+
+def test_hems_entity_object_id_supports_analytics_storage_items():
+    assert hems_entity_object_id(
+        "KiwiGrid HEMS",
+        "hems_analytics_storage_today_today_storage_powerbuffered_aggregated",
+    ) == "kiwigrid_hems_storage_powerbuffered_aggregated_today"
+
+
+def test_hems_entity_object_id_supports_analytics_independence_items():
+    assert hems_entity_object_id(
+        "KiwiGrid HEMS",
+        "hems_analytics_independence_today_today_autarky_aggregated",
+    ) == "kiwigrid_hems_autarky_aggregated_today"
+
+
+def test_hems_entity_object_id_supports_analytics_consumption_items():
+    assert hems_entity_object_id(
+        "KiwiGrid HEMS",
+        "hems_analytics_consumption_today_today_powerconsumed_aggregated",
+    ) == "kiwigrid_hems_powerconsumed_aggregated_today"
+
+
+def test_hems_entity_object_id_supports_analytics_consumption_month_items():
+    assert hems_entity_object_id(
+        "KiwiGrid HEMS",
+        "hems_analytics_consumption_month_month_workconsumed_aggregated",
+    ) == "kiwigrid_hems_workconsumed_aggregated_month"

@@ -109,6 +109,17 @@ _DOMAIN_META: dict[str, dict[str, Any]] = {
 _BATTERY_PERCENTAGE_TOKENS = ("soc", "stateofcharge", "battery", "akku")
 _PERCENT_CHANNEL_HINTS = ("power-factor", "powerfactor", "percentage")
 
+_DERIVED_HEMS_POWER_NAMES = {
+    "gridpower",
+    "batterypower",
+    "batterychargepower",
+    "batterydischargepower",
+    "selfconsumedpower",
+    "householdfrombatterypower",
+    "householdfromgridpower",
+    "householdfrompvpower",
+}
+
 
 def guess_ha_meta(
     oh_type: str | None,
@@ -121,12 +132,15 @@ def guess_ha_meta(
     effective_oh_type = channel_item_type or oh_type
     unit = (parsed.unit if parsed else None) or _unit_from_channel_metadata(channel_metadata)
     name_l = (item_name or "").lower()
+    compact_name = _compact_name(name_l)
     total_increasing_energy = _is_total_increasing_energy(name_l, channel_metadata)
     name_domain = (
         "duration"
         if name_l.endswith("seconds") or name_l.endswith("sec")
         else "temperature"
         if "temperature" in name_l or "temperatur" in name_l
+        else "power"
+        if compact_name in _DERIVED_HEMS_POWER_NAMES
         else None
     )
 
@@ -149,6 +163,8 @@ def guess_ha_meta(
             meta["icon"] = "mdi:transmission-tower"
         elif any(k in name_l for k in ("battery", "akku")):
             meta["icon"] = "mdi:battery"
+        elif "selfconsumed" in compact_name or "self_consumed" in name_l:
+            meta["icon"] = "mdi:solar-power-variant"
         elif any(k in name_l for k in ("house", "home", "load", "verbrauch")):
             meta["icon"] = "mdi:home-lightning-bolt"
 
@@ -167,6 +183,12 @@ def guess_ha_meta(
         return meta
 
     return meta
+
+
+
+def _compact_name(value: str) -> str:
+    """Return a lowercase alphanumeric name for robust item-name matching."""
+    return "".join(ch for ch in value.lower() if ch.isalnum())
 
 
 def _typed_channel_item_type(channel_metadata: Mapping[str, Any] | None) -> str | None:

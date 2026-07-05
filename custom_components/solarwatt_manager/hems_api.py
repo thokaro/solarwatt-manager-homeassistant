@@ -10,6 +10,8 @@ THINGS_PATH = "/rest/hems-configurator/things"
 HEMS_THING_PROPERTY = "solarwatt.hemsConfigurator"
 ENERGY_OVERVIEW_THING_PROPERTY = "solarwatt.energyOverview"
 ENERGY_OVERVIEW_THING_UID = "energy-overview:standard:energy-overview"
+KIWIGRID_FLOW_THING_PROPERTY = "solarwatt.kiwigridFlow"
+KIWIGRID_FLOW_THING_UID = "kiwigrid-flow:standard:kiwigrid-flow"
 
 _ENERGY_OVERVIEW_ITEM_NAMES = (
     "production",
@@ -23,6 +25,10 @@ _ENERGY_OVERVIEW_ITEM_NAMES = (
     "selfConsumedPower",
     "batteryChargePower",
     "batteryDischargePower",
+    "householdFromBatteryPower",
+    "householdFromGridPower",
+    "householdFromPvPower",
+    "batterySoc",
 )
 _ENERGY_OVERVIEW_ITEM_NAME_SET = set(_ENERGY_OVERVIEW_ITEM_NAMES)
 
@@ -30,11 +36,15 @@ _ENERGY_OVERVIEW_ITEM_NAME_SET = set(_ENERGY_OVERVIEW_ITEM_NAMES)
 def energy_overview_to_items(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Convert the HEMS energy overview response to OpenHAB-like items."""
     values = _energy_overview_values(payload)
-    return [
-        _power_item(item_name, item_name, values.get(item_name), "energy_overview")
-        for item_name in _ENERGY_OVERVIEW_ITEM_NAMES
-        if item_name in values
-    ]
+    items: list[dict[str, Any]] = []
+    for item_name in _ENERGY_OVERVIEW_ITEM_NAMES:
+        if item_name not in values:
+            continue
+        if item_name == "batterySoc":
+            items.append(_percentage_item(item_name, item_name, values.get(item_name), "energy_overview"))
+        else:
+            items.append(_power_item(item_name, item_name, values.get(item_name), "energy_overview"))
+    return items
 
 
 def energy_overview_to_legacy_items(
@@ -62,6 +72,7 @@ def energy_overview_to_legacy_items(
 
     return items
 
+
 def _energy_overview_values(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Return raw and derived values from the HEMS energy overview response."""
     values: dict[str, Any] = {
@@ -73,6 +84,7 @@ def _energy_overview_values(payload: Mapping[str, Any]) -> dict[str, Any]:
             "householdConsumption",
             "storagePowerIn",
             "storagePowerOut",
+            "batterySoc",
         )
         if item_name in payload
     }
@@ -83,16 +95,16 @@ def _energy_overview_values(payload: Mapping[str, Any]) -> dict[str, Any]:
         "selfConsumedPower": _self_consumed_power(payload),
         "batteryChargePower": _battery_charge_power(payload),
         "batteryDischargePower": _battery_discharge_power(payload),
+        "householdFromBatteryPower": _household_from_battery_power(payload),
+        "householdFromGridPower": _household_from_grid_power(payload),
+        "householdFromPvPower": _household_from_pv_power(payload),
     }
 
     values.update(
-        {
-            key: value
-            for key, value in derived_values.items()
-            if value is not None
-        }
+        {key: value for key, value in derived_values.items() if value is not None}
     )
     return values
+
 
 def item_names_to_thing_uids(
     item_names: Sequence[Any],
@@ -120,6 +132,9 @@ def item_names_to_thing_uids(
             continue
         if item_name in _ENERGY_OVERVIEW_ITEM_NAME_SET:
             item_to_thing_uid[item_name] = ENERGY_OVERVIEW_THING_UID
+            continue
+        if item_name.startswith("hems_flow_"):
+            item_to_thing_uid[item_name] = KIWIGRID_FLOW_THING_UID
             continue
         for prefix, thing_uid in thing_prefixes:
             if item_name == prefix or item_name.startswith(f"{prefix}_"):
@@ -180,6 +195,34 @@ def is_energy_overview_thing(thing: Mapping[str, Any]) -> bool:
     return str(props.get(ENERGY_OVERVIEW_THING_PROPERTY) or "").strip().lower() == "true"
 
 
+def is_kiwigrid_flow_thing(thing: Mapping[str, Any]) -> bool:
+    """Return True for the synthetic KiwiGrid Flow device."""
+    properties = thing.get("properties")
+    props = properties if isinstance(properties, Mapping) else {}
+    return str(props.get(KIWIGRID_FLOW_THING_PROPERTY) or "").strip().lower() == "true"
+
+
+def kiwigrid_flow_thing() -> dict[str, Any]:
+    """Return the synthetic thing used for KiwiGrid HEMS energy-flow values."""
+    return {
+        "UID": KIWIGRID_FLOW_THING_UID,
+        "uid": KIWIGRID_FLOW_THING_UID,
+        "label": "KiwiGrid Flow",
+        "thingTypeUID": "kiwigrid-flow:standard",
+        "thingTypeUid": "kiwigrid-flow:standard",
+        "statusInfo": {"status": "ONLINE", "statusDetail": "NONE"},
+        "properties": {
+            HEMS_THING_PROPERTY: "true",
+            KIWIGRID_FLOW_THING_PROPERTY: "true",
+            "thingTypeTitle": "KiwiGrid Flow",
+            "thingTypeCategory": "KIWIGRID_FLOW",
+            "generatedLabel": "KiwiGrid HEMS v11",
+            "model": "KiwiGrid HEMS v11",
+        },
+        "channels": [],
+    }
+
+
 def _energy_overview_thing() -> dict[str, Any]:
     return {
         "UID": ENERGY_OVERVIEW_THING_UID,
@@ -193,6 +236,8 @@ def _energy_overview_thing() -> dict[str, Any]:
             ENERGY_OVERVIEW_THING_PROPERTY: "true",
             "thingTypeTitle": "Energy Overview",
             "thingTypeCategory": "ENERGY_OVERVIEW",
+            "generatedLabel": "energymanager.local",
+            "model": "energymanager.local",
         },
         "channels": [],
     }
@@ -212,6 +257,23 @@ def _power_item(
         "editable": False,
         "category": category,
         "stateDescription": {"pattern": "%.0f W"},
+    }
+
+
+def _percentage_item(
+    name: str,
+    label: str,
+    value: Any,
+    category: str,
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "label": label,
+        "state": _percentage_state(value),
+        "type": "Number:Dimensionless",
+        "editable": False,
+        "category": category,
+        "stateDescription": {"pattern": "%.1f %%"},
     }
 
 
@@ -418,6 +480,18 @@ def _power_state(value: Any) -> str:
     return f"{numeric} W"
 
 
+def _percentage_state(value: Any) -> str:
+    if isinstance(value, bool) or value is None:
+        return "NULL"
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return "NULL"
+    if numeric.is_integer():
+        return f"{int(numeric)} %"
+    return f"{numeric:.1f} %"
+
+
 def _numeric_value(payload: Mapping[str, Any], key: str) -> float | None:
     value = payload.get(key)
     if isinstance(value, bool) or value is None:
@@ -451,12 +525,41 @@ def _self_consumed_power(payload: Mapping[str, Any]) -> float | None:
         return None
     return max((production or 0) - (feed_in or 0), 0)
 
+
 def _battery_charge_power(payload: Mapping[str, Any]) -> float | None:
     return _numeric_value(payload, "storagePowerIn")
 
 
 def _battery_discharge_power(payload: Mapping[str, Any]) -> float | None:
     return _numeric_value(payload, "storagePowerOut")
+
+
+def _household_from_battery_power(payload: Mapping[str, Any]) -> float | None:
+    consumption = _numeric_value(payload, "householdConsumption")
+    discharge = _battery_discharge_power(payload)
+    if consumption is None or discharge is None:
+        return None
+    return min(max(discharge, 0), max(consumption, 0))
+
+
+def _household_from_grid_power(payload: Mapping[str, Any]) -> float | None:
+    consumption = _numeric_value(payload, "householdConsumption")
+    grid_power = _net_grid_power(payload)
+    if consumption is None or grid_power is None:
+        return None
+    return min(max(grid_power, 0), max(consumption, 0))
+
+
+def _household_from_pv_power(payload: Mapping[str, Any]) -> float | None:
+    consumption = _numeric_value(payload, "householdConsumption")
+    if consumption is None:
+        return None
+    from_battery = _household_from_battery_power(payload)
+    from_grid = _household_from_grid_power(payload)
+    if from_battery is None or from_grid is None:
+        return None
+    return max(consumption - from_battery - from_grid, 0)
+
 
 def _thing_properties(
     raw_thing: Mapping[str, Any],

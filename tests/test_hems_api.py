@@ -8,6 +8,8 @@ energy_overview_to_legacy_items = hems_api.energy_overview_to_legacy_items
 is_energy_overview_thing = hems_api.is_energy_overview_thing
 is_hems_thing = hems_api.is_hems_thing
 item_names_to_thing_uids = hems_api.item_names_to_thing_uids
+KIWIGRID_FLOW_THING_UID = hems_api.KIWIGRID_FLOW_THING_UID
+kiwigrid_flow_thing = hems_api.kiwigrid_flow_thing
 things_to_openhab_things = hems_api.things_to_openhab_things
 
 
@@ -30,6 +32,14 @@ def test_energy_overview_to_items_builds_power_items():
         "householdConsumption",
         "storagePowerIn",
         "storagePowerOut",
+        "gridPower",
+        "batteryPower",
+        "selfConsumedPower",
+        "batteryChargePower",
+        "batteryDischargePower",
+        "householdFromBatteryPower",
+        "householdFromGridPower",
+        "householdFromPvPower",
     ]
     assert [item["state"] for item in items] == [
         "730 W",
@@ -38,8 +48,50 @@ def test_energy_overview_to_items_builds_power_items():
         "229 W",
         "0 W",
         "0 W",
+        "-501 W",
+        "0 W",
+        "229 W",
+        "0 W",
+        "0 W",
+        "0 W",
+        "0 W",
+        "229 W",
     ]
     assert all(item["type"] == "Number:Power" for item in items)
+
+
+def test_energy_overview_to_items_builds_household_source_power_items():
+    items = energy_overview_to_items(
+        {
+            "production": 0,
+            "feedIn": 0,
+            "feedOut": 10,
+            "householdConsumption": 955,
+            "storagePowerIn": 0,
+            "storagePowerOut": 945,
+        }
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    assert states["householdFromBatteryPower"] == "945 W"
+    assert states["householdFromGridPower"] == "10 W"
+    assert states["householdFromPvPower"] == "0 W"
+
+
+def test_energy_overview_to_items_builds_battery_soc_item():
+    items = energy_overview_to_items({"batterySoc": 54.444444})
+
+    assert items == [
+        {
+            "name": "batterySoc",
+            "label": "batterySoc",
+            "state": "54.4 %",
+            "type": "Number:Dimensionless",
+            "editable": False,
+            "category": "energy_overview",
+            "stateDescription": {"pattern": "%.1f %%"},
+        }
+    ]
 
 
 def test_energy_overview_to_legacy_items_builds_existing_power_names():
@@ -107,6 +159,8 @@ def test_things_to_openhab_things_preserves_diagnostics_metadata():
                 "solarwatt.energyOverview": "true",
                 "thingTypeTitle": "Energy Overview",
                 "thingTypeCategory": "ENERGY_OVERVIEW",
+                "generatedLabel": "energymanager.local",
+                "model": "energymanager.local",
             },
             "channels": [],
         },
@@ -138,6 +192,7 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
         [
             "production",
             "feedIn",
+            "hems_flow_batteryPower",
             "kiwigrid_location_standard_location_id_harmonized_power_consumed",
             "foxesshybrid_battery_serial_harmonized_power_out",
             "unknown_prefix_power",
@@ -152,6 +207,7 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
     assert item_to_thing_uid == {
         "production": "energy-overview:standard:energy-overview",
         "feedIn": "energy-overview:standard:energy-overview",
+        "hems_flow_batteryPower": KIWIGRID_FLOW_THING_UID,
         "kiwigrid_location_standard_location_id_harmonized_power_consumed": (
             "kiwigrid-location:standard:location-id"
         ),
@@ -159,3 +215,11 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
             "foxesshybrid:battery:serial"
         ),
     }
+
+
+def test_kiwigrid_flow_thing_uses_hems_v11_device_model():
+    thing = kiwigrid_flow_thing()
+
+    assert thing["label"] == "KiwiGrid Flow"
+    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
+    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"

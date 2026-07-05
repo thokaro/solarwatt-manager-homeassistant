@@ -1,0 +1,919 @@
+from __future__ import annotations
+
+import asyncio
+
+from .module_loader import load_component_module
+
+hems_client = load_component_module("hems_client")
+KiwiGridHEMSClient = hems_client.KiwiGridHEMSClient
+energy_flow_endpoint_to_items = hems_client.energy_flow_endpoint_to_items
+hems_payloads_to_items = hems_client.hems_payloads_to_items
+hems_payloads_to_things = hems_client.hems_payloads_to_things
+
+
+BATTERY_ID = "9c319824-bda6-4bbd-ac20-764dc1cfa34c"
+EVSTATION_ID = "8695a754-d66c-430c-9fa6-374bac0965b3"
+PV_ID = "95c5e9fb-e3d1-42b7-9a03-fd024ca58b9e"
+GRID_METER_ID = "e34b5f52-bf2a-43b5-a2fb-caf2ed624624"
+ANALYTICS_PRODUCTION_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "PowerProduced",
+            "aggregated": 60237,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~PowerProduced",
+            "unit": "WATT",
+            "values": {
+                "2026-07-03T20:05+02:00": 445,
+                "2026-07-03T20:10+02:00": 381,
+            },
+        },
+    ],
+    "resolution": "PT5M",
+    "time_zone": "Europe/Berlin",
+}
+ANALYTICS_STORAGE_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "PowerACIn",
+            "aggregated": 5959,
+            "guid": BATTERY_ID,
+            "id": f"{BATTERY_ID}~PowerACIn",
+            "unit": "WATT",
+            "values": {
+                "2026-07-03T20:05+02:00": 0,
+                "2026-07-03T20:10+02:00": 0,
+                "2026-07-03T23:55+02:00": None,
+            },
+        },
+        {
+            "name": "PowerACOut",
+            "aggregated": 6800,
+            "guid": BATTERY_ID,
+            "id": f"{BATTERY_ID}~PowerACOut",
+            "unit": "WATT",
+            "values": {
+                "2026-07-03T20:05+02:00": 0,
+                "2026-07-03T20:10+02:00": 0,
+            },
+        },
+        {
+            "name": "PowerBuffered",
+            "aggregated": 3895,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~PowerBuffered",
+            "unit": "WATT",
+            "values": {
+                "2026-07-03T20:05+02:00": 445,
+                "2026-07-03T20:10+02:00": 2618,
+            },
+        },
+        {
+            "name": "PowerReleased",
+            "aggregated": 6761,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~PowerReleased",
+            "unit": "WATT",
+            "values": {
+                "2026-07-03T20:05+02:00": 0,
+                "2026-07-03T20:10+02:00": 0,
+            },
+        },
+        {
+            "name": "StateOfCharge",
+            "guid": BATTERY_ID,
+            "id": f"{BATTERY_ID}~StateOfCharge",
+            "unit": "PERCENT",
+            "values": {
+                "2026-07-03T23:50+02:00": 39,
+                "2026-07-03T23:55+02:00": 39,
+            },
+        },
+    ],
+    "resolution": "PT5M",
+    "time_zone": "Europe/Berlin",
+    "devices": [
+        {
+            "id": BATTERY_ID,
+            "name": "SOLARWATT Battery vision three",
+            "state_device": "OK",
+            "type": "BATTERY",
+        }
+    ],
+}
+ANALYTICS_INDEPENDENCE_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "Autarky",
+            "aggregated": 100,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~Autarky",
+            "unit": "PERCENT",
+            "values": {
+                "2026-07-04T07:00+02:00": 100,
+                "2026-07-04T08:00+02:00": 99,
+            },
+        },
+        {
+            "name": "SelfConsumptionRate",
+            "aggregated": 100,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~SelfConsumptionRate",
+            "unit": "PERCENT",
+            "values": {
+                "2026-07-04T07:00+02:00": 100,
+                "2026-07-04T08:00+02:00": 100,
+            },
+        },
+    ],
+    "resolution": "PT1H",
+    "time_zone": "Europe/Berlin",
+}
+ANALYTICS_CONSUMPTION_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "PowerConsumed",
+            "aggregated": 12036,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~PowerConsumed",
+            "unit": "WATT",
+            "values": {
+                "2026-07-03T23:05+02:00": 688,
+                "2026-07-03T23:10+02:00": 659,
+                "2026-07-03T23:15+02:00": None,
+            },
+        },
+        {
+            "name": "PowerIn",
+            "aggregated": 404,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~PowerIn",
+            "unit": "WATT",
+            "values": {
+                "2026-07-03T23:05+02:00": 13,
+                "2026-07-03T23:10+02:00": 3,
+                "2026-07-03T23:15+02:00": None,
+            },
+        },
+    ],
+    "resolution": "PT5M",
+    "time_zone": "Europe/Berlin",
+    "devices": [
+        {
+            "id": "8695a754-d66c-430c-9fa6-374bac0965b3",
+            "name": "Keba P30 PV-Edition",
+            "state_device": "OK",
+            "type": "EV_STATION",
+        }
+    ],
+}
+ANALYTICS_FINANCE_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "Revenue",
+            "aggregated": 1234,
+            "unit": "CENT",
+            "values": {
+                "2026-07-04T10:00+02:00": 11,
+                "2026-07-04T11:00+02:00": 12,
+            },
+        }
+    ],
+    "resolution": "PT1H",
+    "time_zone": "Europe/Berlin",
+}
+ANALYTICS_PV_OPTIMIZATION_CONSUMPTION_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "PowerConsumed",
+            "aggregated": 2500,
+            "unit": "WATT",
+            "values": {
+                "2026-07-04T10:00+02:00": 120,
+                "2026-07-04T10:05+02:00": 180,
+            },
+        }
+    ],
+    "resolution": "PT5M",
+    "time_zone": "Europe/Berlin",
+}
+ANALYTICS_CONSUMPTION_YEAR_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "WorkConsumed",
+            "aggregated": 4477421,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkConsumed",
+            "unit": "WATTHOUR",
+            "values": {"2026-01-01T00:00+01:00": 817066},
+        },
+        {
+            "name": "WorkACIn",
+            "aggregated": 2680271,
+            "guid": EVSTATION_ID,
+            "id": f"{EVSTATION_ID}~WorkACIn",
+            "unit": "WATTHOUR",
+            "values": {"2026-01-01T00:00+01:00": 533884},
+        },
+    ],
+    "resolution": "P1M",
+    "time_zone": "Europe/Berlin",
+}
+ANALYTICS_CONSUMPTION_MONTH_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "WorkConsumed",
+            "aggregated": 83058,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkConsumed",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-04T00:00+02:00": 18975},
+        },
+        {
+            "name": "WorkACIn",
+            "aggregated": 46874,
+            "guid": EVSTATION_ID,
+            "id": f"{EVSTATION_ID}~WorkACIn",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-04T00:00+02:00": 5468},
+        },
+    ],
+    "resolution": "P1D",
+    "time_zone": "Europe/Berlin",
+}
+ANALYTICS_PRODUCTION_YEAR_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "WorkProduced",
+            "aggregated": 11338531,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkProduced",
+            "unit": "WATTHOUR",
+            "values": {"2026-01-01T00:00+01:00": 458532},
+        }
+    ],
+    "resolution": "P1M",
+    "time_zone": "Europe/Berlin",
+}
+ANALYTICS_PRODUCTION_MONTH_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "WorkProduced",
+            "aggregated": 203998,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkProduced",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-04T00:00+02:00": 37728},
+        }
+    ],
+    "resolution": "P1D",
+    "time_zone": "Europe/Berlin",
+}
+
+
+class _FakeContextResponse:
+    status = 200
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+    async def text(self):
+        return ""
+
+
+class _FakeContextSession:
+    def get(self, *args, **kwargs):
+        return _FakeContextResponse()
+
+
+def test_hems_context_empty_body_returns_empty_context():
+    client = KiwiGridHEMSClient(_FakeContextSession())
+
+    assert asyncio.run(client._async_fetch_context()) == {}
+
+
+def test_hems_payloads_to_items_maps_battery_measurements_without_metadata_sensors():
+    items = hems_payloads_to_items(
+        batteries=[
+            {
+                "id": BATTERY_ID,
+                "name": "SOLARWATT Battery vision three",
+                "type": "BATTERY",
+                "manufacturer": "SOLARWATT",
+                "model_code": "Battery vision three",
+                "serial_number": "BAT-123",
+                "firmware": "1.2.3",
+                "state_device": "OK",
+                "configured_in_location": True,
+                "state_of_charge": 0.82,
+                "backup_active": False,
+                "work_capacity": 5120,
+            }
+        ],
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+
+    assert f"hems_battery_{BATTERY_ID.replace('-', '_')}_state_of_charge" in states
+    assert states[f"hems_battery_{BATTERY_ID.replace('-', '_')}_state_of_charge"] == "82 %"
+    assert states[f"hems_battery_{BATTERY_ID.replace('-', '_')}_backup_active"] == "false"
+    assert states[f"hems_battery_{BATTERY_ID.replace('-', '_')}_work_capacity"] == "5120 Wh"
+    assert next(
+        item
+        for item in items
+        if item["name"] == f"hems_battery_{BATTERY_ID.replace('-', '_')}_type"
+    )["entityCategory"] == "diagnostic"
+    assert next(
+        item
+        for item in items
+        if item["name"] == f"hems_battery_{BATTERY_ID.replace('-', '_')}_state_device"
+    )["entityCategory"] == "diagnostic"
+    assert not any(item["name"].endswith("_name") for item in items)
+    assert not any(item["name"].endswith("_manufacturer") for item in items)
+    assert not any(item["name"].endswith("_serial_number") for item in items)
+    assert not any(item["name"].endswith("_firmware") for item in items)
+
+
+def test_hems_payloads_to_items_maps_energy_flow_to_kiwigrid_flow_items():
+    items = hems_payloads_to_items(
+        energy_flow={
+            "consumption": {"in": 949, "direct_consumption": 0},
+            "grid": {"in": 0, "out": 0, "balance": 0},
+            "pv": {"out": 0},
+            "battery": {
+                "in": 0,
+                "out": 949,
+                "in_from_grid": 0,
+                "out_to_grid": 6,
+                "soc": 0.5444444444444444,
+                "balance": -949,
+            },
+            "ev": {"in": 0, "out": 0, "balance": 0},
+        }
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    assert states["hems_flow_consumption_in"] == "949 W"
+    assert states["hems_flow_consumption_direct_consumption"] == "0 W"
+    assert states["hems_flow_grid_in"] == "0 W"
+    assert states["hems_flow_grid_out"] == "0 W"
+    assert states["hems_flow_pv_out"] == "0 W"
+    assert states["hems_flow_battery_in"] == "0 W"
+    assert states["hems_flow_battery_out"] == "949 W"
+    assert states["hems_flow_battery_out_to_grid"] == "6 W"
+    assert states["hems_flow_battery_soc"] == "54.4 %"
+
+
+def test_hems_payloads_to_items_maps_energy_flow_grid_import_and_battery_discharge():
+    items = hems_payloads_to_items(
+        energy_flow={
+            "consumption": {"in": 1041, "direct_consumption": 0},
+            "grid": {"in": 11, "out": 0, "balance": 11},
+            "pv": {"out": 0},
+            "battery": {
+                "in": 0,
+                "out": 1030,
+                "in_from_grid": 0,
+                "out_to_grid": 0,
+                "soc": 0.5,
+                "balance": -1030,
+            },
+            "ev": {"in": 0, "out": 0, "balance": 0},
+        }
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    assert states["hems_flow_consumption_in"] == "1041 W"
+    assert states["hems_flow_grid_in"] == "11 W"
+    assert states["hems_flow_grid_out"] == "0 W"
+    assert states["hems_flow_grid_balance"] == "11 W"
+    assert states["hems_flow_battery_out"] == "1030 W"
+    assert states["hems_flow_battery_balance"] == "-1030 W"
+    assert states["hems_flow_battery_soc"] == "50 %"
+
+
+def test_energy_flow_endpoint_to_items_maps_current_hems_payload_as_json_paths():
+    items = energy_flow_endpoint_to_items(
+        {
+            "consumption": {
+                "in": 499,
+                "direct_consumption": 0,
+                "devices": [{"id": GRID_METER_ID}],
+            },
+            "grid": {
+                "in": 0,
+                "out": 0,
+                "balance": 0,
+                "devices": [{"id": GRID_METER_ID}],
+            },
+            "pv": {"out": 0, "devices": [{"id": PV_ID, "out": 0}]},
+            "battery": {
+                "in": 0,
+                "out": 499,
+                "in_from_grid": 0,
+                "out_to_grid": 2,
+                "soc": 0.34444444444444444,
+                "balance": -499,
+                "devices": [
+                    {
+                        "id": BATTERY_ID,
+                        "in": 0,
+                        "out": 490,
+                        "soc": 0.34444444444444444,
+                        "balance": -490,
+                    }
+                ],
+            },
+            "ev": {
+                "in": 0,
+                "out": 0,
+                "balance": 0,
+                "bidirectional": False,
+                "devices": [{"id": EVSTATION_ID, "in": 0}],
+            },
+        }
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    assert states["hems_flow_consumption_in"] == "499 W"
+    assert states["hems_flow_consumption_direct_consumption"] == "0 W"
+    assert states["hems_flow_grid_in"] == "0 W"
+    assert states["hems_flow_grid_out"] == "0 W"
+    assert states["hems_flow_grid_balance"] == "0 W"
+    assert states["hems_flow_pv_out"] == "0 W"
+    assert states["hems_flow_battery_in"] == "0 W"
+    assert states["hems_flow_battery_out"] == "499 W"
+    assert states["hems_flow_battery_in_from_grid"] == "0 W"
+    assert states["hems_flow_battery_out_to_grid"] == "2 W"
+    assert states["hems_flow_battery_soc"] == "34.4 %"
+    assert states["hems_flow_battery_balance"] == "-499 W"
+    assert states["hems_flow_ev_in"] == "0 W"
+    assert states["hems_flow_ev_out"] == "0 W"
+    assert states["hems_flow_ev_balance"] == "0 W"
+    assert states["hems_flow_ev_bidirectional"] == "false"
+    assert not any(name.startswith("hems_flow_device_") for name in states)
+
+
+def test_hems_payloads_to_items_uses_device_names_for_flow_device_values():
+    items = hems_payloads_to_items(
+        batteries=[{"id": BATTERY_ID, "name": "SOLARWATT Battery vision three"}],
+        pv_plants=[{"id": PV_ID, "name": "PV Anlage"}],
+        evstations=[{"id": EVSTATION_ID, "name": "Keba P30 PV-Edition"}],
+        energy_flow={
+            "pv": {"out": 0, "devices": [{"id": PV_ID, "out": 0}]},
+            "battery": {
+                "out": 499,
+                "devices": [{"id": BATTERY_ID, "out": 490, "balance": -490}],
+            },
+            "ev": {"in": 0, "devices": [{"id": EVSTATION_ID, "in": 0}]},
+        },
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    assert states["hems_flow_solarwatt_battery_vision_three_out"] == "490 W"
+    assert states["hems_flow_solarwatt_battery_vision_three_balance"] == "-490 W"
+    assert states["hems_flow_pv_anlage_out"] == "0 W"
+    assert states["hems_flow_keba_p30_pv_edition_in"] == "0 W"
+
+
+def test_hems_payloads_to_items_uses_device_endpoint_names_for_flow_device_values():
+    items = hems_payloads_to_items(
+        devices=[
+            {"id": BATTERY_ID, "name": "SOLARWATT Battery vision three"},
+            {"id": PV_ID, "name": "PV Anlage"},
+            {"id": EVSTATION_ID, "name": "Keba P30 PV-Edition"},
+        ],
+        energy_flow={
+            "pv": {"out": 0, "devices": [{"id": PV_ID, "out": 0}]},
+            "battery": {
+                "out": 499,
+                "devices": [{"id": BATTERY_ID, "out": 490, "balance": -490}],
+            },
+            "ev": {"in": 0, "devices": [{"id": EVSTATION_ID, "in": 0}]},
+        },
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    assert "hems_flow_device_9c319824_bda6_4bbd_ac20_764dc1cfa34c_out" not in states
+    assert states["hems_flow_solarwatt_battery_vision_three_out"] == "490 W"
+    assert states["hems_flow_solarwatt_battery_vision_three_balance"] == "-490 W"
+    assert states["hems_flow_pv_anlage_out"] == "0 W"
+    assert states["hems_flow_keba_p30_pv_edition_in"] == "0 W"
+
+
+def test_hems_payloads_to_items_uses_optimization_names_for_flow_device_values():
+    items = hems_payloads_to_items(
+        device_optimizations=[
+            {"id": BATTERY_ID, "name": "SOLARWATT Battery vision three"},
+            {"id": EVSTATION_ID, "name": "Keba P30 PV-Edition"},
+        ],
+        energy_flow={
+            "battery": {
+                "out": 499,
+                "devices": [{"id": BATTERY_ID, "out": 490, "balance": -490}],
+            },
+            "ev": {"in": 0, "devices": [{"id": EVSTATION_ID, "in": 0}]},
+        },
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    assert "hems_flow_device_9c319824_bda6_4bbd_ac20_764dc1cfa34c_out" not in states
+    assert states["hems_flow_solarwatt_battery_vision_three_out"] == "490 W"
+    assert states["hems_flow_keba_p30_pv_edition_in"] == "0 W"
+
+
+def test_async_get_energy_flow_uses_live_endpoint_without_query_parameters():
+    class FakeClient(KiwiGridHEMSClient):
+        def __init__(self):
+            super().__init__(session=None, username="user", password="pass")
+            self.requested_path = None
+
+        async def _async_get_json(self, path, *, where):
+            self.requested_path = path
+            return {}
+
+    client = FakeClient()
+
+    asyncio.run(client.async_get_energy_flow())
+
+    assert client.requested_path == "/energy-flow"
+
+
+def test_hems_payloads_to_items_skips_generic_device_when_specific_endpoint_exists():
+    items = hems_payloads_to_items(
+        batteries=[
+            {
+                "id": BATTERY_ID,
+                "name": "SOLARWATT Battery vision three",
+                "state_of_charge": 0.4,
+            }
+        ],
+        devices=[
+            {
+                "id": BATTERY_ID,
+                "name": "SOLARWATT Battery vision three",
+                "type": "BATTERY",
+                "mode": "AUTO",
+            }
+        ],
+    )
+
+    assert any(item["name"].startswith("hems_battery_") for item in items)
+    assert not any(item["name"].startswith("hems_device_") for item in items)
+
+
+def test_hems_payloads_merge_device_optimization_metadata():
+    items = hems_payloads_to_items(
+        evstations=[
+            {
+                "id": EVSTATION_ID,
+                "name": "Keba P30 PV-Edition",
+                "type": "EV_STATION",
+                "state_device": "OK",
+            }
+        ],
+        device_optimizations=[
+            {
+                "id": EVSTATION_ID,
+                "name": "Keba P30 PV-Edition",
+                "supported_optimization_modes": [
+                    "NOT_OPTIMIZED",
+                    "PV_EXCESS",
+                    "DEPARTURE_TIME",
+                ],
+                "supports_switching": True,
+                "switch_state": "OFF",
+                "config": {"optimization_mode": "NOT_OPTIMIZED"},
+            }
+        ],
+    )
+    states = {item["name"]: item["state"] for item in items}
+    prefix = f"hems_evstation_{EVSTATION_ID.replace('-', '_')}"
+
+    assert states[f"{prefix}_optimization_mode"] == "NOT_OPTIMIZED"
+    assert states[f"{prefix}_supports_switching"] == "true"
+    assert states[f"{prefix}_switch_state"] == "OFF"
+
+    things = hems_payloads_to_things(
+        evstations=[
+            {
+                "id": EVSTATION_ID,
+                "name": "Keba P30 PV-Edition",
+                "type": "EV_STATION",
+                "state_device": "OK",
+            }
+        ],
+        device_optimizations=[
+            {
+                "id": EVSTATION_ID,
+                "name": "Keba P30 PV-Edition",
+                "supported_optimization_modes": [
+                    "NOT_OPTIMIZED",
+                    "PV_EXCESS",
+                    "DEPARTURE_TIME",
+                ],
+                "supports_switching": True,
+                "switch_state": "OFF",
+                "config": {"optimization_mode": "NOT_OPTIMIZED"},
+            }
+        ],
+    )
+    props = things[0]["properties"]
+
+    assert props["optimizationMode"] == "NOT_OPTIMIZED"
+    assert props["optimizationSupportsSwitching"] == "True"
+    assert props["optimizationSupportedModes"] == "NOT_OPTIMIZED,PV_EXCESS,DEPARTURE_TIME"
+
+
+def test_hems_payloads_to_things_uses_payload_name_and_device_metadata():
+    things = hems_payloads_to_things(
+        pv_plants=[
+            {
+                "id": PV_ID,
+                "name": "SMA Sunny Tripower 20000TL",
+                "type": "INVERTER",
+                "manufacturer": "SMA",
+                "model_code": "Sunny Tripower 20000TL",
+                "serial_number": "1901399614",
+                "firmware": "4.1.0",
+                "state_device": "OK",
+                "power_installed_peak": 20000,
+            }
+        ],
+    )
+
+    assert len(things) == 1
+    thing = things[0]
+
+    assert thing["UID"] == PV_ID
+    assert thing["label"] == "SMA Sunny Tripower 20000TL"
+    assert thing["thingTypeUID"] == "kiwigrid-hems:pv_plant"
+    assert thing["statusInfo"]["status"] == "ONLINE"
+    assert thing["properties"] == {
+        "thingTypeTitle": "KiwiGrid HEMS PV Plant",
+        "thingTypeCategory": "KIWIGRID_HEMS",
+        "kiwigridEndpoint": "/v11/pv-plant",
+        "kiwigridKind": "pv_plant",
+        "generatedLabel": "Sunny Tripower 20000TL",
+        "vendor": "SMA",
+        "manufacturer": "SMA",
+        "serialNumber": "1901399614",
+        "firmware": "4.1.0",
+        "model": "Sunny Tripower 20000TL",
+        "identifier": PV_ID,
+    }
+    assert [channel["linkedItems"][0] for channel in thing["channels"]] == [
+        f"hems_pv_plant_{PV_ID.replace('-', '_')}_type",
+        f"hems_pv_plant_{PV_ID.replace('-', '_')}_state_device",
+        f"hems_pv_plant_{PV_ID.replace('-', '_')}_power_installed_peak",
+    ]
+
+
+def test_hems_payloads_to_things_ignores_numeric_only_model_code():
+    plug_id = "15922327-c7d9-4fb9-ba65-9073bb627993"
+    things = hems_payloads_to_things(
+        plugs=[
+            {
+                "id": plug_id,
+                "name": "myStrom (Waschmaschine)",
+                "type": "PLUG",
+                "manufacturer": "myStrom AG",
+                "model_code": "107",
+                "firmware": "4.0.14",
+                "state_device": "OK",
+            }
+        ],
+    )
+
+    props = things[0]["properties"]
+
+    assert props["generatedLabel"] == "PLUG"
+    assert props["model"] == "PLUG"
+    assert props["manufacturer"] == "myStrom AG"
+    assert "107" not in props.values()
+
+
+def test_hems_payloads_to_items_maps_analytics_production_summary():
+    items = hems_payloads_to_items(analytics_production=ANALYTICS_PRODUCTION_PAYLOAD)
+    states = {item["name"]: item["state"] for item in items}
+
+    assert states["hems_analytics_production_today_today_powerproduced_aggregated"] == "60237 Wh"
+    assert states["hems_analytics_production_today_today_powerproduced_latest"] == "381 W"
+
+
+def test_hems_payloads_to_things_adds_analytics_production_channels_to_kiwigrid_hems():
+    things = hems_payloads_to_things(analytics_production=ANALYTICS_PRODUCTION_PAYLOAD)
+
+    assert len(things) == 1
+    thing = things[0]
+
+    assert thing["UID"] == "kiwigrid-hems"
+    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_production"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/production"
+    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
+    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
+    assert "identifier" not in thing["properties"]
+    assert "serialNumber" not in thing["properties"]
+    assert "hems_analytics_production_today_today_powerproduced_aggregated" in {
+        channel["linkedItems"][0] for channel in thing["channels"]
+    }
+
+
+def test_hems_payloads_to_items_maps_analytics_storage_summary():
+    items = hems_payloads_to_items(analytics_storage=ANALYTICS_STORAGE_PAYLOAD)
+    states = {item["name"]: item["state"] for item in items}
+
+    assert "hems_analytics_storage_today_today_storage_poweracin_aggregated" not in states
+    assert "hems_analytics_storage_today_today_storage_poweracout_aggregated" not in states
+    assert states["hems_analytics_storage_today_today_storage_powerbuffered_aggregated"] == "3895 Wh"
+    assert states["hems_analytics_storage_today_today_storage_powerbuffered_latest"] == "2618 W"
+    assert states["hems_analytics_storage_today_today_storage_powerreleased_aggregated"] == "6761 Wh"
+    assert states["hems_analytics_storage_today_today_storage_powerreleased_latest"] == "0 W"
+    assert states["hems_analytics_storage_today_today_storage_stateofcharge_latest"] == "39 %"
+    assert "hems_analytics_storage_today_today_storage_stateofcharge_aggregated" not in states
+
+
+def test_hems_payloads_to_things_adds_analytics_storage_channels_to_kiwigrid_hems():
+    things = hems_payloads_to_things(analytics_storage=ANALYTICS_STORAGE_PAYLOAD)
+
+    assert len(things) == 1
+    thing = things[0]
+
+    assert thing["UID"] == "kiwigrid-hems"
+    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_storage"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/storage"
+    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
+    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
+    assert "identifier" not in thing["properties"]
+    linked_items = {channel["linkedItems"][0] for channel in thing["channels"]}
+    assert "hems_analytics_storage_today_today_storage_powerbuffered_aggregated" in linked_items
+    assert "hems_analytics_storage_today_today_storage_poweracin_aggregated" not in linked_items
+
+
+def test_hems_payloads_to_items_maps_analytics_independence_summary():
+    items = hems_payloads_to_items(analytics_independence=ANALYTICS_INDEPENDENCE_PAYLOAD)
+    states = {item["name"]: item["state"] for item in items}
+
+    assert states["hems_analytics_independence_today_today_autarky_aggregated"] == "100 %"
+    assert states["hems_analytics_independence_today_today_autarky_latest"] == "99 %"
+    assert (
+        states["hems_analytics_independence_today_today_selfconsumptionrate_aggregated"]
+        == "100 %"
+    )
+    assert states["hems_analytics_independence_today_today_selfconsumptionrate_latest"] == "100 %"
+
+
+def test_hems_payloads_to_things_adds_analytics_independence_channels_to_kiwigrid_hems():
+    things = hems_payloads_to_things(analytics_independence=ANALYTICS_INDEPENDENCE_PAYLOAD)
+
+    assert len(things) == 1
+    thing = things[0]
+
+    assert thing["UID"] == "kiwigrid-hems"
+    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_independence"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/independence"
+    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
+    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
+    assert "identifier" not in thing["properties"]
+    assert "hems_analytics_independence_today_today_autarky_aggregated" in {
+        channel["linkedItems"][0] for channel in thing["channels"]
+    }
+
+
+def test_hems_payloads_to_items_maps_analytics_consumption_summary():
+    items = hems_payloads_to_items(analytics_consumption=ANALYTICS_CONSUMPTION_PAYLOAD)
+    states = {item["name"]: item["state"] for item in items}
+
+    assert states["hems_analytics_consumption_today_today_powerconsumed_aggregated"] == "12036 Wh"
+    assert states["hems_analytics_consumption_today_today_powerconsumed_latest"] == "659 W"
+    assert states["hems_analytics_consumption_today_today_powerin_aggregated"] == "404 Wh"
+    assert states["hems_analytics_consumption_today_today_powerin_latest"] == "3 W"
+
+
+def test_hems_payloads_to_things_adds_analytics_consumption_channels_to_kiwigrid_hems():
+    things = hems_payloads_to_things(
+        analytics_consumption=ANALYTICS_CONSUMPTION_PAYLOAD,
+    )
+
+    assert len(things) == 1
+    thing = things[0]
+
+    assert thing["UID"] == "kiwigrid-hems"
+    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_consumption"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/consumption"
+    assert "hems_analytics_consumption_today_today_powerconsumed_aggregated" in {
+        channel["linkedItems"][0] for channel in thing["channels"]
+    }
+
+
+def test_hems_payloads_to_items_maps_analytics_finance_summary():
+    items = hems_payloads_to_items(
+        analytics_finance=ANALYTICS_FINANCE_PAYLOAD,
+        user_profile={"currency": "EUR"},
+    )
+    states = {item["name"]: item["state"] for item in items}
+
+    assert states["hems_analytics_finance_today_today_revenue_aggregated"] == "12.34 EUR"
+    assert states["hems_analytics_finance_today_today_revenue_latest"] == "0.12 EUR"
+
+
+def test_hems_payloads_to_items_maps_pv_optimization_consumption_summary():
+    items = hems_payloads_to_items(
+        analytics_pv_optimization_consumption=(
+            ANALYTICS_PV_OPTIMIZATION_CONSUMPTION_PAYLOAD
+        )
+    )
+    states = {item["name"]: item["state"] for item in items}
+
+    assert (
+        states[
+            "hems_analytics_pv_optimization_consumption_today_today_pv_optimization_powerconsumed_aggregated"
+        ]
+        == "2500 Wh"
+    )
+    assert (
+        states[
+            "hems_analytics_pv_optimization_consumption_today_today_pv_optimization_powerconsumed_latest"
+        ]
+        == "180 W"
+    )
+
+
+def test_hems_payloads_to_things_uses_api_model_for_pv_optimization_consumption():
+    things = hems_payloads_to_things(
+        analytics_pv_optimization_consumption=(
+            ANALYTICS_PV_OPTIMIZATION_CONSUMPTION_PAYLOAD
+        )
+    )
+
+    assert len(things) == 1
+    thing = things[0]
+    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
+    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
+
+
+def test_hems_payloads_to_items_maps_analytics_work_year_payloads():
+    items = hems_payloads_to_items(
+        analytics_consumption_year=ANALYTICS_CONSUMPTION_YEAR_PAYLOAD,
+        analytics_production_year=ANALYTICS_PRODUCTION_YEAR_PAYLOAD,
+    )
+    states = {item["name"]: item["state"] for item in items}
+
+    assert states["hems_analytics_consumption_year_year_workconsumed_aggregated"] == "4477.421 kWh"
+    assert states["hems_analytics_consumption_year_year_workacin_aggregated"] == "2680.271 kWh"
+    assert states["hems_analytics_production_year_year_workproduced_aggregated"] == "11338.531 kWh"
+    assert not any(name.endswith("_latest") for name in states)
+
+
+def test_hems_payloads_to_items_maps_analytics_work_month_payloads():
+    items = hems_payloads_to_items(
+        analytics_consumption_month=ANALYTICS_CONSUMPTION_MONTH_PAYLOAD,
+        analytics_production_month=ANALYTICS_PRODUCTION_MONTH_PAYLOAD,
+    )
+    states = {item["name"]: item["state"] for item in items}
+
+    assert states["hems_analytics_consumption_month_month_workconsumed_aggregated"] == "83.058 kWh"
+    assert states["hems_analytics_consumption_month_month_workacin_aggregated"] == "46.874 kWh"
+    assert states["hems_analytics_production_month_month_workproduced_aggregated"] == "203.998 kWh"
+    assert not any(name.endswith("_latest") for name in states)
+
+
+def test_hems_payloads_to_things_adds_new_hems_summary_channels():
+    things = hems_payloads_to_things(
+        analytics_finance=ANALYTICS_FINANCE_PAYLOAD,
+        analytics_production_year=ANALYTICS_PRODUCTION_YEAR_PAYLOAD,
+    )
+    thing_types = {thing["thingTypeUID"] for thing in things}
+
+    assert "kiwigrid-hems:analytics_finance" in thing_types
+    assert "kiwigrid-hems:analytics_production" in thing_types
+
+
+def test_hems_payloads_to_things_groups_synthetic_periods_under_one_device():
+    things = hems_payloads_to_things(
+        analytics_consumption=ANALYTICS_CONSUMPTION_PAYLOAD,
+        analytics_consumption_month=ANALYTICS_CONSUMPTION_MONTH_PAYLOAD,
+        analytics_consumption_year=ANALYTICS_CONSUMPTION_YEAR_PAYLOAD,
+    )
+
+    assert {thing["UID"] for thing in things} == {"kiwigrid-hems"}
+    linked_items = {
+        linked_item
+        for thing in things
+        for channel in thing["channels"]
+        for linked_item in channel["linkedItems"]
+    }
+    assert "hems_analytics_consumption_today_today_powerconsumed_aggregated" in linked_items
+    assert "hems_analytics_consumption_month_month_workconsumed_aggregated" in linked_items
+    assert "hems_analytics_consumption_year_year_workconsumed_aggregated" in linked_items

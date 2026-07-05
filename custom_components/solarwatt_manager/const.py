@@ -25,19 +25,26 @@ CONF_POWER_UNAVAILABLE_THRESHOLD = "power_unavailable_threshold"
 CONF_DISABLE_DUPLICATE_ITEM_ENTITIES = "disable_duplicate_item_entities"
 CONF_ENABLED_THINGS = "enabled_things"
 CONF_REBUILD_ENTITY_IDS = "rebuild_entity_ids"
+CONF_KIWIGRID_HEMS_ENABLED = "kiwigrid_hems_enabled"
+CONF_KIWIGRID_HEMS_USERNAME = "kiwigrid_hems_username"
+CONF_KIWIGRID_HEMS_PASSWORD = "kiwigrid_hems_password"
+CONF_KIWIGRID_HEMS_SCAN_INTERVAL = "kiwigrid_hems_scan_interval"
 
 DEFAULT_SCAN_INTERVAL = 15  # Sekunden
 MIN_SCAN_INTERVAL = 10  # Minimaler Scan-Interval in Sekunden
 MAX_SCAN_INTERVAL = 3600  # Maximaler Scan-Interval in Sekunden (1 Stunde)
+DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL = 60  # Sekunden
 
 DEFAULT_ENERGY_DELTA_KWH = 0.01
 MIN_ENERGY_DELTA_KWH = 0.0
 DEFAULT_POWER_UNAVAILABLE_THRESHOLD = 3
 MIN_POWER_UNAVAILABLE_THRESHOLD = 0
 DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES = False
+DEFAULT_KIWIGRID_HEMS_ENABLED = False
 
 DEVICE_MANUFACTURER = "SOLARWATT"
 DEVICE_MODEL = "Manager flex / rail"
+_DEVICE_DETAIL_PLACEHOLDERS = {"", "0", "none", "null", "unknown", "n/a", "-"}
 
 
 def build_device_info(host: str, device_name: str) -> DeviceInfo:
@@ -124,14 +131,36 @@ def get_thing_display_name(thing: Mapping[str, Any], fallback: str = "") -> str:
 
 def get_thing_selection_detail(thing: Mapping[str, Any]) -> str:
     """Return a compact detail suffix for device selection labels."""
+    thing_type_uid = str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "").strip().lower()
+    label = str(thing.get("label") or "").strip().lower()
+    if "location" in thing_type_uid and label in {"", "location", "kiwigrid"}:
+        return "energymanager.local"
+
     properties = thing.get("properties")
     props = properties if isinstance(properties, Mapping) else {}
 
-    generated_label = str(props.get("generatedLabel") or "").strip()
+    for value in (
+        props.get("generatedLabel"),
+        props.get("model"),
+        props.get("model_code"),
+        props.get("modelCode"),
+        props.get("thingTypeTitle"),
+        thing.get("thingTypeUID"),
+        thing.get("thingTypeUid"),
+    ):
+        detail = _clean_device_detail(value)
+        if detail:
+            return detail
 
-    if generated_label:
-        return generated_label
-    return str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "").strip()
+    return ""
+
+
+def _clean_device_detail(value: Any) -> str:
+    """Return a device detail only when it carries useful information."""
+    text = str(value or "").strip()
+    if text.lower() in _DEVICE_DETAIL_PLACEHOLDERS:
+        return ""
+    return text
 
 
 def build_thing_device_info(
@@ -153,10 +182,7 @@ def build_thing_device_info(
         or props.get("manufacturer")
         or DEVICE_MANUFACTURER
     )
-    model = (
-        selection_detail
-        or "Thing"
-    )
+    model = selection_detail or None
     serial_number = (
         props.get("serialNumber")
         or props.get("serial")
@@ -179,7 +205,7 @@ def build_thing_device_info(
         identifiers={build_thing_device_identifier(host, thing_uid)},
         name=label,
         manufacturer=str(manufacturer).strip(),
-        model=str(model).strip(),
+        model=str(model).strip() if model else None,
         serial_number=str(serial_number).strip() if serial_number else None,
         sw_version=str(sw_version).strip() if sw_version else None,
         hw_version=str(hw_version).strip() if hw_version else None,
