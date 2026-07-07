@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026.7.1
+
+### Changes
+- KiwiGrid Flow: added live consumer consumption sensors from `/v11/home/consumption/consumers`, including named sensors for HEMS consumers such as plugs and wallboxes.
+- KiwiGrid Flow: fetches live consumer consumption together with `/v11/energy-flow` and maps the values to the dedicated `KiwiGrid Flow` device.
+- KiwiGrid analytics: grouped synthetic analytics entities under the `KiwiGrid Stats` device and updated generated entity naming examples accordingly.
+- KiwiGrid analytics: added daily `WORK` consumption totals and improved month/year consumption and production mapping for HEMS analytics payloads.
+- Documentation: refreshed the README wording for KiwiGrid HEMS, KiwiGrid Flow, and naming examples to be less implementation-focused.
+
 ## 2026.7.0
 
 ### Changes

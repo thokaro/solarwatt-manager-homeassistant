@@ -23,6 +23,7 @@ ENDPOINT_BATTERY = "/battery"
 ENDPOINT_DEVICE = "/device"
 ENDPOINT_DEVICE_OPTIMIZATION = "/device/optimization"
 ENDPOINT_ENERGY_FLOW = "/energy-flow"
+ENDPOINT_HOME_CONSUMPTION_CONSUMERS = "/home/consumption/consumers"
 ENDPOINT_PV_PLANT = "/pv-plant"
 ENDPOINT_EVSTATION = "/evstation"
 ENDPOINT_PLUG = "/plug"
@@ -522,6 +523,13 @@ class KiwiGridHEMSClient:
             )
         return payload
 
+    async def async_get_home_consumption_consumers(self) -> list[dict[str, Any]]:
+        """Fetch live consumer consumption from /v11/home/consumption/consumers."""
+        return await self._async_get_list_endpoint(
+            ENDPOINT_HOME_CONSUMPTION_CONSUMERS,
+            where="GET /v11/home/consumption/consumers",
+        )
+
     # /v11/analytics/consumption ------------------------------------------
     async def async_get_analytics_consumption(
         self,
@@ -562,6 +570,21 @@ class KiwiGridHEMSClient:
             to_time=to_time,
         )
 
+    async def async_get_analytics_consumption_work_today(
+        self,
+        *,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Fetch today's work consumption analytics."""
+        return await self._async_get_analytics_work_summary(
+            ENDPOINT_ANALYTICS_CONSUMPTION,
+            where="GET /v11/analytics/consumption work today",
+            from_time=from_time,
+            to_time=to_time,
+            period="today",
+        )
+
     async def async_get_analytics_consumption_month(
         self,
         *,
@@ -591,7 +614,7 @@ class KiwiGridHEMSClient:
                 "from": _format_analytics_time(start),
                 "to": _format_analytics_time(end),
                 "type": "POWER",
-                "isDetailed": "false",
+                "isDetailed": "true",
             }
         )
         payload = await self._async_get_json(
@@ -616,7 +639,7 @@ class KiwiGridHEMSClient:
             where="GET /v11/analytics/production year",
             from_time=from_time,
             to_time=to_time,
-            extra_query={"isDetailed": "false"},
+            extra_query={"isDetailed": "true"},
         )
 
     async def async_get_analytics_production_month(
@@ -632,7 +655,7 @@ class KiwiGridHEMSClient:
             from_time=from_time,
             to_time=to_time,
             period="month",
-            extra_query={"isDetailed": "false"},
+            extra_query={"isDetailed": "true"},
         )
 
     # /v11/analytics/storage ----------------------------------------------
@@ -791,8 +814,10 @@ def hems_payloads_to_items(
     evstations: list[dict[str, Any]] | None = None,
     plugs: list[dict[str, Any]] | None = None,
     energy_flow: dict[str, Any] | None = None,
+    home_consumption_consumers: list[dict[str, Any]] | None = None,
     analytics_consumption: dict[str, Any] | None = None,
     analytics_production: dict[str, Any] | None = None,
+    analytics_consumption_work_today: dict[str, Any] | None = None,
     analytics_consumption_month: dict[str, Any] | None = None,
     analytics_production_month: dict[str, Any] | None = None,
     analytics_consumption_year: dict[str, Any] | None = None,
@@ -840,8 +865,14 @@ def hems_payloads_to_items(
             device_names_by_id=device_names_by_id,
         )
     )
+    items.extend(consumers_endpoint_to_items(home_consumption_consumers or []))
     items.extend(analytics_consumption_endpoint_to_items(analytics_consumption or {}))
     items.extend(analytics_production_endpoint_to_items(analytics_production or {}))
+    items.extend(
+        analytics_consumption_work_today_endpoint_to_items(
+            analytics_consumption_work_today or {}
+        )
+    )
     items.extend(analytics_consumption_month_endpoint_to_items(analytics_consumption_month or {}))
     items.extend(analytics_production_month_endpoint_to_items(analytics_production_month or {}))
     items.extend(analytics_consumption_year_endpoint_to_items(analytics_consumption_year or {}))
@@ -1009,6 +1040,26 @@ def energy_flow_endpoint_to_items(
     return [item for item in items if item is not None]
 
 
+def consumers_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map /v11/home/consumption/consumers payloads to KiwiGrid Flow items."""
+    items: list[dict[str, Any] | None] = []
+    for consumer in payload:
+        if not isinstance(consumer, Mapping):
+            continue
+        name = str(consumer.get("name") or "").strip()
+        consumer_id = str(consumer.get("id") or "").strip()
+        consumer_key = _slug(name or consumer_id)
+        if not consumer_key:
+            continue
+        items.append(
+            _kiwigrid_flow_power_item(
+                f"{consumer_key}_consumption",
+                consumer.get("consumption"),
+            )
+        )
+    return [item for item in items if item is not None]
+
+
 def _energy_overview_power_item(name: str, value: Any) -> dict[str, Any]:
     return {
         "name": name,
@@ -1113,6 +1164,7 @@ def analytics_consumption_endpoint_to_items(payload: dict[str, Any]) -> list[dic
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_consumption",
+        category_label="Consumption",
     )
 
 
@@ -1121,6 +1173,7 @@ def analytics_production_endpoint_to_items(payload: dict[str, Any]) -> list[dict
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_production",
+        category_label="Production",
     )
 
 
@@ -1129,6 +1182,7 @@ def analytics_consumption_year_endpoint_to_items(payload: dict[str, Any]) -> lis
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_consumption",
+        category_label="Consumption",
         period_id="year",
         period_prefix="year",
         include_latest=False,
@@ -1140,8 +1194,23 @@ def analytics_production_year_endpoint_to_items(payload: dict[str, Any]) -> list
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_production",
+        category_label="Production",
         period_id="year",
         period_prefix="year",
+        include_latest=False,
+    )
+
+
+def analytics_consumption_work_today_endpoint_to_items(
+    payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Map /v11/analytics/consumption type=WORK payload to daily energy items."""
+    return _analytics_timeseries_endpoint_to_items(
+        payload,
+        kind="analytics_consumption",
+        category_label="Consumption",
+        period_id="work_today",
+        period_prefix="today",
         include_latest=False,
     )
 
@@ -1151,6 +1220,7 @@ def analytics_consumption_month_endpoint_to_items(payload: dict[str, Any]) -> li
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_consumption",
+        category_label="Consumption",
         period_id="month",
         period_prefix="month",
         include_latest=False,
@@ -1162,6 +1232,7 @@ def analytics_production_month_endpoint_to_items(payload: dict[str, Any]) -> lis
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_production",
+        category_label="Production",
         period_id="month",
         period_prefix="month",
         include_latest=False,
@@ -1173,8 +1244,7 @@ def analytics_storage_endpoint_to_items(payload: dict[str, Any]) -> list[dict[st
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_storage",
-        property_prefix="storage",
-        skip_series_names={"PowerACIn", "PowerACOut"},
+        category_label="Storage",
     )
 
 
@@ -1183,6 +1253,7 @@ def analytics_independence_endpoint_to_items(payload: dict[str, Any]) -> list[di
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_independence",
+        category_label="Independence",
     )
 
 
@@ -1195,6 +1266,7 @@ def analytics_finance_endpoint_to_items(
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_finance",
+        category_label="Finance",
         currency=_profile_currency(user_profile),
     )
 
@@ -1206,6 +1278,7 @@ def analytics_pv_optimization_consumption_endpoint_to_items(
     return _analytics_timeseries_endpoint_to_items(
         payload,
         kind="analytics_pv_optimization_consumption",
+        category_label="PvOptimizationConsumption",
         property_prefix="pv_optimization",
     )
 
@@ -1214,6 +1287,7 @@ def _analytics_timeseries_endpoint_to_items(
     payload: dict[str, Any],
     *,
     kind: str,
+    category_label: str,
     property_prefix: str = "",
     period_id: str = "today",
     period_prefix: str = "today",
@@ -1226,18 +1300,49 @@ def _analytics_timeseries_endpoint_to_items(
     if not isinstance(timeseries, list) or not timeseries:
         return []
 
-    prefix = _hems_prefix(kind, _analytics_payload(kind, payload, period_id=period_id))
+    prefix = _analytics_item_prefix(kind)
     items: list[dict[str, Any]] = []
     skipped = {str(name).strip().lower() for name in skip_series_names or set()}
+    device_lookup = _analytics_devices_by_id(payload.get("devices"))
+    include_device_names = len(device_lookup) > 1
     for series in timeseries:
         if not isinstance(series, dict):
             continue
-        series_name = str(series.get("name") or series.get("id") or "unknown")
-        if series_name.strip().lower() in skipped:
+        series_display = str(series.get("name") or series.get("id") or "unknown")
+        if series_display.strip().lower() in skipped:
             continue
-        series_slug = _slug(series_name)
-        suffix_parts = [part for part in (period_prefix, property_prefix, series_slug) if part]
-        suffix_prefix = "_".join(suffix_parts)
+        series_slug = _slug(series_display)
+        device = device_lookup.get(str(series.get("guid") or "").strip())
+        if (
+            include_device_names
+            and device is not None
+            and kind in {"analytics_consumption", "analytics_production"}
+        ):
+            suffix = _analytics_device_item_suffix(
+                period_prefix,
+                category_label,
+                str(device.get("name") or device.get("id") or ""),
+                series_slug,
+            )
+            label = _analytics_device_item_label(
+                period_prefix,
+                category_label,
+                str(device.get("name") or device.get("id") or ""),
+                series_display,
+            )
+        else:
+            suffix = _analytics_item_suffix(
+                period_prefix,
+                category_label,
+                series_slug,
+                property_prefix=property_prefix,
+            )
+            label = _analytics_item_label(
+                period_prefix,
+                category_label,
+                series_display,
+                property_prefix=property_prefix,
+            )
         aggregated_unit, aggregated_type, aggregated_scale = _analytics_unit_type_scale(
             series.get("unit"),
             aggregated=True,
@@ -1246,13 +1351,23 @@ def _analytics_timeseries_endpoint_to_items(
         items.append(
             _number_item(
                 prefix,
-                f"{suffix_prefix}_aggregated",
+                suffix,
                 series.get("aggregated"),
                 aggregated_unit,
                 aggregated_type,
                 scale=aggregated_scale,
+                label=label,
             )
         )
+        if physical_item := _analytics_physical_device_item(
+            series,
+            device=device,
+            period_prefix=period_prefix,
+            unit=aggregated_unit,
+            item_type=aggregated_type,
+            scale=aggregated_scale,
+        ):
+            items.append(physical_item)
         latest = _latest_timeseries_value(series.get("values"))
         if include_latest and latest is not None:
             _, latest_value = latest
@@ -1264,15 +1379,149 @@ def _analytics_timeseries_endpoint_to_items(
             items.append(
                 _number_item(
                     prefix,
-                    f"{suffix_prefix}_latest",
+                    f"{suffix}_latest",
                     latest_value,
                     unit,
                     item_type,
                     scale=latest_scale,
+                    label=f"{label} Latest",
                 )
             )
 
     return items
+
+
+def _analytics_physical_device_item(
+    series: Mapping[str, Any],
+    *,
+    device: Mapping[str, Any] | None,
+    period_prefix: str,
+    unit: str,
+    item_type: str,
+    scale: float,
+) -> dict[str, Any] | None:
+    """Return an additional item for analytics series tied to a physical device."""
+    if device is None:
+        return None
+    device_kind = _analytics_physical_device_kind(device)
+    if device_kind is None:
+        return None
+    series_slug = _slug(str(series.get("name") or series.get("id") or "unknown"))
+    return _number_item(
+        _hems_prefix(device_kind, dict(device)),
+        f"{period_prefix}_{series_slug}",
+        series.get("aggregated"),
+        unit,
+        item_type,
+        scale=scale,
+    )
+
+
+def _analytics_physical_device_kind(device: Mapping[str, Any]) -> str | None:
+    device_type = str(device.get("type") or "").strip().upper()
+    return {
+        "PV": "pv_plant",
+        "PV_PLANT": "pv_plant",
+        "BATTERY": "battery",
+        "EV_STATION": "evstation",
+        "PLUG": "plug",
+    }.get(device_type)
+
+
+def _analytics_item_prefix(kind: str) -> str:
+    """Return the synthetic analytics item prefix without a technical id."""
+    return f"hems_{kind}"
+
+
+def _analytics_item_suffix(
+    period_prefix: str,
+    category_label: str,
+    series_slug: str,
+    *,
+    property_prefix: str = "",
+) -> str:
+    category_slug = _slug(category_label)
+    return "_".join(
+        part
+        for part in (
+            period_prefix,
+            category_slug,
+            property_prefix,
+            series_slug,
+        )
+        if part
+    )
+
+
+def _analytics_item_label(
+    period_prefix: str,
+    category_label: str,
+    series_display: str,
+    *,
+    property_prefix: str = "",
+) -> str:
+    words = [_analytics_period_label(period_prefix), category_label]
+    if property_prefix:
+        words.append(property_prefix.replace("_", " ").title().replace(" ", ""))
+    words.append(series_display)
+    return " ".join(word for word in words if word)
+
+
+def _analytics_device_item_label(
+    period_prefix: str,
+    category_label: str,
+    device_name: str,
+    series_display: str,
+) -> str:
+    return " ".join(
+        word
+        for word in (
+            _analytics_period_label(period_prefix),
+            category_label,
+            device_name,
+            series_display,
+        )
+        if word
+    )
+
+
+def _analytics_device_item_suffix(
+    period_prefix: str,
+    category_label: str,
+    device_name: str,
+    series_slug: str,
+) -> str:
+    return "_".join(
+        part
+        for part in (
+            period_prefix,
+            _slug(category_label),
+            _slug(device_name),
+            series_slug,
+        )
+        if part
+    )
+
+
+def _analytics_period_label(period_prefix: str) -> str:
+    return {
+        "today": "Today",
+        "month": "Month",
+        "year": "Year",
+    }.get(period_prefix, period_prefix.replace("_", " ").title())
+
+
+def _analytics_devices_by_id(value: Any) -> dict[str, Mapping[str, Any]]:
+    if not isinstance(value, list):
+        return {}
+    devices: dict[str, Mapping[str, Any]] = {}
+    for device in value:
+        if not isinstance(device, Mapping):
+            continue
+        device_id = str(device.get("id") or "").strip()
+        if device_id:
+            devices[device_id] = device
+    return devices
 
 
 def _generic_value_item(prefix: str, suffix: str, value: Any) -> dict[str, Any] | None:
@@ -1295,8 +1544,10 @@ def hems_payloads_to_things(
     evstations: list[dict[str, Any]] | None = None,
     plugs: list[dict[str, Any]] | None = None,
     energy_flow: dict[str, Any] | None = None,
+    home_consumption_consumers: list[dict[str, Any]] | None = None,
     analytics_consumption: dict[str, Any] | None = None,
     analytics_production: dict[str, Any] | None = None,
+    analytics_consumption_work_today: dict[str, Any] | None = None,
     analytics_consumption_month: dict[str, Any] | None = None,
     analytics_production_month: dict[str, Any] | None = None,
     analytics_consumption_year: dict[str, Any] | None = None,
@@ -1348,6 +1599,19 @@ def hems_payloads_to_things(
             _endpoint_payloads_to_things(
                 "analytics_production",
                 [_analytics_payload("analytics_production", analytics_production)],
+            )
+        )
+    if analytics_consumption_work_today:
+        things.extend(
+            _endpoint_payloads_to_things(
+                "analytics_consumption",
+                [
+                    _analytics_payload(
+                        "analytics_consumption",
+                        analytics_consumption_work_today,
+                        period_id="work_today",
+                    )
+                ],
             )
         )
     if analytics_consumption_month:
@@ -1457,8 +1721,12 @@ def _endpoint_payloads_to_things(
 
 
 def _hems_payload_to_thing(kind: str, payload: dict[str, Any]) -> dict[str, Any] | None:
-    prefix = _hems_prefix(kind, payload)
     is_synthetic_hems_device = _is_synthetic_hems_kind(kind)
+    prefix = (
+        _analytics_item_prefix(kind)
+        if is_synthetic_hems_device and kind.startswith("analytics_")
+        else _hems_prefix(kind, payload)
+    )
     # Synthetic analytics/home endpoints are one selectable HEMS device.
     # The period remains in item names as today/year, not in the device UID.
     raw_uid = (
@@ -1528,6 +1796,8 @@ def _items_for_hems_payload(kind: str, payload: dict[str, Any]) -> list[dict[str
         return device_endpoint_to_items([payload])
     if kind == "analytics_consumption":
         period_id = str(payload.get("id") or "").strip().lower()
+        if period_id == "work_today":
+            return analytics_consumption_work_today_endpoint_to_items(payload)
         if period_id == "month":
             return analytics_consumption_month_endpoint_to_items(payload)
         if period_id == "year":
@@ -1643,12 +1913,12 @@ def _hems_kind_title(kind: str) -> str:
         "evstation": "KiwiGrid HEMS EV Station",
         "plug": "KiwiGrid HEMS Plug",
         "device": "KiwiGrid HEMS Device",
-        "analytics_consumption": "KiwiGrid HEMS Consumption Analytics",
-        "analytics_production": "KiwiGrid HEMS Production Analytics",
-        "analytics_storage": "KiwiGrid HEMS Storage Analytics",
-        "analytics_independence": "KiwiGrid HEMS Independence Analytics",
-        "analytics_finance": "KiwiGrid HEMS Finance Analytics",
-        "analytics_pv_optimization_consumption": "KiwiGrid HEMS PV Optimization Consumption",
+        "analytics_consumption": "KiwiGrid Stats",
+        "analytics_production": "KiwiGrid Stats",
+        "analytics_storage": "KiwiGrid Stats",
+        "analytics_independence": "KiwiGrid Stats",
+        "analytics_finance": "KiwiGrid Stats",
+        "analytics_pv_optimization_consumption": "KiwiGrid Stats",
     }.get(kind, "KiwiGrid HEMS")
 
 
@@ -1844,6 +2114,8 @@ def _work_summary_time_window(
     from_time: datetime | None,
     to_time: datetime | None,
 ) -> tuple[datetime, datetime]:
+    if period == "today":
+        return _daily_analytics_time_window(from_time=from_time, to_time=to_time)
     if period == "month":
         return _month_to_date_time_window(from_time=from_time, to_time=to_time)
     return _year_to_date_time_window(from_time=from_time, to_time=to_time)
@@ -1862,7 +2134,7 @@ def _analytics_payload(
 ) -> dict[str, Any]:
     normalized = dict(payload)
     normalized.setdefault("id", period_id)
-    normalized.setdefault("name", "KiwiGrid HEMS")
+    normalized.setdefault("name", "KiwiGrid Stats")
     normalized.setdefault("type", kind.upper())
     if user_profile:
         normalized["user_profile"] = dict(user_profile)
@@ -1985,6 +2257,7 @@ def _number_item(
     item_type: str,
     *,
     scale: float = 1,
+    label: str | None = None,
 ) -> dict[str, Any] | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -1999,7 +2272,7 @@ def _number_item(
         state = f"{numeric:.3f}".rstrip("0").rstrip(".") + unit_suffix
     return {
         "name": f"{prefix}_{suffix}",
-        "label": suffix.replace("_", " ").title(),
+        "label": label or suffix.replace("_", " ").title(),
         "state": state,
         "type": item_type,
         "editable": False,

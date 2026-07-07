@@ -26,7 +26,7 @@ Note for users with **vision** components: If you need write/control functions s
   * `switch` entity for supported plug/EV station switching
 * Energy Dashboard ready (correct `device_class` & `state_class`)
 * Separate HEMS poll interval, defaulting to 60 seconds
-* Automatic normalization of units and item names, including Wh → kWh conversion, removal of installation-specific IDs, collapsed duplicate fragments, hems-period suffixes such as `..._today`, and preserved abbreviations such as BMS/SoC/SoH
+* Automatic normalization of units and item names, including Wh → kWh conversion, removal of installation-specific IDs, collapsed duplicate fragments and preserved abbreviations such as BMS/SoC/SoH
 * Device-based entity structure: entities are assigned to their SOLARWATT devices and `entity_id`s are built from the Home Assistant device name plus the normalized channel name
 * Human-friendly display names (Title Case; BMS/SoC/SoH preserved)
 * Per-device diagnostics from `/rest/things`, with status sensors, thing properties as attributes, and refresh buttons for item and thing discovery
@@ -83,7 +83,7 @@ After restarting Home Assistant:
    * If needed, you can later disable duplicate item entities in the integration options without removing them completely from Home Assistant
    * Optional KiwiGrid HEMS credentials can be configured with **KiwiGrid (SOLARWATT Manager Portal) username or email address** and **KiwiGrid (SOLARWATT Manager Portal) password**.
    * Do not enter a full URL for the local host. The integration automatically tries HTTP and HTTPS.
-5. Select the SOLARWATT devices you want to create. Energy Overview, KiwiGrid Flow, KiwiGrid HEMS, and battery devices are preselected when available.
+5. Select the SOLARWATT devices you want to create. Energy Overview, KiwiGrid Flow, KiwiGrid Stats, and battery devices are preselected when available.
 
 ### Options
 
@@ -115,21 +115,19 @@ When enabled, the integration adds supported HEMS data from the SOLARWATT Manage
 
 HEMS metadata such as type, device state, optimization mode, switch state, and override requirements is exposed as diagnostic sensors. Device metadata such as manufacturer, model, firmware, and serial number is mapped to Home Assistant device information instead of separate ordinary sensors.
 
-Physical HEMS devices are attached to their real device where possible. Synthetic analytics values are grouped under the `KiwiGrid HEMS` device. Period sensors place the period at the end of the entity ID, for example:
+Physical HEMS devices are attached to their real device where possible. Daily and monthly/yearly portal statistics are grouped under the `KiwiGrid Stats` device, for example:
 
 ```
-sensor.kiwigrid_hems_powerconsumed_aggregated_today
-sensor.kiwigrid_hems_workconsumed_aggregated_month
-sensor.kiwigrid_hems_workconsumed_aggregated_year
+sensor.kiwigrid_stats_today_consumption_powerconsumed
+sensor.kiwigrid_stats_month_consumption_workconsumed
+sensor.kiwigrid_stats_year_consumption_workconsumed
 ```
 
-Today analytics use `POWER` values and expose aggregated and latest sensors. Month and year analytics use `WORK` values and expose aggregated energy sensors in kWh.
+Today values expose totals and the latest live value where available. Month and year values expose energy totals in kWh.
 
 ### KiwiGrid Flow
 
-`KiwiGrid Flow` is a dedicated device for live energy-flow values from the SOLARWATT Manager Portal. It is independent from the local `Energy Overview` device and is also available when both local Manager access and KiwiGrid HEMS are configured.
-
-The flow sensors keep the JSON field names recognizable instead of being converted into local Energy Overview names. Examples:
+`KiwiGrid Flow` is a dedicated device for live energy-flow and consumer values from the SOLARWATT Manager Portal. It is independent from the local `Energy Overview` device and is also available when both local Manager access and KiwiGrid HEMS are configured. Example sensors:
 
 ```
 sensor.kiwigrid_flow_consumption_in
@@ -138,9 +136,12 @@ sensor.kiwigrid_flow_grid_out
 sensor.kiwigrid_flow_battery_out
 sensor.kiwigrid_flow_battery_soc
 sensor.kiwigrid_flow_solarwatt_battery_vision_three_out
+sensor.kiwigrid_flow_mystrom_waschmaschine_consumption
+sensor.kiwigrid_flow_keba_p30_pv_edition_consumption
+sensor.kiwigrid_flow_mystrom_wasserpumpe_consumption
 ```
 
-The live flow is requested without date parameters so Home Assistant receives the current portal values.
+These sensors show the current portal values.
 
 ### HEMS Controls
 
@@ -230,13 +231,11 @@ Here you will find an overview of the most important Kiwigrid items.
 
 ## 🧠 Naming Strategy
 
-* Technical item prefixes and installation-specific IDs are stripped from channel names
-* Display names stay channel-based, for example `Active Power Command`
-* `entity_id`s use the Home Assistant device name plus the normalized channel name, for example `sensor.vision_battery_bms_soc`
-* Duplicate fragments such as `Battery Battery ...` are collapsed
-* Physical KiwiGrid HEMS entities do not repeat the device name or add an extra `hems` segment, for example `sensor.kiwigrid_mystrom_waschmaschine_requires_override`
-* Synthetic HEMS periods are placed at the end, for example `sensor.kiwigrid_hems_powerconsumed_aggregated_today`
-* KiwiGrid Flow entities use the flow field path, for example `sensor.kiwigrid_flow_consumption_in`; nested device values use the HEMS device name where available, for example `sensor.kiwigrid_flow_solarwatt_battery_vision_three_out`
+* Entity IDs are based on the Home Assistant device name and sensor name, for example `sensor.vision_battery_bms_soc`
+* Duplicate words and installation-specific IDs are removed where possible
+* Physical KiwiGrid HEMS entities stay on their device, for example `sensor.kiwigrid_mystrom_waschmaschine_requires_override`
+* KiwiGrid statistics are grouped under `KiwiGrid Stats`, for example `sensor.kiwigrid_stats_today_consumption_powerconsumed`
+* Live flow and consumer values are grouped under `KiwiGrid Flow`, for example `sensor.kiwigrid_flow_mystrom_waschmaschine_consumption`
 * Existing entity IDs can be rebuilt from the integration options with **Rebuild entity IDs when saving**
 
 This keeps entities readable while making `entity_id`s match the device names configured in Home Assistant, using the device-name-first structure planned for a future Home Assistant naming update.

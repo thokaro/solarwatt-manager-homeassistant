@@ -15,6 +15,7 @@ from .hems_client import (
     KiwiGridHEMSConnectionError,
     KiwiGridHEMSError,
     KiwiGridHEMSProtocolError,
+    consumers_endpoint_to_items,
     energy_flow_endpoint_to_items,
     hems_device_names_by_id,
     hems_payloads_to_items,
@@ -505,6 +506,17 @@ class SOLARWATTClient:
         except KiwiGridHEMSError as err:
             raise SolarwattConnectionError(f"KiwiGrid HEMS energy flow failed: {err}") from err
 
+        try:
+            consumers = await hems.async_get_home_consumption_consumers()
+        except KiwiGridHEMSAuthError as err:
+            raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
+        except KiwiGridHEMSError as err:
+            self._log.debug(
+                "KiwiGrid HEMS consumer consumption unavailable for energy flow: %s",
+                err,
+            )
+            consumers = []
+
         name_payloads: dict[str, list[dict[str, Any]]] = {}
         for key, getter in (
             ("devices", hems.async_get_devices),
@@ -529,7 +541,7 @@ class SOLARWATTClient:
         return energy_flow_endpoint_to_items(
             payload,
             device_names_by_id=hems_device_names_by_id(**name_payloads),
-        )
+        ) + consumers_endpoint_to_items(consumers)
 
     async def async_get_hems_things(
         self,
@@ -610,6 +622,10 @@ class SOLARWATTClient:
             ("plugs", hems.async_get_plugs),
             ("analytics_consumption", hems.async_get_analytics_consumption),
             ("analytics_production", hems.async_get_analytics_production),
+            (
+                "analytics_consumption_work_today",
+                hems.async_get_analytics_consumption_work_today,
+            ),
             ("analytics_consumption_month", hems.async_get_analytics_consumption_month),
             ("analytics_production_month", hems.async_get_analytics_production_month),
             ("analytics_consumption_year", hems.async_get_analytics_consumption_year),
@@ -624,7 +640,13 @@ class SOLARWATTClient:
             ),
         )
         if include_energy_flow:
-            getters = getters[:6] + (("energy_flow", hems.async_get_energy_flow),) + getters[6:]
+            getters = getters[:6] + (
+                ("energy_flow", hems.async_get_energy_flow),
+                (
+                    "home_consumption_consumers",
+                    hems.async_get_home_consumption_consumers,
+                ),
+            ) + getters[6:]
         return getters
 
     async def async_set_hems_device_optimization_mode(

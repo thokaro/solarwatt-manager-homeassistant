@@ -103,39 +103,53 @@ def test_hems_entity_object_id_trims_repeated_physical_device_tokens_from_suffix
 def test_hems_entity_object_id_supports_analytics_production_items():
     assert hems_entity_object_id(
         "KiwiGrid HEMS",
-        "hems_analytics_production_today_today_powerproduced_aggregated",
-    ) == "kiwigrid_hems_powerproduced_aggregated_today"
+        "hems_analytics_production_today_production_powerproduced",
+    ) == "kiwigrid_hems_today_production_powerproduced"
 
 
 def test_analytics_hems_item_name_does_not_duplicate_hems():
     assert item_entity_name(
-        "hems_analytics_production_today_today_powerproduced_aggregated"
-    ) == "Today Powerproduced Aggregated"
+        "hems_analytics_production_today_production_powerproduced"
+    ) == "Today Production Powerproduced"
 
 
 def test_hems_entity_object_id_supports_analytics_storage_items():
     assert hems_entity_object_id(
         "KiwiGrid HEMS",
-        "hems_analytics_storage_today_today_storage_powerbuffered_aggregated",
-    ) == "kiwigrid_hems_storage_powerbuffered_aggregated_today"
+        "hems_analytics_storage_today_storage_powerbuffered",
+    ) == "kiwigrid_hems_today_storage_powerbuffered"
 
 
 def test_hems_entity_object_id_supports_analytics_independence_items():
     assert hems_entity_object_id(
         "KiwiGrid HEMS",
-        "hems_analytics_independence_today_today_autarky_aggregated",
-    ) == "kiwigrid_hems_autarky_aggregated_today"
+        "hems_analytics_independence_today_independence_autarky",
+    ) == "kiwigrid_hems_today_independence_autarky"
 
 
 def test_hems_entity_object_id_supports_analytics_consumption_items():
     assert hems_entity_object_id(
         "KiwiGrid HEMS",
-        "hems_analytics_consumption_today_today_powerconsumed_aggregated",
-    ) == "kiwigrid_hems_powerconsumed_aggregated_today"
+        "hems_analytics_consumption_today_consumption_powerconsumed",
+    ) == "kiwigrid_hems_today_consumption_powerconsumed"
 
 
 def test_hems_entity_object_id_supports_analytics_consumption_month_items():
     assert hems_entity_object_id(
         "KiwiGrid HEMS",
-        "hems_analytics_consumption_month_month_workconsumed_aggregated",
-    ) == "kiwigrid_hems_workconsumed_aggregated_month"
+        "hems_analytics_consumption_month_consumption_workconsumed",
+    ) == "kiwigrid_hems_month_consumption_workconsumed"
+
+
+def test_hems_entity_object_id_does_not_duplicate_kiwigrid_stats_device_name():
+    assert hems_entity_object_id(
+        "KiwiGrid Stats",
+        "hems_analytics_consumption_today_consumption_mystrom_wasserpumpe_workin",
+    ) == "kiwigrid_stats_today_consumption_mystrom_wasserpumpe_workin"
+
+
+def test_compose_entity_object_id_uses_only_device_and_sensor_names():
+    assert compose_entity_object_id(
+        "KiwiGrid Stats",
+        "Today Consumption myStrom (Wasserpumpe) WorkIn",
+    ) == "kiwigrid_stats_today_consumption_mystrom_wasserpumpe_workin"

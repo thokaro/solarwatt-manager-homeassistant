@@ -57,7 +57,7 @@ def _compiled_static_normalization_rules() -> list[tuple[re.Pattern[str], str]]:
 
 _HEMS_ITEM_RE = re.compile(
     r"^hems_(?P<kind>battery|pv_plant|evstation|plug|device|flow|analytics_consumption|analytics_production|analytics_storage|analytics_independence|analytics_finance|analytics_pv_optimization_consumption)_"
-    r"(?:(?P<id>[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}|today|month|year)_)?"
+    r"(?:(?P<id>[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}|v11)_)?"
     r"(?P<suffix>.+)$",
     re.IGNORECASE,
 )
@@ -126,9 +126,7 @@ def hems_entity_object_id(device_name: str, item_name: str) -> str | None:
     if not _is_hems_analytics_kind(kind):
         return compose_slug_parts(device_slug, suffix_slug) or None
 
-    if device_slug.endswith("_hems"):
-        return compose_slug_parts(device_slug, suffix_slug) or None
-    return compose_slug_parts(device_slug, "hems", suffix_slug) or None
+    return compose_slug_parts(device_slug, suffix_slug) or None
 
 
 def _hems_entity_suffix_slug(
@@ -141,8 +139,6 @@ def _hems_entity_suffix_slug(
     normalized_suffix = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", suffix)
     suffix_slug = trim_device_tokens(normalized_suffix, device_name)
     if not is_physical:
-        for period in ("today", "month", "year"):
-            suffix_slug = _move_leading_slug_token_to_end(suffix_slug, period)
         return suffix_slug
     return _strip_leading_slug_token(suffix_slug, "hems")
 

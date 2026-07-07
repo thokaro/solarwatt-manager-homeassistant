@@ -25,8 +25,8 @@ sensor.energy_overview_grid_power
 sensor.energy_overview_battery_power
 sensor.energy_overview_production
 sensor.energy_overview_battery_soc
-sensor.kiwigrid_hems_powerproduced_latest_today
-sensor.kiwigrid_hems_workproduced_aggregated_year
+sensor.kiwigrid_hems_today_production_powerproduced_latest
+sensor.kiwigrid_hems_year_production_workproduced
 ```
 
 Wichtig fuer evcc:
@@ -48,7 +48,7 @@ meters:
     usage: grid
     uri: http://homeassistant.local:8123/
     power: sensor.energy_overview_grid_power
-    energy: sensor.kiwigrid_hems_workin_aggregated_year
+    energy: sensor.kiwigrid_hems_year_consumption_workin
 
   - name: pv
     type: template
@@ -56,7 +56,7 @@ meters:
     usage: pv
     uri: http://homeassistant.local:8123/
     power: sensor.energy_overview_production
-    energy: sensor.kiwigrid_hems_workproduced_aggregated_year
+    energy: sensor.kiwigrid_hems_year_production_workproduced
 
   - name: battery
     type: template

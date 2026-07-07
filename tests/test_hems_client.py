@@ -6,6 +6,7 @@ from .module_loader import load_component_module
 
 hems_client = load_component_module("hems_client")
 KiwiGridHEMSClient = hems_client.KiwiGridHEMSClient
+consumers_endpoint_to_items = hems_client.consumers_endpoint_to_items
 energy_flow_endpoint_to_items = hems_client.energy_flow_endpoint_to_items
 hems_payloads_to_items = hems_client.hems_payloads_to_items
 hems_payloads_to_things = hems_client.hems_payloads_to_things
@@ -28,9 +29,34 @@ ANALYTICS_PRODUCTION_PAYLOAD = {
                 "2026-07-03T20:10+02:00": 381,
             },
         },
+        {
+            "name": "PowerOut",
+            "aggregated": 61111,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~PowerOut",
+            "unit": "WATT",
+            "values": {"2026-07-03T20:10+02:00": 6},
+        },
+        {
+            "name": "PowerBuffered",
+            "aggregated": 3895,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~PowerBuffered",
+            "unit": "WATT",
+            "values": {"2026-07-03T20:10+02:00": 0},
+        },
+        {
+            "name": "PowerACOut",
+            "aggregated": 60237,
+            "guid": PV_ID,
+            "id": f"{PV_ID}~PowerACOut",
+            "unit": "WATT",
+            "values": {"2026-07-03T20:10+02:00": 381},
+        },
     ],
     "resolution": "PT5M",
     "time_zone": "Europe/Berlin",
+    "devices": [{"id": PV_ID, "name": "PV Anlage", "type": "PV"}],
 }
 ANALYTICS_STORAGE_PAYLOAD = {
     "timeseries": [
@@ -218,6 +244,7 @@ ANALYTICS_CONSUMPTION_YEAR_PAYLOAD = {
     ],
     "resolution": "P1M",
     "time_zone": "Europe/Berlin",
+    "devices": [{"id": EVSTATION_ID, "name": "Keba P30 PV-Edition", "type": "EV_STATION"}],
 }
 ANALYTICS_CONSUMPTION_MONTH_PAYLOAD = {
     "timeseries": [
@@ -240,6 +267,65 @@ ANALYTICS_CONSUMPTION_MONTH_PAYLOAD = {
     ],
     "resolution": "P1D",
     "time_zone": "Europe/Berlin",
+    "devices": [{"id": EVSTATION_ID, "name": "Keba P30 PV-Edition", "type": "EV_STATION"}],
+}
+ANALYTICS_CONSUMPTION_WORK_TODAY_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "WorkConsumed",
+            "aggregated": 37510,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkConsumed",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-05T17:00+02:00": 647},
+        },
+        {
+            "name": "WorkACIn",
+            "aggregated": 25643,
+            "guid": EVSTATION_ID,
+            "id": f"{EVSTATION_ID}~WorkACIn",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-05T17:00+02:00": 0},
+        },
+        {
+            "name": "WorkIn",
+            "aggregated": 123,
+            "guid": "15922327-c7d9-4fb9-ba65-9073bb627993",
+            "id": "15922327-c7d9-4fb9-ba65-9073bb627993~WorkIn",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-05T17:00+02:00": 0},
+        },
+        {
+            "name": "WorkIn",
+            "aggregated": 456,
+            "guid": "6b008e41-5453-416f-a842-a391bb7f106a",
+            "id": "6b008e41-5453-416f-a842-a391bb7f106a~WorkIn",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-05T17:00+02:00": 0},
+        },
+    ],
+    "resolution": "PT1H",
+    "time_zone": "Europe/Berlin",
+    "devices": [
+        {
+            "id": EVSTATION_ID,
+            "name": "Keba P30 PV-Edition",
+            "state_device": "OK",
+            "type": "EV_STATION",
+        },
+        {
+            "id": "15922327-c7d9-4fb9-ba65-9073bb627993",
+            "name": "myStrom (Waschmaschine)",
+            "state_device": "OK",
+            "type": "PLUG",
+        },
+        {
+            "id": "6b008e41-5453-416f-a842-a391bb7f106a",
+            "name": "myStrom (Wasserpumpe)",
+            "state_device": "OK",
+            "type": "PLUG",
+        },
+    ],
 }
 ANALYTICS_PRODUCTION_YEAR_PAYLOAD = {
     "timeseries": [
@@ -250,10 +336,35 @@ ANALYTICS_PRODUCTION_YEAR_PAYLOAD = {
             "id": f"{GRID_METER_ID}~WorkProduced",
             "unit": "WATTHOUR",
             "values": {"2026-01-01T00:00+01:00": 458532},
-        }
+        },
+        {
+            "name": "WorkOut",
+            "aggregated": 8405903,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkOut",
+            "unit": "WATTHOUR",
+            "values": {"2026-01-01T00:00+01:00": 228644},
+        },
+        {
+            "name": "WorkBuffered",
+            "aggregated": 1046393,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkBuffered",
+            "unit": "WATTHOUR",
+            "values": {"2026-01-01T00:00+01:00": 102237},
+        },
+        {
+            "name": "WorkACOut",
+            "aggregated": 11338531,
+            "guid": PV_ID,
+            "id": f"{PV_ID}~WorkACOut",
+            "unit": "WATTHOUR",
+            "values": {"2026-01-01T00:00+01:00": 458532},
+        },
     ],
     "resolution": "P1M",
     "time_zone": "Europe/Berlin",
+    "devices": [{"id": PV_ID, "name": "PV Anlage", "type": "PV"}],
 }
 ANALYTICS_PRODUCTION_MONTH_PAYLOAD = {
     "timeseries": [
@@ -264,10 +375,35 @@ ANALYTICS_PRODUCTION_MONTH_PAYLOAD = {
             "id": f"{GRID_METER_ID}~WorkProduced",
             "unit": "WATTHOUR",
             "values": {"2026-07-04T00:00+02:00": 37728},
-        }
+        },
+        {
+            "name": "WorkOut",
+            "aggregated": 211607,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkOut",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-04T00:00+02:00": 14798},
+        },
+        {
+            "name": "WorkBuffered",
+            "aggregated": 44878,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkBuffered",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-04T00:00+02:00": 11163},
+        },
+        {
+            "name": "WorkACOut",
+            "aggregated": 203998,
+            "guid": PV_ID,
+            "id": f"{PV_ID}~WorkACOut",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-04T00:00+02:00": 37728},
+        },
     ],
     "resolution": "P1D",
     "time_zone": "Europe/Berlin",
+    "devices": [{"id": PV_ID, "name": "PV Anlage", "type": "PV"}],
 }
 
 
@@ -528,6 +664,49 @@ def test_hems_payloads_to_items_uses_optimization_names_for_flow_device_values()
     assert states["hems_flow_keba_p30_pv_edition_in"] == "0 W"
 
 
+def test_consumers_endpoint_to_items_maps_live_consumption_to_flow_items():
+    items = consumers_endpoint_to_items(
+        [
+            {
+                "id": "15922327-c7d9-4fb9-ba65-9073bb627993",
+                "name": "myStrom (Waschmaschine)",
+                "consumption": 1.68,
+            },
+            {
+                "id": EVSTATION_ID,
+                "name": "Keba P30 PV-Edition",
+                "consumption": 0.0,
+            },
+            {
+                "id": "6b008e41-5453-416f-a842-a391bb7f106a",
+                "name": "myStrom (Wasserpumpe)",
+                "consumption": 0.0,
+            },
+        ]
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    assert states["hems_flow_mystrom_waschmaschine_consumption"] == "1.68 W"
+    assert states["hems_flow_keba_p30_pv_edition_consumption"] == "0 W"
+    assert states["hems_flow_mystrom_wasserpumpe_consumption"] == "0 W"
+    assert {item["category"] for item in items} == {"kiwigrid_flow"}
+
+
+def test_hems_payloads_to_items_maps_home_consumption_consumers_to_flow_items():
+    items = hems_payloads_to_items(
+        home_consumption_consumers=[
+            {
+                "id": "15922327-c7d9-4fb9-ba65-9073bb627993",
+                "name": "myStrom (Waschmaschine)",
+                "consumption": 1.68,
+            }
+        ]
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    assert states["hems_flow_mystrom_waschmaschine_consumption"] == "1.68 W"
+
+
 def test_async_get_energy_flow_uses_live_endpoint_without_query_parameters():
     class FakeClient(KiwiGridHEMSClient):
         def __init__(self):
@@ -543,6 +722,23 @@ def test_async_get_energy_flow_uses_live_endpoint_without_query_parameters():
     asyncio.run(client.async_get_energy_flow())
 
     assert client.requested_path == "/energy-flow"
+
+
+def test_async_get_home_consumption_consumers_uses_live_endpoint_without_query_parameters():
+    class FakeClient(KiwiGridHEMSClient):
+        def __init__(self):
+            super().__init__(session=None, username="user", password="pass")
+            self.requested_path = None
+
+        async def _async_get_json(self, path, *, where):
+            self.requested_path = path
+            return []
+
+    client = FakeClient()
+
+    asyncio.run(client.async_get_home_consumption_consumers())
+
+    assert client.requested_path == "/home/consumption/consumers"
 
 
 def test_hems_payloads_to_items_skips_generic_device_when_specific_endpoint_exists():
@@ -703,8 +899,14 @@ def test_hems_payloads_to_items_maps_analytics_production_summary():
     items = hems_payloads_to_items(analytics_production=ANALYTICS_PRODUCTION_PAYLOAD)
     states = {item["name"]: item["state"] for item in items}
 
-    assert states["hems_analytics_production_today_today_powerproduced_aggregated"] == "60237 Wh"
-    assert states["hems_analytics_production_today_today_powerproduced_latest"] == "381 W"
+    assert states["hems_analytics_production_today_production_powerproduced"] == "60237 Wh"
+    assert states["hems_analytics_production_today_production_powerproduced_latest"] == "381 W"
+    assert states["hems_analytics_production_today_production_powerout"] == "61111 Wh"
+    assert states["hems_analytics_production_today_production_powerbuffered"] == "3895 Wh"
+    assert (
+        states[f"hems_pv_plant_{PV_ID.replace('-', '_')}_today_poweracout"]
+        == "60237 Wh"
+    )
 
 
 def test_hems_payloads_to_things_adds_analytics_production_channels_to_kiwigrid_hems():
@@ -714,14 +916,14 @@ def test_hems_payloads_to_things_adds_analytics_production_channels_to_kiwigrid_
     thing = things[0]
 
     assert thing["UID"] == "kiwigrid-hems"
-    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["label"] == "KiwiGrid Stats"
     assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_production"
     assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/production"
     assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
     assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
     assert "identifier" not in thing["properties"]
     assert "serialNumber" not in thing["properties"]
-    assert "hems_analytics_production_today_today_powerproduced_aggregated" in {
+    assert "hems_analytics_production_today_production_powerproduced" in {
         channel["linkedItems"][0] for channel in thing["channels"]
     }
 
@@ -730,14 +932,15 @@ def test_hems_payloads_to_items_maps_analytics_storage_summary():
     items = hems_payloads_to_items(analytics_storage=ANALYTICS_STORAGE_PAYLOAD)
     states = {item["name"]: item["state"] for item in items}
 
-    assert "hems_analytics_storage_today_today_storage_poweracin_aggregated" not in states
-    assert "hems_analytics_storage_today_today_storage_poweracout_aggregated" not in states
-    assert states["hems_analytics_storage_today_today_storage_powerbuffered_aggregated"] == "3895 Wh"
-    assert states["hems_analytics_storage_today_today_storage_powerbuffered_latest"] == "2618 W"
-    assert states["hems_analytics_storage_today_today_storage_powerreleased_aggregated"] == "6761 Wh"
-    assert states["hems_analytics_storage_today_today_storage_powerreleased_latest"] == "0 W"
-    assert states["hems_analytics_storage_today_today_storage_stateofcharge_latest"] == "39 %"
-    assert "hems_analytics_storage_today_today_storage_stateofcharge_aggregated" not in states
+    assert states["hems_analytics_storage_today_storage_poweracin"] == "5959 Wh"
+    assert states["hems_analytics_storage_today_storage_poweracin_latest"] == "0 W"
+    assert states["hems_analytics_storage_today_storage_poweracout"] == "6800 Wh"
+    assert states["hems_analytics_storage_today_storage_powerbuffered"] == "3895 Wh"
+    assert states["hems_analytics_storage_today_storage_powerbuffered_latest"] == "2618 W"
+    assert states["hems_analytics_storage_today_storage_powerreleased"] == "6761 Wh"
+    assert states["hems_analytics_storage_today_storage_powerreleased_latest"] == "0 W"
+    assert states["hems_analytics_storage_today_storage_stateofcharge_latest"] == "39 %"
+    assert "hems_analytics_storage_today_storage_stateofcharge" not in states
 
 
 def test_hems_payloads_to_things_adds_analytics_storage_channels_to_kiwigrid_hems():
@@ -747,28 +950,33 @@ def test_hems_payloads_to_things_adds_analytics_storage_channels_to_kiwigrid_hem
     thing = things[0]
 
     assert thing["UID"] == "kiwigrid-hems"
-    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["label"] == "KiwiGrid Stats"
     assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_storage"
     assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/storage"
     assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
     assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
     assert "identifier" not in thing["properties"]
     linked_items = {channel["linkedItems"][0] for channel in thing["channels"]}
-    assert "hems_analytics_storage_today_today_storage_powerbuffered_aggregated" in linked_items
-    assert "hems_analytics_storage_today_today_storage_poweracin_aggregated" not in linked_items
+    assert "hems_analytics_storage_today_storage_powerbuffered" in linked_items
+    assert "hems_analytics_storage_today_storage_poweracin" in linked_items
 
 
 def test_hems_payloads_to_items_maps_analytics_independence_summary():
     items = hems_payloads_to_items(analytics_independence=ANALYTICS_INDEPENDENCE_PAYLOAD)
     states = {item["name"]: item["state"] for item in items}
 
-    assert states["hems_analytics_independence_today_today_autarky_aggregated"] == "100 %"
-    assert states["hems_analytics_independence_today_today_autarky_latest"] == "99 %"
+    assert states["hems_analytics_independence_today_independence_autarky"] == "100 %"
+    assert states["hems_analytics_independence_today_independence_autarky_latest"] == "99 %"
     assert (
-        states["hems_analytics_independence_today_today_selfconsumptionrate_aggregated"]
+        states["hems_analytics_independence_today_independence_selfconsumptionrate"]
         == "100 %"
     )
-    assert states["hems_analytics_independence_today_today_selfconsumptionrate_latest"] == "100 %"
+    assert (
+        states[
+            "hems_analytics_independence_today_independence_selfconsumptionrate_latest"
+        ]
+        == "100 %"
+    )
 
 
 def test_hems_payloads_to_things_adds_analytics_independence_channels_to_kiwigrid_hems():
@@ -778,13 +986,13 @@ def test_hems_payloads_to_things_adds_analytics_independence_channels_to_kiwigri
     thing = things[0]
 
     assert thing["UID"] == "kiwigrid-hems"
-    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["label"] == "KiwiGrid Stats"
     assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_independence"
     assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/independence"
     assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
     assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
     assert "identifier" not in thing["properties"]
-    assert "hems_analytics_independence_today_today_autarky_aggregated" in {
+    assert "hems_analytics_independence_today_independence_autarky" in {
         channel["linkedItems"][0] for channel in thing["channels"]
     }
 
@@ -793,10 +1001,13 @@ def test_hems_payloads_to_items_maps_analytics_consumption_summary():
     items = hems_payloads_to_items(analytics_consumption=ANALYTICS_CONSUMPTION_PAYLOAD)
     states = {item["name"]: item["state"] for item in items}
 
-    assert states["hems_analytics_consumption_today_today_powerconsumed_aggregated"] == "12036 Wh"
-    assert states["hems_analytics_consumption_today_today_powerconsumed_latest"] == "659 W"
-    assert states["hems_analytics_consumption_today_today_powerin_aggregated"] == "404 Wh"
-    assert states["hems_analytics_consumption_today_today_powerin_latest"] == "3 W"
+    assert states["hems_analytics_consumption_today_consumption_powerconsumed"] == "12036 Wh"
+    assert (
+        states["hems_analytics_consumption_today_consumption_powerconsumed_latest"]
+        == "659 W"
+    )
+    assert states["hems_analytics_consumption_today_consumption_powerin"] == "404 Wh"
+    assert states["hems_analytics_consumption_today_consumption_powerin_latest"] == "3 W"
 
 
 def test_hems_payloads_to_things_adds_analytics_consumption_channels_to_kiwigrid_hems():
@@ -808,10 +1019,10 @@ def test_hems_payloads_to_things_adds_analytics_consumption_channels_to_kiwigrid
     thing = things[0]
 
     assert thing["UID"] == "kiwigrid-hems"
-    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["label"] == "KiwiGrid Stats"
     assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_consumption"
     assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/consumption"
-    assert "hems_analytics_consumption_today_today_powerconsumed_aggregated" in {
+    assert "hems_analytics_consumption_today_consumption_powerconsumed" in {
         channel["linkedItems"][0] for channel in thing["channels"]
     }
 
@@ -823,8 +1034,8 @@ def test_hems_payloads_to_items_maps_analytics_finance_summary():
     )
     states = {item["name"]: item["state"] for item in items}
 
-    assert states["hems_analytics_finance_today_today_revenue_aggregated"] == "12.34 EUR"
-    assert states["hems_analytics_finance_today_today_revenue_latest"] == "0.12 EUR"
+    assert states["hems_analytics_finance_today_finance_revenue"] == "12.34 EUR"
+    assert states["hems_analytics_finance_today_finance_revenue_latest"] == "0.12 EUR"
 
 
 def test_hems_payloads_to_items_maps_pv_optimization_consumption_summary():
@@ -837,13 +1048,15 @@ def test_hems_payloads_to_items_maps_pv_optimization_consumption_summary():
 
     assert (
         states[
-            "hems_analytics_pv_optimization_consumption_today_today_pv_optimization_powerconsumed_aggregated"
+            "hems_analytics_pv_optimization_consumption_today_"
+            "pvoptimizationconsumption_pv_optimization_powerconsumed"
         ]
         == "2500 Wh"
     )
     assert (
         states[
-            "hems_analytics_pv_optimization_consumption_today_today_pv_optimization_powerconsumed_latest"
+            "hems_analytics_pv_optimization_consumption_today_"
+            "pvoptimizationconsumption_pv_optimization_powerconsumed_latest"
         ]
         == "180 W"
     )
@@ -858,7 +1071,7 @@ def test_hems_payloads_to_things_uses_api_model_for_pv_optimization_consumption(
 
     assert len(things) == 1
     thing = things[0]
-    assert thing["label"] == "KiwiGrid HEMS"
+    assert thing["label"] == "KiwiGrid Stats"
     assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
     assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
 
@@ -870,9 +1083,18 @@ def test_hems_payloads_to_items_maps_analytics_work_year_payloads():
     )
     states = {item["name"]: item["state"] for item in items}
 
-    assert states["hems_analytics_consumption_year_year_workconsumed_aggregated"] == "4477.421 kWh"
-    assert states["hems_analytics_consumption_year_year_workacin_aggregated"] == "2680.271 kWh"
-    assert states["hems_analytics_production_year_year_workproduced_aggregated"] == "11338.531 kWh"
+    assert states["hems_analytics_consumption_year_consumption_workconsumed"] == "4477.421 kWh"
+    assert (
+        states["hems_analytics_consumption_year_consumption_workacin"]
+        == "2680.271 kWh"
+    )
+    assert states["hems_analytics_production_year_production_workproduced"] == "11338.531 kWh"
+    assert states["hems_analytics_production_year_production_workout"] == "8405.903 kWh"
+    assert states["hems_analytics_production_year_production_workbuffered"] == "1046.393 kWh"
+    assert (
+        states["hems_analytics_production_year_production_workacout"]
+        == "11338.531 kWh"
+    )
     assert not any(name.endswith("_latest") for name in states)
 
 
@@ -883,10 +1105,50 @@ def test_hems_payloads_to_items_maps_analytics_work_month_payloads():
     )
     states = {item["name"]: item["state"] for item in items}
 
-    assert states["hems_analytics_consumption_month_month_workconsumed_aggregated"] == "83.058 kWh"
-    assert states["hems_analytics_consumption_month_month_workacin_aggregated"] == "46.874 kWh"
-    assert states["hems_analytics_production_month_month_workproduced_aggregated"] == "203.998 kWh"
+    assert states["hems_analytics_consumption_month_consumption_workconsumed"] == "83.058 kWh"
+    assert (
+        states["hems_analytics_consumption_month_consumption_workacin"]
+        == "46.874 kWh"
+    )
+    assert states["hems_analytics_production_month_production_workproduced"] == "203.998 kWh"
+    assert states["hems_analytics_production_month_production_workout"] == "211.607 kWh"
+    assert states["hems_analytics_production_month_production_workbuffered"] == "44.878 kWh"
+    assert (
+        states["hems_analytics_production_month_production_workacout"]
+        == "203.998 kWh"
+    )
     assert not any(name.endswith("_latest") for name in states)
+
+
+def test_hems_payloads_to_items_maps_device_consumption_work_today_payloads():
+    items = hems_payloads_to_items(
+        analytics_consumption_work_today=ANALYTICS_CONSUMPTION_WORK_TODAY_PAYLOAD,
+    )
+    states = {item["name"]: item["state"] for item in items}
+
+    assert (
+        states["hems_analytics_consumption_today_consumption_workconsumed"]
+        == "37.51 kWh"
+    )
+    assert (
+        states[
+            "hems_analytics_consumption_today_consumption_keba_p30_pv_edition_workacin"
+        ]
+        == "25.643 kWh"
+    )
+    assert (
+        states[
+            "hems_analytics_consumption_today_consumption_mystrom_waschmaschine_workin"
+        ]
+        == "0.123 kWh"
+    )
+    assert (
+        states[
+            "hems_analytics_consumption_today_consumption_mystrom_wasserpumpe_workin"
+        ]
+        == "0.456 kWh"
+    )
+    assert "hems_analytics_consumption_today_consumption_workin" not in states
 
 
 def test_hems_payloads_to_things_adds_new_hems_summary_channels():
@@ -914,6 +1176,6 @@ def test_hems_payloads_to_things_groups_synthetic_periods_under_one_device():
         for channel in thing["channels"]
         for linked_item in channel["linkedItems"]
     }
-    assert "hems_analytics_consumption_today_today_powerconsumed_aggregated" in linked_items
-    assert "hems_analytics_consumption_month_month_workconsumed_aggregated" in linked_items
-    assert "hems_analytics_consumption_year_year_workconsumed_aggregated" in linked_items
+    assert "hems_analytics_consumption_today_consumption_powerconsumed" in linked_items
+    assert "hems_analytics_consumption_month_consumption_workconsumed" in linked_items
+    assert "hems_analytics_consumption_year_consumption_workconsumed" in linked_items

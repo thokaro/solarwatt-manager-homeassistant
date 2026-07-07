@@ -32,8 +32,8 @@ from .entity_helpers import (
     iter_item_sensor_names,
 )
 from .naming import (
-    hems_entity_object_id,
     compose_entity_object_id,
+    is_hems_item_name,
     item_entity_name,
 )
 from .sensor_meta import guess_ha_meta
@@ -180,7 +180,7 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         item = (self.coordinator.data or {}).get(item_name)
         channel_metadata = self.coordinator.item_to_channel_metadata.get(item_name)
 
-        self._attr_name = item_entity_name(self._item_name)
+        self._attr_name = self._item_display_name()
         if item and item.raw.get("entityCategory") == "diagnostic":
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -221,8 +221,16 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
             return get_thing_display_name(thing, self._default_device_name)
         return self._default_device_name
 
+    def _item_display_name(self) -> str:
+        item = (self.coordinator.data or {}).get(self._item_name)
+        if item:
+            label = str(item.label or "").strip()
+            if label:
+                return label
+        return item_entity_name(self._item_name)
+
     def _sync_display_name(self) -> bool:
-        new_name = item_entity_name(self._item_name)
+        new_name = self._item_display_name()
         if new_name == self._attr_name:
             return False
         self._attr_name = new_name
@@ -231,8 +239,8 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
     @property
     def suggested_object_id(self) -> str | None:
         device_name = self._build_device_name()
-        if hems_object_id := hems_entity_object_id(device_name, self._item_name):
-            return hems_object_id
+        if is_hems_item_name(self._item_name):
+            return compose_entity_object_id(device_name, self._item_display_name()) or None
         return compose_entity_object_id(
             device_name,
             item_entity_name(self._item_name),

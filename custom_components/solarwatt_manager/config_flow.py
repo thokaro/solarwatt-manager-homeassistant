@@ -600,16 +600,16 @@ def _merge_selection_channels(
 
 
 def _kiwigrid_hems_selection_thing() -> dict[str, Any]:
-    """Return the synthetic KiwiGrid HEMS device used during device selection."""
+    """Return the synthetic KiwiGrid Stats device used during device selection."""
     return {
         "UID": _KIWIGRID_HEMS_THING_UID,
         "uid": _KIWIGRID_HEMS_THING_UID,
-        "label": "KiwiGrid HEMS",
+        "label": "KiwiGrid Stats",
         "thingTypeUID": "kiwigrid-hems:analytics_consumption",
         "thingTypeUid": "kiwigrid-hems:analytics_consumption",
         "statusInfo": {"status": "UNKNOWN", "statusDetail": "NONE"},
         "properties": {
-            "thingTypeTitle": "KiwiGrid HEMS",
+            "thingTypeTitle": "KiwiGrid Stats",
             "thingTypeCategory": "KIWIGRID_HEMS",
             "kiwigridEndpoint": "/v11/analytics/consumption",
             "kiwigridKind": "analytics_consumption",
@@ -623,7 +623,7 @@ def _kiwigrid_hems_selection_thing() -> dict[str, Any]:
                 "label": "HEMS analytics",
                 "itemType": "Number:Energy",
                 "linkedItems": [
-                    "hems_analytics_consumption_today_today_powerconsumed_aggregated"
+                    "hems_analytics_consumption_today_consumption_powerconsumed"
                 ],
                 "properties": {
                     "kiwigrid.endpoint": "/v11/analytics/consumption",
