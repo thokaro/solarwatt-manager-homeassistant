@@ -631,13 +631,21 @@ class SOLARWATTClient:
             ("analytics_consumption_year", hems.async_get_analytics_consumption_year),
             ("analytics_production_year", hems.async_get_analytics_production_year),
             ("analytics_storage", hems.async_get_analytics_storage),
+            ("analytics_storage_month", hems.async_get_analytics_storage_month),
+            ("analytics_storage_year", hems.async_get_analytics_storage_year),
             ("analytics_independence", hems.async_get_analytics_independence),
-            ("analytics_finance", hems.async_get_analytics_finance),
-            ("user_profile", hems.async_get_user_profile),
             (
-                "analytics_pv_optimization_consumption",
-                hems.async_get_analytics_pv_optimization_consumption,
+                "analytics_independence_month",
+                hems.async_get_analytics_independence_month,
             ),
+            (
+                "analytics_independence_year",
+                hems.async_get_analytics_independence_year,
+            ),
+            ("analytics_finance", hems.async_get_analytics_finance),
+            ("analytics_finance_month", hems.async_get_analytics_finance_month),
+            ("analytics_finance_year", hems.async_get_analytics_finance_year),
+            ("user_profile", hems.async_get_user_profile),
         )
         if include_energy_flow:
             getters = getters[:6] + (

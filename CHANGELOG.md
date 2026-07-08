@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.7.2
+
+### Changes
+- KiwiGrid analytics: added month and year values for storage, independence, and finance.
+- KiwiGrid analytics: removed the redundant PV optimization consumption endpoint.
+- KiwiGrid analytics: removed duplicate physical-device analytics sensors and cleans up previously registered duplicates.
+- Refactored KiwiGrid analytics endpoint and period mapping to share one central implementation.
+
 ## 2026.7.1
 
 ### Changes
@@ -12,7 +20,7 @@
 ## 2026.7.0
 
 ### Changes
-- Added optional KiwiGrid HEMS / SOLARWATT Manager Portal support for HEMS devices, analytics, finance values, PV optimization consumption, live flow values, and supported optimization or switching controls.
+- Added optional KiwiGrid HEMS / SOLARWATT Manager Portal support for HEMS devices, analytics, finance values, live flow values, and supported optimization or switching controls.
 - Added separate HEMS polling and setup fields so local Manager access, HEMS Portal access, or both can be configured. The default HEMS poll interval is now 60 seconds.
 - Improved setup device selection by merging local and HEMS device variants where possible and preselecting `Energy Overview`.
 - Added month and year energy totals from HEMS analytics.

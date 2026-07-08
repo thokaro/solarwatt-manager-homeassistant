@@ -56,7 +56,7 @@ def _compiled_static_normalization_rules() -> list[tuple[re.Pattern[str], str]]:
 
 
 _HEMS_ITEM_RE = re.compile(
-    r"^hems_(?P<kind>battery|pv_plant|evstation|plug|device|flow|analytics_consumption|analytics_production|analytics_storage|analytics_independence|analytics_finance|analytics_pv_optimization_consumption)_"
+    r"^hems_(?P<kind>battery|pv_plant|evstation|plug|device|flow|analytics_consumption|analytics_production|analytics_storage|analytics_independence|analytics_finance)_"
     r"(?:(?P<id>[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}|v11)_)?"
     r"(?P<suffix>.+)$",
     re.IGNORECASE,
@@ -67,7 +67,6 @@ _HEMS_ANALYTICS_KINDS = {
     "analytics_storage",
     "analytics_independence",
     "analytics_finance",
-    "analytics_pv_optimization_consumption",
 }
 
 

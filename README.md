@@ -19,7 +19,7 @@ Note for users with **vision** components: If you need write/control functions s
 * Local polling of SOLARWATT Manager data
 * Fallback for newer firmware that exposes `/rest/hems-configurator/things` and `/rest/hems-configurator/energy-overview` instead of the previous `/rest/things` and `/rest/items` endpoints
 * Optional KiwiGrid HEMS polling using KiwiGrid/SOLARWATT Manager Portal login credentials
-* KiwiGrid HEMS devices, diagnostics, today values, month totals, year totals, finance values, and PV optimization consumption
+* KiwiGrid HEMS devices, diagnostics, today values, month totals, year totals, and finance values
 * Separate `KiwiGrid Flow` device for live SOLARWATT Manager Portal energy-flow values
 * KiwiGrid HEMS controls for supported devices:
   * `select` entity for optimization mode (`Not optimized`, `PV optimized`, `Departure time`)
@@ -102,13 +102,13 @@ You can adjust these in the integration options:
 
 ## ☁️ KiwiGrid HEMS
 
-KiwiGrid HEMS support is optional and uses the same SOLARWATT/KiwiGrid web login flow as the SOLARWATT Manager Portal. You only need username/email address and password; copied Bearer tokens are not required.
+KiwiGrid HEMS support is optional and uses the same SOLARWATT/KiwiGrid web login flow as the SOLARWATT Manager Portal. You only need username/email address and password.
 
 When enabled, the integration adds supported HEMS data from the SOLARWATT Manager Portal:
 
 * HEMS devices such as batteries, PV systems, EV chargers, plugs, meters, and inverters
 * current device state, diagnostic metadata, and supported optimization settings
-* today values for consumption, production, storage, independence, finance, and PV optimization consumption
+* today values for consumption, production, storage, independence, and finance
 * month and year energy totals for consumption and production
 * live flow values under the separate `KiwiGrid Flow` device
 * controls for supported EV charger and plug optimization or switching
@@ -252,21 +252,22 @@ This keeps entities readable while making `entity_id`s match the device names co
 │  └─ solarwatt_manager/
 │     ├─ __init__.py         # integration setup
 │     ├─ button.py           # diagnostics refresh button
-│     ├─ hems_client.py      # KiwiGrid HEMS login, endpoints, and payload mapping
+│     ├─ client.py           # local Manager API and KiwiGrid HEMS wrapper
 │     ├─ config_flow.py      # UI config flow
 │     ├─ const.py            # constants & defaults
-│     ├─ client.py           # HTTP/session client for the manager API
 │     ├─ coordinator.py      # polling orchestration + thing discovery
 │     ├─ diagnostics.py      # diagnostics output
-│     ├─ entity_helpers.py   # current entity/device helper utilities
-│     ├─ registry_cleanup.py  # ongoing registry cleanup for current layouts
-│     ├─ registry_migrations.py # upgrade paths for older entity/device layouts
-│     ├─ sensor_meta.py      # Home Assistant sensor metadata heuristics
-│     ├─ state_parser.py     # item state parsing + normalization
+│     ├─ entity_helpers.py   # entity/device helper utilities
+│     ├─ hems_api.py         # local HEMS configurator mapping helpers
+│     ├─ hems_client.py      # KiwiGrid HEMS login, endpoints, and payload mapping
 │     ├─ manifest.json       # integration metadata
 │     ├─ naming.py           # name normalization/formatting
-│     ├─ sensor.py           # entity definitions
+│     ├─ registry_cleanup.py # ongoing registry cleanup for current layouts
+│     ├─ registry_migrations.py # upgrade paths for older entity/device layouts
 │     ├─ select.py           # KiwiGrid HEMS optimization mode select entities
+│     ├─ sensor.py           # sensor entity definitions
+│     ├─ sensor_meta.py      # Home Assistant sensor metadata heuristics
+│     ├─ state_parser.py     # item state parsing + normalization
 │     ├─ switch.py           # KiwiGrid HEMS switch entities
 │     ├─ brand/
 │     │  ├─ icon.png
@@ -282,9 +283,11 @@ This keeps entities readable while making `entity_id`s match the device names co
 ├─ docs/
 │  ├─ evcc-guide-german.md   # evcc setup guide
 │  └─ kiwigrid-items.md      # item reference for KiwiGrid systems
+├─ tests/                    # pytest coverage for mapping, naming, parsing, translations
 ├─ CHANGELOG.md              # release history
 ├─ hacs.json                 # HACS metadata
 ├─ LICENSE
+├─ pyproject.toml            # package metadata and pytest configuration
 └─ README.md
 ```
 

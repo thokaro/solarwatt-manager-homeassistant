@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -32,6 +33,14 @@ from .registry_cleanup import cleanup_empty_channel_thing_diagnostics
 
 _LOGGER = logging.getLogger(__name__)
 _PENDING_REGISTRY_MIGRATIONS = f"{DOMAIN}_pending_registry_migrations"
+_LEGACY_HEMS_ANALYTICS_PHYSICAL_ITEM_RE = re.compile(
+    r"^hems_(?:battery|pv_plant|evstation|plug)_"
+    r"[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}_"
+    r"(?:today|month|year)_"
+    r"(?:(?:consumption|production|storage|independence|finance)_)?"
+    r"(?:power|work)[a-z0-9_]*$",
+    re.IGNORECASE,
+)
 
 
 def finalize_registry_migrations(
@@ -58,6 +67,7 @@ def finalize_registry_migrations(
         entry,
         things,
     )
+    cleanup_legacy_hems_analytics_physical_entities(hass, entry, items)
     cleanup_legacy_kiwigrid_flow_entities(hass, entry)
     cleanup_legacy_device_registry_entries(hass, entry)
 
@@ -155,6 +165,34 @@ def cleanup_legacy_kiwigrid_flow_entities(
     if removed:
         _LOGGER.info(
             "Removed %s obsolete derived KiwiGrid Flow entities for entry %s",
+            removed,
+            entry.entry_id,
+        )
+
+
+def cleanup_legacy_hems_analytics_physical_entities(
+    hass: HomeAssistant,
+    entry: SOLARWATTConfigEntry,
+    items: Mapping[str, Any] | None,
+) -> None:
+    """Remove obsolete physical-device analytics items without a category token."""
+    current_items = set(items or {})
+    ent_reg = er.async_get(hass)
+    removed = 0
+    for registry_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if registry_entry.platform != DOMAIN or not registry_entry.unique_id:
+            continue
+        item_name = _item_name_from_unique_id(entry, registry_entry.unique_id)
+        if not item_name or item_name in current_items:
+            continue
+        if not _LEGACY_HEMS_ANALYTICS_PHYSICAL_ITEM_RE.match(item_name):
+            continue
+        ent_reg.async_remove(registry_entry.entity_id)
+        removed += 1
+
+    if removed:
+        _LOGGER.info(
+            "Removed %s obsolete physical HEMS analytics entities for entry %s",
             removed,
             entry.entry_id,
         )

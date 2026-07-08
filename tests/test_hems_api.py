@@ -193,7 +193,7 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
             "production",
             "feedIn",
             "hems_flow_batteryPower",
-            "hems_plug_15922327_c7d9_4fb9_ba65_9073bb627993_today_workin",
+            "hems_plug_15922327_c7d9_4fb9_ba65_9073bb627993_state_device",
             "kiwigrid_location_standard_location_id_harmonized_power_consumed",
             "foxesshybrid_battery_serial_harmonized_power_out",
             "unknown_prefix_power",
@@ -210,7 +210,7 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
         "production": "energy-overview:standard:energy-overview",
         "feedIn": "energy-overview:standard:energy-overview",
         "hems_flow_batteryPower": KIWIGRID_FLOW_THING_UID,
-        "hems_plug_15922327_c7d9_4fb9_ba65_9073bb627993_today_workin": (
+        "hems_plug_15922327_c7d9_4fb9_ba65_9073bb627993_state_device": (
             "15922327-c7d9-4fb9-ba65-9073bb627993"
         ),
         "kiwigrid_location_standard_location_id_harmonized_power_consumed": (

@@ -8,7 +8,7 @@ import logging
 import re
 from secrets import token_urlsafe
 from typing import Any
-from urllib.parse import quote, urlencode, urljoin, urlparse
+from urllib.parse import quote, urlencode, urljoin
 
 from aiohttp import ClientError, ClientResponseError, ClientSession
 
@@ -32,10 +32,69 @@ ENDPOINT_ANALYTICS_PRODUCTION = "/analytics/production"
 ENDPOINT_ANALYTICS_STORAGE = "/analytics/storage"
 ENDPOINT_ANALYTICS_INDEPENDENCE = "/analytics/independence"
 ENDPOINT_ANALYTICS_FINANCE = "/analytics/finance"
-ENDPOINT_ANALYTICS_PV_OPTIMIZATION_CONSUMPTION = "/analytics/pv-optimization-consumption"
 ENDPOINT_USER_PROFILE = "/user/profile"
 
 _LOGGER = logging.getLogger(__name__)
+
+ANALYTICS_KIND_CONFIG: dict[str, dict[str, Any]] = {
+    "analytics_consumption": {
+        "endpoint": ENDPOINT_ANALYTICS_CONSUMPTION,
+        "label": "Consumption",
+        "today_query": {"type": "POWER"},
+        "period_query": {"type": "WORK"},
+    },
+    "analytics_production": {
+        "endpoint": ENDPOINT_ANALYTICS_PRODUCTION,
+        "label": "Production",
+        "today_query": {"type": "POWER", "isDetailed": "true"},
+        "period_query": {"type": "WORK", "isDetailed": "true"},
+    },
+    "analytics_storage": {
+        "endpoint": ENDPOINT_ANALYTICS_STORAGE,
+        "label": "Storage",
+        "today_query": {"type": "POWER"},
+        "period_query": {"type": "WORK"},
+    },
+    "analytics_independence": {
+        "endpoint": ENDPOINT_ANALYTICS_INDEPENDENCE,
+        "label": "Independence",
+    },
+    "analytics_finance": {
+        "endpoint": ENDPOINT_ANALYTICS_FINANCE,
+        "label": "Finance",
+        "uses_currency": True,
+    },
+}
+
+ANALYTICS_PAYLOAD_PERIODS: tuple[tuple[str, str, str], ...] = (
+    ("analytics_consumption", "analytics_consumption", "today"),
+    ("analytics_production", "analytics_production", "today"),
+    ("analytics_consumption_work_today", "analytics_consumption", "work_today"),
+    ("analytics_consumption_month", "analytics_consumption", "month"),
+    ("analytics_production_month", "analytics_production", "month"),
+    ("analytics_consumption_year", "analytics_consumption", "year"),
+    ("analytics_production_year", "analytics_production", "year"),
+    ("analytics_storage", "analytics_storage", "today"),
+    ("analytics_storage_month", "analytics_storage", "month"),
+    ("analytics_storage_year", "analytics_storage", "year"),
+    ("analytics_independence", "analytics_independence", "today"),
+    ("analytics_independence_month", "analytics_independence", "month"),
+    ("analytics_independence_year", "analytics_independence", "year"),
+    ("analytics_finance", "analytics_finance", "today"),
+    ("analytics_finance_month", "analytics_finance", "month"),
+    ("analytics_finance_year", "analytics_finance", "year"),
+)
+
+
+def _analytics_kind_config(kind: str) -> dict[str, Any]:
+    config = ANALYTICS_KIND_CONFIG.get(kind)
+    if config is None:
+        raise KiwiGridHEMSProtocolError(f"Unsupported analytics kind: {kind}")
+    return config
+
+
+def _analytics_where_period(period_id: str) -> str:
+    return "work today" if period_id == "work_today" else period_id
 
 
 def _normalize_access_token(access_token: str) -> str:
@@ -538,23 +597,11 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch today's consumption analytics from /v11/analytics/consumption."""
-        start, end = _daily_analytics_time_window(from_time=from_time, to_time=to_time)
-        query = urlencode(
-            {
-                "from": _format_analytics_time(start),
-                "to": _format_analytics_time(end),
-                "type": "POWER",
-            }
+        return await self._async_get_analytics_timeseries(
+            "analytics_consumption",
+            from_time=from_time,
+            to_time=to_time,
         )
-        payload = await self._async_get_json(
-            f"{ENDPOINT_ANALYTICS_CONSUMPTION}?{query}",
-            where="GET /v11/analytics/consumption",
-        )
-        if not isinstance(payload, dict):
-            raise KiwiGridHEMSProtocolError(
-                "GET /v11/analytics/consumption response is not an object"
-            )
-        return payload
 
     async def async_get_analytics_consumption_year(
         self,
@@ -563,11 +610,11 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch year-to-date work consumption analytics."""
-        return await self._async_get_analytics_work_summary(
-            ENDPOINT_ANALYTICS_CONSUMPTION,
-            where="GET /v11/analytics/consumption year",
+        return await self._async_get_analytics_timeseries(
+            "analytics_consumption",
             from_time=from_time,
             to_time=to_time,
+            period="year",
         )
 
     async def async_get_analytics_consumption_work_today(
@@ -577,12 +624,12 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch today's work consumption analytics."""
-        return await self._async_get_analytics_work_summary(
-            ENDPOINT_ANALYTICS_CONSUMPTION,
-            where="GET /v11/analytics/consumption work today",
+        return await self._async_get_analytics_timeseries(
+            "analytics_consumption",
             from_time=from_time,
             to_time=to_time,
             period="today",
+            period_id="work_today",
         )
 
     async def async_get_analytics_consumption_month(
@@ -592,9 +639,8 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch month-to-date work consumption analytics."""
-        return await self._async_get_analytics_work_summary(
-            ENDPOINT_ANALYTICS_CONSUMPTION,
-            where="GET /v11/analytics/consumption month",
+        return await self._async_get_analytics_timeseries(
+            "analytics_consumption",
             from_time=from_time,
             to_time=to_time,
             period="month",
@@ -608,24 +654,11 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch today's production analytics from /v11/analytics/production."""
-        start, end = _daily_analytics_time_window(from_time=from_time, to_time=to_time)
-        query = urlencode(
-            {
-                "from": _format_analytics_time(start),
-                "to": _format_analytics_time(end),
-                "type": "POWER",
-                "isDetailed": "true",
-            }
+        return await self._async_get_analytics_timeseries(
+            "analytics_production",
+            from_time=from_time,
+            to_time=to_time,
         )
-        payload = await self._async_get_json(
-            f"{ENDPOINT_ANALYTICS_PRODUCTION}?{query}",
-            where="GET /v11/analytics/production",
-        )
-        if not isinstance(payload, dict):
-            raise KiwiGridHEMSProtocolError(
-                "GET /v11/analytics/production response is not an object"
-            )
-        return payload
 
     async def async_get_analytics_production_year(
         self,
@@ -634,12 +667,11 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch year-to-date work production analytics."""
-        return await self._async_get_analytics_work_summary(
-            ENDPOINT_ANALYTICS_PRODUCTION,
-            where="GET /v11/analytics/production year",
+        return await self._async_get_analytics_timeseries(
+            "analytics_production",
             from_time=from_time,
             to_time=to_time,
-            extra_query={"isDetailed": "true"},
+            period="year",
         )
 
     async def async_get_analytics_production_month(
@@ -649,13 +681,11 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch month-to-date work production analytics."""
-        return await self._async_get_analytics_work_summary(
-            ENDPOINT_ANALYTICS_PRODUCTION,
-            where="GET /v11/analytics/production month",
+        return await self._async_get_analytics_timeseries(
+            "analytics_production",
             from_time=from_time,
             to_time=to_time,
             period="month",
-            extra_query={"isDetailed": "true"},
         )
 
     # /v11/analytics/storage ----------------------------------------------
@@ -666,23 +696,39 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch today's storage analytics from /v11/analytics/storage."""
-        start, end = _daily_analytics_time_window(from_time=from_time, to_time=to_time)
-        query = urlencode(
-            {
-                "from": _format_analytics_time(start),
-                "to": _format_analytics_time(end),
-                "type": "POWER",
-            }
+        return await self._async_get_analytics_timeseries(
+            "analytics_storage",
+            from_time=from_time,
+            to_time=to_time,
         )
-        payload = await self._async_get_json(
-            f"{ENDPOINT_ANALYTICS_STORAGE}?{query}",
-            where="GET /v11/analytics/storage",
+
+    async def async_get_analytics_storage_year(
+        self,
+        *,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Fetch year-to-date work storage analytics."""
+        return await self._async_get_analytics_timeseries(
+            "analytics_storage",
+            from_time=from_time,
+            to_time=to_time,
+            period="year",
         )
-        if not isinstance(payload, dict):
-            raise KiwiGridHEMSProtocolError(
-                "GET /v11/analytics/storage response is not an object"
-            )
-        return payload
+
+    async def async_get_analytics_storage_month(
+        self,
+        *,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Fetch month-to-date work storage analytics."""
+        return await self._async_get_analytics_timeseries(
+            "analytics_storage",
+            from_time=from_time,
+            to_time=to_time,
+            period="month",
+        )
 
     # /v11/analytics/independence -----------------------------------------
     async def async_get_analytics_independence(
@@ -692,22 +738,39 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch today's independence analytics from /v11/analytics/independence."""
-        start, end = _daily_analytics_time_window(from_time=from_time, to_time=to_time)
-        query = urlencode(
-            {
-                "from": _format_analytics_time(start),
-                "to": _format_analytics_time(end),
-            }
+        return await self._async_get_analytics_timeseries(
+            "analytics_independence",
+            from_time=from_time,
+            to_time=to_time,
         )
-        payload = await self._async_get_json(
-            f"{ENDPOINT_ANALYTICS_INDEPENDENCE}?{query}",
-            where="GET /v11/analytics/independence",
+
+    async def async_get_analytics_independence_year(
+        self,
+        *,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Fetch year-to-date independence analytics."""
+        return await self._async_get_analytics_timeseries(
+            "analytics_independence",
+            from_time=from_time,
+            to_time=to_time,
+            period="year",
         )
-        if not isinstance(payload, dict):
-            raise KiwiGridHEMSProtocolError(
-                "GET /v11/analytics/independence response is not an object"
-            )
-        return payload
+
+    async def async_get_analytics_independence_month(
+        self,
+        *,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Fetch month-to-date independence analytics."""
+        return await self._async_get_analytics_timeseries(
+            "analytics_independence",
+            from_time=from_time,
+            to_time=to_time,
+            period="month",
+        )
 
     # /v11/analytics/finance ----------------------------------------------
     async def async_get_analytics_finance(
@@ -717,48 +780,39 @@ class KiwiGridHEMSClient:
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch today's finance analytics from /v11/analytics/finance."""
-        start, end = _daily_analytics_time_window(from_time=from_time, to_time=to_time)
-        query = urlencode(
-            {
-                "from": _format_analytics_time(start),
-                "to": _format_analytics_time(end),
-            }
+        return await self._async_get_analytics_timeseries(
+            "analytics_finance",
+            from_time=from_time,
+            to_time=to_time,
         )
-        payload = await self._async_get_json(
-            f"{ENDPOINT_ANALYTICS_FINANCE}?{query}",
-            where="GET /v11/analytics/finance",
-        )
-        if not isinstance(payload, dict):
-            raise KiwiGridHEMSProtocolError(
-                "GET /v11/analytics/finance response is not an object"
-            )
-        return payload
 
-    # /v11/analytics/pv-optimization-consumption --------------------------
-    async def async_get_analytics_pv_optimization_consumption(
+    async def async_get_analytics_finance_year(
         self,
         *,
         from_time: datetime | None = None,
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
-        """Fetch today's PV optimization consumption analytics."""
-        start, end = _daily_analytics_time_window(from_time=from_time, to_time=to_time)
-        query = urlencode(
-            {
-                "from": _format_analytics_time(start),
-                "to": _format_analytics_time(end),
-                "resolution": "PT5M",
-            }
+        """Fetch year-to-date finance analytics."""
+        return await self._async_get_analytics_timeseries(
+            "analytics_finance",
+            from_time=from_time,
+            to_time=to_time,
+            period="year",
         )
-        payload = await self._async_get_json(
-            f"{ENDPOINT_ANALYTICS_PV_OPTIMIZATION_CONSUMPTION}?{query}",
-            where="GET /v11/analytics/pv-optimization-consumption",
+
+    async def async_get_analytics_finance_month(
+        self,
+        *,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Fetch month-to-date finance analytics."""
+        return await self._async_get_analytics_timeseries(
+            "analytics_finance",
+            from_time=from_time,
+            to_time=to_time,
+            period="month",
         )
-        if not isinstance(payload, dict):
-            raise KiwiGridHEMSProtocolError(
-                "GET /v11/analytics/pv-optimization-consumption response is not an object"
-            )
-        return payload
 
     async def async_get_user_profile(self) -> dict[str, Any]:
         """Fetch user profile preferences from /v11/user/profile."""
@@ -772,27 +826,39 @@ class KiwiGridHEMSClient:
             )
         return payload
 
-    async def _async_get_analytics_work_summary(
+    async def _async_get_analytics_timeseries(
         self,
-        endpoint: str,
+        kind: str,
         *,
-        where: str,
         from_time: datetime | None = None,
         to_time: datetime | None = None,
-        period: str = "year",
-        extra_query: Mapping[str, str] | None = None,
+        period: str = "today",
+        period_id: str | None = None,
     ) -> dict[str, Any]:
-        start, end = _work_summary_time_window(
-            period=period,
-            from_time=from_time,
-            to_time=to_time,
-        )
+        config = _analytics_kind_config(kind)
+        endpoint = str(config["endpoint"])
+        normalized_period_id = period_id or period
+        if normalized_period_id == "today":
+            start, end = _daily_analytics_time_window(
+                from_time=from_time,
+                to_time=to_time,
+            )
+            query_values = dict(config.get("today_query", {}))
+            where_period = ""
+        else:
+            start, end = _work_summary_time_window(
+                period=period,
+                from_time=from_time,
+                to_time=to_time,
+            )
+            query_values = dict(config.get("period_query", {}))
+            where_period = f" {_analytics_where_period(normalized_period_id)}"
         query_values = {
             "from": _format_analytics_time(start),
             "to": _format_analytics_time(end),
-            "type": "WORK",
+            **query_values,
         }
-        query_values.update(extra_query or {})
+        where = f"GET /v11{endpoint}{where_period}"
         payload = await self._async_get_json(
             f"{endpoint}?{urlencode(query_values)}",
             where=where,
@@ -823,9 +889,14 @@ def hems_payloads_to_items(
     analytics_consumption_year: dict[str, Any] | None = None,
     analytics_production_year: dict[str, Any] | None = None,
     analytics_storage: dict[str, Any] | None = None,
+    analytics_storage_month: dict[str, Any] | None = None,
+    analytics_storage_year: dict[str, Any] | None = None,
     analytics_independence: dict[str, Any] | None = None,
+    analytics_independence_month: dict[str, Any] | None = None,
+    analytics_independence_year: dict[str, Any] | None = None,
     analytics_finance: dict[str, Any] | None = None,
-    analytics_pv_optimization_consumption: dict[str, Any] | None = None,
+    analytics_finance_month: dict[str, Any] | None = None,
+    analytics_finance_year: dict[str, Any] | None = None,
     user_profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Convert KiwiGrid HEMS payloads to OpenHAB-like item records.
@@ -866,30 +937,34 @@ def hems_payloads_to_items(
         )
     )
     items.extend(consumers_endpoint_to_items(home_consumption_consumers or []))
-    items.extend(analytics_consumption_endpoint_to_items(analytics_consumption or {}))
-    items.extend(analytics_production_endpoint_to_items(analytics_production or {}))
-    items.extend(
-        analytics_consumption_work_today_endpoint_to_items(
-            analytics_consumption_work_today or {}
+    analytics_payloads = {
+        "analytics_consumption": analytics_consumption,
+        "analytics_production": analytics_production,
+        "analytics_consumption_work_today": analytics_consumption_work_today,
+        "analytics_consumption_month": analytics_consumption_month,
+        "analytics_production_month": analytics_production_month,
+        "analytics_consumption_year": analytics_consumption_year,
+        "analytics_production_year": analytics_production_year,
+        "analytics_storage": analytics_storage,
+        "analytics_storage_month": analytics_storage_month,
+        "analytics_storage_year": analytics_storage_year,
+        "analytics_independence": analytics_independence,
+        "analytics_independence_month": analytics_independence_month,
+        "analytics_independence_year": analytics_independence_year,
+        "analytics_finance": analytics_finance,
+        "analytics_finance_month": analytics_finance_month,
+        "analytics_finance_year": analytics_finance_year,
+    }
+    for payload_key, kind, period_id in ANALYTICS_PAYLOAD_PERIODS:
+        if payload := analytics_payloads.get(payload_key):
+            items.extend(
+                _analytics_payload_to_items(
+                    kind,
+                    payload,
+                    period_id=period_id,
+                    user_profile=user_profile or {},
+                )
         )
-    )
-    items.extend(analytics_consumption_month_endpoint_to_items(analytics_consumption_month or {}))
-    items.extend(analytics_production_month_endpoint_to_items(analytics_production_month or {}))
-    items.extend(analytics_consumption_year_endpoint_to_items(analytics_consumption_year or {}))
-    items.extend(analytics_production_year_endpoint_to_items(analytics_production_year or {}))
-    items.extend(analytics_storage_endpoint_to_items(analytics_storage or {}))
-    items.extend(analytics_independence_endpoint_to_items(analytics_independence or {}))
-    items.extend(
-        analytics_finance_endpoint_to_items(
-            analytics_finance or {},
-            user_profile=user_profile or {},
-        )
-    )
-    items.extend(
-        analytics_pv_optimization_consumption_endpoint_to_items(
-            analytics_pv_optimization_consumption or {}
-        )
-    )
     return [item for item in items if item is not None]
 
 
@@ -1159,127 +1234,27 @@ def device_endpoint_to_items(
 # /v11/analytics and forecast time series ---------------------------------
 
 
-def analytics_consumption_endpoint_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Map /v11/analytics/consumption payload to daily analytics items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_consumption",
-        category_label="Consumption",
-    )
-
-
-def analytics_production_endpoint_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Map /v11/analytics/production payload to daily production analytics items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_production",
-        category_label="Production",
-    )
-
-
-def analytics_consumption_year_endpoint_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Map /v11/analytics/consumption type=WORK payload to yearly items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_consumption",
-        category_label="Consumption",
-        period_id="year",
-        period_prefix="year",
-        include_latest=False,
-    )
-
-
-def analytics_production_year_endpoint_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Map /v11/analytics/production type=WORK payload to yearly items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_production",
-        category_label="Production",
-        period_id="year",
-        period_prefix="year",
-        include_latest=False,
-    )
-
-
-def analytics_consumption_work_today_endpoint_to_items(
-    payload: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Map /v11/analytics/consumption type=WORK payload to daily energy items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_consumption",
-        category_label="Consumption",
-        period_id="work_today",
-        period_prefix="today",
-        include_latest=False,
-    )
-
-
-def analytics_consumption_month_endpoint_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Map /v11/analytics/consumption type=WORK payload to monthly items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_consumption",
-        category_label="Consumption",
-        period_id="month",
-        period_prefix="month",
-        include_latest=False,
-    )
-
-
-def analytics_production_month_endpoint_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Map /v11/analytics/production type=WORK payload to monthly items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_production",
-        category_label="Production",
-        period_id="month",
-        period_prefix="month",
-        include_latest=False,
-    )
-
-
-def analytics_storage_endpoint_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Map /v11/analytics/storage payload to daily storage analytics items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_storage",
-        category_label="Storage",
-    )
-
-
-def analytics_independence_endpoint_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Map /v11/analytics/independence payload to daily independence analytics items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_independence",
-        category_label="Independence",
-    )
-
-
-def analytics_finance_endpoint_to_items(
+def _analytics_payload_to_items(
+    kind: str,
     payload: dict[str, Any],
     *,
+    period_id: str = "today",
     user_profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Map /v11/analytics/finance payload to daily finance analytics items."""
+    """Map one configured analytics payload to synthetic HEMS items."""
+    config = _analytics_kind_config(kind)
+    period_prefix = "today" if period_id == "work_today" else period_id
     return _analytics_timeseries_endpoint_to_items(
         payload,
-        kind="analytics_finance",
-        category_label="Finance",
-        currency=_profile_currency(user_profile),
-    )
-
-
-def analytics_pv_optimization_consumption_endpoint_to_items(
-    payload: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Map /v11/analytics/pv-optimization-consumption payload to daily items."""
-    return _analytics_timeseries_endpoint_to_items(
-        payload,
-        kind="analytics_pv_optimization_consumption",
-        category_label="PvOptimizationConsumption",
-        property_prefix="pv_optimization",
+        kind=kind,
+        category_label=str(config["label"]),
+        property_prefix=str(config.get("property_prefix") or ""),
+        period_id=period_id,
+        period_prefix=period_prefix,
+        include_latest=period_id == "today",
+        currency=_profile_currency(user_profile)
+        if config.get("uses_currency")
+        else "",
     )
 
 
@@ -1359,15 +1334,6 @@ def _analytics_timeseries_endpoint_to_items(
                 label=label,
             )
         )
-        if physical_item := _analytics_physical_device_item(
-            series,
-            device=device,
-            period_prefix=period_prefix,
-            unit=aggregated_unit,
-            item_type=aggregated_type,
-            scale=aggregated_scale,
-        ):
-            items.append(physical_item)
         latest = _latest_timeseries_value(series.get("values"))
         if include_latest and latest is not None:
             _, latest_value = latest
@@ -1389,43 +1355,6 @@ def _analytics_timeseries_endpoint_to_items(
             )
 
     return items
-
-
-def _analytics_physical_device_item(
-    series: Mapping[str, Any],
-    *,
-    device: Mapping[str, Any] | None,
-    period_prefix: str,
-    unit: str,
-    item_type: str,
-    scale: float,
-) -> dict[str, Any] | None:
-    """Return an additional item for analytics series tied to a physical device."""
-    if device is None:
-        return None
-    device_kind = _analytics_physical_device_kind(device)
-    if device_kind is None:
-        return None
-    series_slug = _slug(str(series.get("name") or series.get("id") or "unknown"))
-    return _number_item(
-        _hems_prefix(device_kind, dict(device)),
-        f"{period_prefix}_{series_slug}",
-        series.get("aggregated"),
-        unit,
-        item_type,
-        scale=scale,
-    )
-
-
-def _analytics_physical_device_kind(device: Mapping[str, Any]) -> str | None:
-    device_type = str(device.get("type") or "").strip().upper()
-    return {
-        "PV": "pv_plant",
-        "PV_PLANT": "pv_plant",
-        "BATTERY": "battery",
-        "EV_STATION": "evstation",
-        "PLUG": "plug",
-    }.get(device_type)
 
 
 def _analytics_item_prefix(kind: str) -> str:
@@ -1553,9 +1482,14 @@ def hems_payloads_to_things(
     analytics_consumption_year: dict[str, Any] | None = None,
     analytics_production_year: dict[str, Any] | None = None,
     analytics_storage: dict[str, Any] | None = None,
+    analytics_storage_month: dict[str, Any] | None = None,
+    analytics_storage_year: dict[str, Any] | None = None,
     analytics_independence: dict[str, Any] | None = None,
+    analytics_independence_month: dict[str, Any] | None = None,
+    analytics_independence_year: dict[str, Any] | None = None,
     analytics_finance: dict[str, Any] | None = None,
-    analytics_pv_optimization_consumption: dict[str, Any] | None = None,
+    analytics_finance_month: dict[str, Any] | None = None,
+    analytics_finance_year: dict[str, Any] | None = None,
     user_profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Convert KiwiGrid HEMS payloads to OpenHAB-like thing records.
@@ -1587,124 +1521,40 @@ def hems_payloads_to_things(
             (device for device in devices if _payload_id(device) not in specific_ids),
         )
     )
-    if analytics_consumption:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_consumption",
-                [_analytics_payload("analytics_consumption", analytics_consumption)],
+    analytics_payloads = {
+        "analytics_consumption": analytics_consumption,
+        "analytics_production": analytics_production,
+        "analytics_consumption_work_today": analytics_consumption_work_today,
+        "analytics_consumption_month": analytics_consumption_month,
+        "analytics_production_month": analytics_production_month,
+        "analytics_consumption_year": analytics_consumption_year,
+        "analytics_production_year": analytics_production_year,
+        "analytics_storage": analytics_storage,
+        "analytics_storage_month": analytics_storage_month,
+        "analytics_storage_year": analytics_storage_year,
+        "analytics_independence": analytics_independence,
+        "analytics_independence_month": analytics_independence_month,
+        "analytics_independence_year": analytics_independence_year,
+        "analytics_finance": analytics_finance,
+        "analytics_finance_month": analytics_finance_month,
+        "analytics_finance_year": analytics_finance_year,
+    }
+    for payload_key, kind, period_id in ANALYTICS_PAYLOAD_PERIODS:
+        if payload := analytics_payloads.get(payload_key):
+            profile = user_profile if _analytics_kind_config(kind).get("uses_currency") else None
+            things.extend(
+                _endpoint_payloads_to_things(
+                    kind,
+                    [
+                        _analytics_payload(
+                            kind,
+                            payload,
+                            period_id=period_id,
+                            user_profile=profile,
+                        )
+                    ],
+                )
             )
-        )
-    if analytics_production:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_production",
-                [_analytics_payload("analytics_production", analytics_production)],
-            )
-        )
-    if analytics_consumption_work_today:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_consumption",
-                [
-                    _analytics_payload(
-                        "analytics_consumption",
-                        analytics_consumption_work_today,
-                        period_id="work_today",
-                    )
-                ],
-            )
-        )
-    if analytics_consumption_month:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_consumption",
-                [
-                    _analytics_payload(
-                        "analytics_consumption",
-                        analytics_consumption_month,
-                        period_id="month",
-                    )
-                ],
-            )
-        )
-    if analytics_production_month:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_production",
-                [
-                    _analytics_payload(
-                        "analytics_production",
-                        analytics_production_month,
-                        period_id="month",
-                    )
-                ],
-            )
-        )
-    if analytics_consumption_year:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_consumption",
-                [
-                    _analytics_payload(
-                        "analytics_consumption",
-                        analytics_consumption_year,
-                        period_id="year",
-                    )
-                ],
-            )
-        )
-    if analytics_production_year:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_production",
-                [
-                    _analytics_payload(
-                        "analytics_production",
-                        analytics_production_year,
-                        period_id="year",
-                    )
-                ],
-            )
-        )
-    if analytics_storage:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_storage",
-                [_analytics_payload("analytics_storage", analytics_storage)],
-            )
-        )
-    if analytics_independence:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_independence",
-                [_analytics_payload("analytics_independence", analytics_independence)],
-            )
-        )
-    if analytics_finance:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_finance",
-                [
-                    _analytics_payload(
-                        "analytics_finance",
-                        analytics_finance,
-                        user_profile=user_profile or {},
-                    )
-                ],
-            )
-        )
-    if analytics_pv_optimization_consumption:
-        things.extend(
-            _endpoint_payloads_to_things(
-                "analytics_pv_optimization_consumption",
-                [
-                    _analytics_payload(
-                        "analytics_pv_optimization_consumption",
-                        analytics_pv_optimization_consumption,
-                    )
-                ],
-            )
-        )
     return things
 
 
@@ -1794,34 +1644,15 @@ def _items_for_hems_payload(kind: str, payload: dict[str, Any]) -> list[dict[str
         return plug_endpoint_to_items([payload])
     if kind == "device":
         return device_endpoint_to_items([payload])
-    if kind == "analytics_consumption":
+    if kind in ANALYTICS_KIND_CONFIG:
         period_id = str(payload.get("id") or "").strip().lower()
-        if period_id == "work_today":
-            return analytics_consumption_work_today_endpoint_to_items(payload)
-        if period_id == "month":
-            return analytics_consumption_month_endpoint_to_items(payload)
-        if period_id == "year":
-            return analytics_consumption_year_endpoint_to_items(payload)
-        return analytics_consumption_endpoint_to_items(payload)
-    if kind == "analytics_production":
-        period_id = str(payload.get("id") or "").strip().lower()
-        if period_id == "month":
-            return analytics_production_month_endpoint_to_items(payload)
-        if period_id == "year":
-            return analytics_production_year_endpoint_to_items(payload)
-        return analytics_production_endpoint_to_items(payload)
-    if kind == "analytics_storage":
-        return analytics_storage_endpoint_to_items(payload)
-    if kind == "analytics_independence":
-        return analytics_independence_endpoint_to_items(payload)
-    if kind == "analytics_finance":
         profile = payload.get("user_profile") if isinstance(payload, Mapping) else None
-        return analytics_finance_endpoint_to_items(
+        return _analytics_payload_to_items(
+            kind,
             payload,
+            period_id=period_id or "today",
             user_profile=profile if isinstance(profile, dict) else None,
         )
-    if kind == "analytics_pv_optimization_consumption":
-        return analytics_pv_optimization_consumption_endpoint_to_items(payload)
     return []
 
 
@@ -1918,7 +1749,6 @@ def _hems_kind_title(kind: str) -> str:
         "analytics_storage": "KiwiGrid Stats",
         "analytics_independence": "KiwiGrid Stats",
         "analytics_finance": "KiwiGrid Stats",
-        "analytics_pv_optimization_consumption": "KiwiGrid Stats",
     }.get(kind, "KiwiGrid HEMS")
 
 
@@ -1934,7 +1764,6 @@ def _hems_kind_endpoint(kind: str) -> str:
         "analytics_storage": "/v11/analytics/storage",
         "analytics_independence": "/v11/analytics/independence",
         "analytics_finance": "/v11/analytics/finance",
-        "analytics_pv_optimization_consumption": "/v11/analytics/pv-optimization-consumption",
     }.get(kind, "/v11")
 
 # Shared item helpers ------------------------------------------------------

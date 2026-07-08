@@ -155,6 +155,100 @@ ANALYTICS_INDEPENDENCE_PAYLOAD = {
     "resolution": "PT1H",
     "time_zone": "Europe/Berlin",
 }
+ANALYTICS_STORAGE_MONTH_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "WorkACIn",
+            "aggregated": 64691,
+            "guid": BATTERY_ID,
+            "id": f"{BATTERY_ID}~WorkACIn",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-08T00:00+02:00": 10596},
+        },
+        {
+            "name": "WorkReleased",
+            "aggregated": 57093,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkReleased",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-08T00:00+02:00": 7267},
+        },
+    ],
+    "resolution": "P1D",
+    "time_zone": "Europe/Berlin",
+    "devices": [
+        {"id": BATTERY_ID, "name": "SOLARWATT Battery vision three", "type": "BATTERY"}
+    ],
+}
+ANALYTICS_STORAGE_YEAR_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "WorkACIn",
+            "aggregated": 1072447,
+            "guid": BATTERY_ID,
+            "id": f"{BATTERY_ID}~WorkACIn",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-01T00:00+02:00": 64691},
+        },
+        {
+            "name": "WorkBuffered",
+            "aggregated": 1064067,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~WorkBuffered",
+            "unit": "WATTHOUR",
+            "values": {"2026-07-01T00:00+02:00": 62551},
+        },
+    ],
+    "resolution": "P1M",
+    "time_zone": "Europe/Berlin",
+    "devices": [
+        {"id": BATTERY_ID, "name": "SOLARWATT Battery vision three", "type": "BATTERY"}
+    ],
+}
+ANALYTICS_INDEPENDENCE_MONTH_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "Autarky",
+            "aggregated": 98,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~Autarky",
+            "unit": "PERCENT",
+            "values": {"2026-07-08T00:00+02:00": 93},
+        },
+        {
+            "name": "SelfConsumptionRate",
+            "aggregated": 49,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~SelfConsumptionRate",
+            "unit": "PERCENT",
+            "values": {"2026-07-08T00:00+02:00": 65},
+        },
+    ],
+    "resolution": "P1D",
+    "time_zone": "Europe/Berlin",
+}
+ANALYTICS_INDEPENDENCE_YEAR_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "Autarky",
+            "aggregated": 68,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~Autarky",
+            "unit": "PERCENT",
+            "values": {"2026-07-01T00:00+02:00": 98},
+        },
+        {
+            "name": "SelfConsumptionRate",
+            "aggregated": 28,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~SelfConsumptionRate",
+            "unit": "PERCENT",
+            "values": {"2026-07-01T00:00+02:00": 49},
+        },
+    ],
+    "resolution": "P1M",
+    "time_zone": "Europe/Berlin",
+}
 ANALYTICS_CONSUMPTION_PAYLOAD = {
     "timeseries": [
         {
@@ -208,19 +302,48 @@ ANALYTICS_FINANCE_PAYLOAD = {
     "resolution": "PT1H",
     "time_zone": "Europe/Berlin",
 }
-ANALYTICS_PV_OPTIMIZATION_CONSUMPTION_PAYLOAD = {
+ANALYTICS_FINANCE_MONTH_PAYLOAD = {
     "timeseries": [
         {
-            "name": "PowerConsumed",
-            "aggregated": 2500,
-            "unit": "WATT",
-            "values": {
-                "2026-07-04T10:00+02:00": 120,
-                "2026-07-04T10:05+02:00": 180,
-            },
-        }
+            "name": "cost",
+            "aggregated": 0.44,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~cost",
+            "unit": "CURRENCY",
+            "values": {"2026-07-01T00:00+02:00": 0.44},
+        },
+        {
+            "name": "profit",
+            "aggregated": 23.31,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~profit",
+            "unit": "CURRENCY",
+            "values": {"2026-07-01T00:00+02:00": 23.31},
+        },
     ],
-    "resolution": "PT5M",
+    "resolution": "P1D",
+    "time_zone": "Europe/Berlin",
+}
+ANALYTICS_FINANCE_YEAR_PAYLOAD = {
+    "timeseries": [
+        {
+            "name": "cost",
+            "aggregated": 11.23,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~cost",
+            "unit": "CURRENCY",
+            "values": {"2026-07-01T00:00+02:00": 0.44},
+        },
+        {
+            "name": "balance",
+            "aggregated": 684.87,
+            "guid": GRID_METER_ID,
+            "id": f"{GRID_METER_ID}~balance",
+            "unit": "CURRENCY",
+            "values": {"2026-07-01T00:00+02:00": 22.87},
+        },
+    ],
+    "resolution": "P1M",
     "time_zone": "Europe/Berlin",
 }
 ANALYTICS_CONSUMPTION_YEAR_PAYLOAD = {
@@ -903,10 +1026,8 @@ def test_hems_payloads_to_items_maps_analytics_production_summary():
     assert states["hems_analytics_production_today_production_powerproduced_latest"] == "381 W"
     assert states["hems_analytics_production_today_production_powerout"] == "61111 Wh"
     assert states["hems_analytics_production_today_production_powerbuffered"] == "3895 Wh"
-    assert (
-        states[f"hems_pv_plant_{PV_ID.replace('-', '_')}_today_poweracout"]
-        == "60237 Wh"
-    )
+    assert f"hems_pv_plant_{PV_ID.replace('-', '_')}_today_production_poweracout" not in states
+    assert f"hems_pv_plant_{PV_ID.replace('-', '_')}_today_poweracout" not in states
 
 
 def test_hems_payloads_to_things_adds_analytics_production_channels_to_kiwigrid_hems():
@@ -940,6 +1061,8 @@ def test_hems_payloads_to_items_maps_analytics_storage_summary():
     assert states["hems_analytics_storage_today_storage_powerreleased"] == "6761 Wh"
     assert states["hems_analytics_storage_today_storage_powerreleased_latest"] == "0 W"
     assert states["hems_analytics_storage_today_storage_stateofcharge_latest"] == "39 %"
+    assert f"hems_battery_{BATTERY_ID.replace('-', '_')}_today_storage_poweracin" not in states
+    assert f"hems_battery_{BATTERY_ID.replace('-', '_')}_today_poweracin" not in states
     assert "hems_analytics_storage_today_storage_stateofcharge" not in states
 
 
@@ -1038,42 +1161,22 @@ def test_hems_payloads_to_items_maps_analytics_finance_summary():
     assert states["hems_analytics_finance_today_finance_revenue_latest"] == "0.12 EUR"
 
 
-def test_hems_payloads_to_items_maps_pv_optimization_consumption_summary():
+def test_hems_payloads_to_items_maps_analytics_finance_month_and_year_payloads():
     items = hems_payloads_to_items(
-        analytics_pv_optimization_consumption=(
-            ANALYTICS_PV_OPTIMIZATION_CONSUMPTION_PAYLOAD
-        )
+        analytics_finance_month=ANALYTICS_FINANCE_MONTH_PAYLOAD,
+        analytics_finance_year=ANALYTICS_FINANCE_YEAR_PAYLOAD,
+        user_profile={"currency": "EUR"},
     )
     states = {item["name"]: item["state"] for item in items}
+    labels = {item["name"]: item["label"] for item in items}
 
-    assert (
-        states[
-            "hems_analytics_pv_optimization_consumption_today_"
-            "pvoptimizationconsumption_pv_optimization_powerconsumed"
-        ]
-        == "2500 Wh"
-    )
-    assert (
-        states[
-            "hems_analytics_pv_optimization_consumption_today_"
-            "pvoptimizationconsumption_pv_optimization_powerconsumed_latest"
-        ]
-        == "180 W"
-    )
-
-
-def test_hems_payloads_to_things_uses_api_model_for_pv_optimization_consumption():
-    things = hems_payloads_to_things(
-        analytics_pv_optimization_consumption=(
-            ANALYTICS_PV_OPTIMIZATION_CONSUMPTION_PAYLOAD
-        )
-    )
-
-    assert len(things) == 1
-    thing = things[0]
-    assert thing["label"] == "KiwiGrid Stats"
-    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
-    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
+    assert states["hems_analytics_finance_month_finance_cost"] == "0.44 EUR"
+    assert labels["hems_analytics_finance_month_finance_cost"] == "Month Finance cost"
+    assert states["hems_analytics_finance_month_finance_profit"] == "23.31 EUR"
+    assert states["hems_analytics_finance_year_finance_cost"] == "11.23 EUR"
+    assert states["hems_analytics_finance_year_finance_balance"] == "684.87 EUR"
+    assert labels["hems_analytics_finance_year_finance_balance"] == "Year Finance balance"
+    assert not any(name.endswith("_latest") for name in states)
 
 
 def test_hems_payloads_to_items_maps_analytics_work_year_payloads():
@@ -1120,6 +1223,62 @@ def test_hems_payloads_to_items_maps_analytics_work_month_payloads():
     assert not any(name.endswith("_latest") for name in states)
 
 
+def test_hems_payloads_to_items_maps_storage_and_independence_month_payloads():
+    items = hems_payloads_to_items(
+        analytics_storage_month=ANALYTICS_STORAGE_MONTH_PAYLOAD,
+        analytics_independence_month=ANALYTICS_INDEPENDENCE_MONTH_PAYLOAD,
+    )
+    states = {item["name"]: item["state"] for item in items}
+    labels = {item["name"]: item["label"] for item in items}
+
+    assert states["hems_analytics_storage_month_storage_workacin"] == "64.691 kWh"
+    assert (
+        labels["hems_analytics_storage_month_storage_workacin"]
+        == "Month Storage WorkACIn"
+    )
+    assert (
+        states["hems_analytics_storage_month_storage_workreleased"]
+        == "57.093 kWh"
+    )
+    assert (
+        states["hems_analytics_independence_month_independence_autarky"]
+        == "98 %"
+    )
+    assert (
+        labels["hems_analytics_independence_month_independence_autarky"]
+        == "Month Independence Autarky"
+    )
+    assert not any(name.endswith("_latest") for name in states)
+
+
+def test_hems_payloads_to_items_maps_storage_and_independence_year_payloads():
+    items = hems_payloads_to_items(
+        analytics_storage_year=ANALYTICS_STORAGE_YEAR_PAYLOAD,
+        analytics_independence_year=ANALYTICS_INDEPENDENCE_YEAR_PAYLOAD,
+    )
+    states = {item["name"]: item["state"] for item in items}
+    labels = {item["name"]: item["label"] for item in items}
+
+    assert states["hems_analytics_storage_year_storage_workacin"] == "1072.447 kWh"
+    assert (
+        labels["hems_analytics_storage_year_storage_workacin"]
+        == "Year Storage WorkACIn"
+    )
+    assert (
+        states["hems_analytics_storage_year_storage_workbuffered"]
+        == "1064.067 kWh"
+    )
+    assert (
+        states["hems_analytics_independence_year_independence_autarky"]
+        == "68 %"
+    )
+    assert (
+        labels["hems_analytics_independence_year_independence_autarky"]
+        == "Year Independence Autarky"
+    )
+    assert not any(name.endswith("_latest") for name in states)
+
+
 def test_hems_payloads_to_items_maps_device_consumption_work_today_payloads():
     items = hems_payloads_to_items(
         analytics_consumption_work_today=ANALYTICS_CONSUMPTION_WORK_TODAY_PAYLOAD,
@@ -1148,6 +1307,8 @@ def test_hems_payloads_to_items_maps_device_consumption_work_today_payloads():
         ]
         == "0.456 kWh"
     )
+    assert f"hems_evstation_{EVSTATION_ID.replace('-', '_')}_today_consumption_workacin" not in states
+    assert f"hems_evstation_{EVSTATION_ID.replace('-', '_')}_today_workacin" not in states
     assert "hems_analytics_consumption_today_consumption_workin" not in states
 
 
@@ -1167,6 +1328,10 @@ def test_hems_payloads_to_things_groups_synthetic_periods_under_one_device():
         analytics_consumption=ANALYTICS_CONSUMPTION_PAYLOAD,
         analytics_consumption_month=ANALYTICS_CONSUMPTION_MONTH_PAYLOAD,
         analytics_consumption_year=ANALYTICS_CONSUMPTION_YEAR_PAYLOAD,
+        analytics_storage_month=ANALYTICS_STORAGE_MONTH_PAYLOAD,
+        analytics_independence_year=ANALYTICS_INDEPENDENCE_YEAR_PAYLOAD,
+        analytics_finance_month=ANALYTICS_FINANCE_MONTH_PAYLOAD,
+        analytics_finance_year=ANALYTICS_FINANCE_YEAR_PAYLOAD,
     )
 
     assert {thing["UID"] for thing in things} == {"kiwigrid-hems"}
@@ -1179,3 +1344,7 @@ def test_hems_payloads_to_things_groups_synthetic_periods_under_one_device():
     assert "hems_analytics_consumption_today_consumption_powerconsumed" in linked_items
     assert "hems_analytics_consumption_month_consumption_workconsumed" in linked_items
     assert "hems_analytics_consumption_year_consumption_workconsumed" in linked_items
+    assert "hems_analytics_storage_month_storage_workacin" in linked_items
+    assert "hems_analytics_independence_year_independence_autarky" in linked_items
+    assert "hems_analytics_finance_month_finance_cost" in linked_items
+    assert "hems_analytics_finance_year_finance_balance" in linked_items
