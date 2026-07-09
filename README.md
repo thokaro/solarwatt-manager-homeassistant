@@ -125,6 +125,77 @@ sensor.kiwigrid_stats_year_consumption_workconsumed
 
 Today values expose totals and the latest live value where available. Month and year values expose energy totals in kWh.
 
+For year-based KiwiGrid energy statistics, the integration also creates derived `Total ...`
+sensors with `state_class: total_increasing`. These sensors keep a persistent rollover
+base, so when the portal year value resets at the start of a new year, the last value
+from the previous year is added to the new year value.
+
+The offset can be calculated automatically from the KiwiGrid year history. The
+service reads completed previous years only and stores their sum as the offset. The
+current year is not read for the offset because it already comes from the live year
+sensor. The Total sensor value is therefore:
+
+```
+current year value + sum of completed previous years
+```
+
+`max_years` limits how many completed previous years are read. For example, in 2026
+`max_years: 3` reads at most 2025, 2024, and 2023, stopping earlier when no value is
+returned. The calculation runs in the background so Home Assistant's service call does
+not time out while historic KiwiGrid values are being fetched. Historic KiwiGrid requests
+may run for up to 5 minutes each. When calculating all sensors, fetched year payloads are
+reused across sensors.
+
+For all registered Total stats sensors, use the all-service:
+
+```yaml
+service: solarwatt_manager.calculate_all_stats_values
+data:
+  max_years: 20
+```
+
+For one or more selected sensors:
+
+```yaml
+service: solarwatt_manager.calculate_stats_value
+target:
+  entity_id: sensor.kiwigrid_stats_total_consumption_workconsumed
+data:
+  max_years: 20
+```
+
+To calibrate a Total sensor to a known meter value, set `value`. This is the desired
+Total sensor value in kWh. The integration stores the required offset internally:
+
+```yaml
+service: solarwatt_manager.set_stats_value
+target:
+  entity_id: sensor.kiwigrid_stats_total_consumption_workconsumed
+data:
+  value: 12345.67
+```
+
+To set the offset itself, use `offset`. This value is added directly to the calculated
+Total value:
+
+```yaml
+service: solarwatt_manager.set_stats_value
+target:
+  entity_id: sensor.kiwigrid_stats_total_consumption_workconsumed
+data:
+  offset: 1000
+```
+
+The current offset is exposed as a sensor attribute.
+
+Use either `value` or `offset`, not both. To remove the calibration:
+
+```yaml
+service: solarwatt_manager.reset_stats_value
+target:
+  entity_id: sensor.kiwigrid_stats_total_consumption_workconsumed
+```
+
 ### KiwiGrid Flow
 
 `KiwiGrid Flow` is a dedicated device for live energy-flow and consumer values from the SOLARWATT Manager Portal. It is independent from the local `Energy Overview` device and is also available when both local Manager access and KiwiGrid HEMS are configured. Example sensors:

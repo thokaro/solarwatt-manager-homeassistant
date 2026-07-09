@@ -153,3 +153,16 @@ def test_compose_entity_object_id_uses_only_device_and_sensor_names():
         "KiwiGrid Stats",
         "Today Consumption myStrom (Wasserpumpe) WorkIn",
     ) == "kiwigrid_stats_today_consumption_mystrom_wasserpumpe_workin"
+
+
+def test_stats_total_object_id_uses_device_name_and_sensor_name():
+    assert compose_entity_object_id(
+        "KiwiGrid Stats",
+        "Total Storage WorkBuffered",
+    ) == "kiwigrid_stats_total_storage_workbuffered"
+
+
+def test_entity_suggested_object_id_uses_sensor_name_without_device_prefix():
+    assert slugify_entity_name(
+        trim_device_tokens("Month Finance saving", "KiwiGrid Stats")
+    ) == "month_finance_saving"

@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
 
 from aiohttp import ClientError, ClientResponseError, ClientSession, CookieJar
@@ -52,6 +53,12 @@ class SolarwattProtocolError(SolarwattError):
 
 
 HEMSEndpointGetter = Callable[[], Awaitable[Any]]
+HEMS_STATS_HISTORY_REQUEST_TIMEOUT = 300
+HEMS_YEAR_ANALYTICS_GETTERS: dict[str, str] = {
+    "analytics_consumption_year": "async_get_analytics_consumption_year",
+    "analytics_production_year": "async_get_analytics_production_year",
+    "analytics_storage_year": "async_get_analytics_storage_year",
+}
 
 
 class SOLARWATTClient:
@@ -543,6 +550,69 @@ class SOLARWATTClient:
             device_names_by_id=hems_device_names_by_id(**name_payloads),
         ) + consumers_endpoint_to_items(consumers)
 
+    async def async_calculate_hems_stats_total_value(
+        self,
+        item_name: str,
+        *,
+        username: str = "",
+        password: str = "",
+        max_years: int = 20,
+        history_cache: dict[tuple[str, int], dict[str, Any]] | None = None,
+    ) -> tuple[float, list[int]]:
+        """Calculate a stats offset by summing available completed historic years."""
+        payload_key = _hems_year_payload_key_for_item(item_name)
+        getter_name = HEMS_YEAR_ANALYTICS_GETTERS.get(payload_key)
+        if getter_name is None:
+            raise SolarwattProtocolError(f"Unsupported KiwiGrid stats item: {item_name}")
+
+        hems = KiwiGridHEMSClient(
+            self._session,
+            username=username,
+            password=password,
+            request_timeout=HEMS_STATS_HISTORY_REQUEST_TIMEOUT,
+        )
+        if not hems.enabled:
+            raise SolarwattAuthError("KiwiGrid HEMS credentials are missing")
+
+        getter = getattr(hems, getter_name)
+        current_year = datetime.now().astimezone().year
+        offset = 0.0
+        years: list[int] = []
+        payload_cache = history_cache if history_cache is not None else {}
+        for year in _completed_previous_years(current_year, max_years):
+            try:
+                cache_key = (payload_key, year)
+                if cache_key in payload_cache:
+                    payload = payload_cache[cache_key]
+                else:
+                    payload = await getter(
+                        from_time=datetime(year, 1, 1, 0, 0, 0),
+                        to_time=datetime(year, 12, 31, 23, 59, 59),
+                    )
+                    payload_cache[cache_key] = payload
+            except KiwiGridHEMSAuthError as err:
+                raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
+            except (KiwiGridHEMSProtocolError, KiwiGridHEMSConnectionError) as err:
+                raise SolarwattConnectionError(
+                    f"KiwiGrid HEMS stats history failed: {err}"
+                ) from err
+            except KiwiGridHEMSError as err:
+                raise SolarwattConnectionError(
+                    f"KiwiGrid HEMS stats history failed: {err}"
+                ) from err
+
+            value = _hems_stats_item_value(payload_key, item_name, payload)
+            if value is None:
+                break
+            offset += value
+            years.append(year)
+
+        if not years:
+            raise SolarwattProtocolError(
+                f"No KiwiGrid stats history values found for {item_name}"
+            )
+        return offset, years
+
     async def async_get_hems_things(
         self,
         *,
@@ -760,3 +830,43 @@ class SOLARWATTClient:
             raise SolarwattConnectionError(f"Connection error fetching things: {e}") from e
         except Exception as e:
             raise SolarwattConnectionError(f"Error fetching things: {e}") from e
+
+
+def _hems_year_payload_key_for_item(item_name: str) -> str:
+    name = str(item_name or "").strip().lower()
+    for payload_key in HEMS_YEAR_ANALYTICS_GETTERS:
+        if name.startswith(f"hems_{payload_key}_"):
+            return payload_key
+    raise SolarwattProtocolError(f"Unsupported KiwiGrid stats item: {item_name}")
+
+
+def _hems_stats_item_value(
+    payload_key: str,
+    item_name: str,
+    payload: dict[str, Any],
+) -> float | None:
+    items = hems_payloads_to_items(**{payload_key: payload})
+    for item in items:
+        if item.get("name") != item_name:
+            continue
+        return _numeric_state_value(item.get("state"))
+    return None
+
+
+def _numeric_state_value(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value or "").strip()
+    if not text or text.upper() == "NULL":
+        return None
+    try:
+        return float(text.split()[0])
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
+def _completed_previous_years(current_year: int, max_years: int) -> range:
+    """Return completed previous years, newest first."""
+    return range(current_year - 1, current_year - max(max_years, 1) - 1, -1)

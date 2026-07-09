@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from html import unescape
@@ -141,6 +142,7 @@ class KiwiGridHEMSClient:
         username: str = "",
         password: str = "",
         api_base: str = KIWIGRID_API_BASE,
+        request_timeout: int = 10,
     ) -> None:
         self._session = session
         self._access_token = _normalize_access_token(access_token)
@@ -148,6 +150,7 @@ class KiwiGridHEMSClient:
         self._username = str(username or "").strip()
         self._password = str(password or "")
         self._api_base = api_base.rstrip("/")
+        self._request_timeout = max(int(request_timeout), 1)
 
     @property
     def enabled(self) -> bool:
@@ -378,7 +381,11 @@ class KiwiGridHEMSClient:
             }
 
             try:
-                async with self._session.get(url, headers=headers, timeout=10) as resp:
+                async with self._session.get(
+                    url,
+                    headers=headers,
+                    timeout=self._request_timeout,
+                ) as resp:
                     if resp.status in (401, 403):
                         if attempt == 0 and (self._refresh_token or (self._username and self._password)):
                             await self.async_refresh_token()
@@ -412,6 +419,10 @@ class KiwiGridHEMSClient:
             except ClientResponseError as err:
                 raise KiwiGridHEMSConnectionError(
                     f"HTTP {err.status} while requesting {where}"
+                ) from err
+            except asyncio.TimeoutError as err:
+                raise KiwiGridHEMSConnectionError(
+                    f"Timeout while requesting {where}"
                 ) from err
             except ClientError as err:
                 raise KiwiGridHEMSConnectionError(

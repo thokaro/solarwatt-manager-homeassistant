@@ -27,6 +27,11 @@ def build_item_sensor_unique_id(entry_id: str, item_name: str) -> str:
     return f"{entry_id}_{clean_item_key(item_name or '')}"
 
 
+def build_stats_total_sensor_unique_id(entry_id: str, item_name: str) -> str:
+    """Return the stable unique_id for a derived stats total sensor."""
+    return f"{build_item_sensor_unique_id(entry_id, item_name)}_total"
+
+
 def build_thing_sensor_unique_id(entry_id: str, thing_uid: str) -> str:
     """Return the stable unique_id for a thing diagnostics sensor."""
     return f"{entry_id}_thing_{thing_uid}"
@@ -108,6 +113,20 @@ def iter_selected_item_sensor_names(
         yield item_name
 
 
+def is_stats_total_source_item_name(item_name: str) -> bool:
+    """Return True for year-based KiwiGrid energy stats with derived totals."""
+    name = str(item_name or "").strip().lower()
+    return (
+        name.startswith(
+            (
+                "hems_analytics_consumption_year_",
+                "hems_analytics_production_year_",
+                "hems_analytics_storage_year_",
+            )
+        )
+    )
+
+
 def collect_new_thing_entities(
     things: Mapping[str, dict[str, Any]] | None,
     selected_thing_uids: set[str] | None,
@@ -144,16 +163,24 @@ def _selected_entity_unique_ids(
     disable_duplicate_item_entities: bool = False,
 ) -> set[str]:
     """Return the expected active entity unique IDs for the selected devices."""
-    expected_unique_ids = {
-        build_item_sensor_unique_id(entry.entry_id, item_name)
-        for item_name in iter_selected_item_sensor_names(
+    selected_item_names = set(
+        iter_selected_item_sensor_names(
             items,
             item_to_thing_uid,
             selected_thing_uids,
             duplicate_item_targets,
             disable_duplicate_item_entities,
         )
+    )
+    expected_unique_ids = {
+        build_item_sensor_unique_id(entry.entry_id, item_name)
+        for item_name in selected_item_names
     }
+    expected_unique_ids.update(
+        build_stats_total_sensor_unique_id(entry.entry_id, item_name)
+        for item_name in selected_item_names
+        if is_stats_total_source_item_name(item_name)
+    )
 
     for thing_uid in (things or {}).keys():
         thing = (things or {}).get(thing_uid)

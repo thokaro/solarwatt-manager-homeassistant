@@ -1,0 +1,62 @@
+calculate_all_stats_values:
+  name: Calculate all stats total values
+  description: Start a background calculation that stores offsets for all derived SOLARWATT stats total sensors by summing completed previous KiwiGrid year values.
+  fields:
+    max_years:
+      name: Maximum previous years
+      description: Maximum number of completed previous years to read. The current year is not included because it already comes from the live year sensor.
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
+
+calculate_stats_value:
+  name: Calculate stats total value
+  description: Start a background calculation that stores the offset for selected derived SOLARWATT stats total sensors by summing completed previous KiwiGrid year values.
+  target:
+    entity:
+      domain: sensor
+      integration: solarwatt_manager
+  fields:
+    max_years:
+      name: Maximum previous years
+      description: Maximum number of completed previous years to read. The current year is not included because it already comes from the live year sensor.
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
+
+set_stats_value:
+  name: Set stats total value
+  description: Set either the desired Total sensor value or the direct offset for a derived SOLARWATT stats total sensor.
+  target:
+    entity:
+      domain: sensor
+      integration: solarwatt_manager
+  fields:
+    value:
+      name: Desired Total value
+      description: Desired Total sensor value in the sensor's native unit. The stored offset is calculated from this value.
+      example: 12345.67
+      selector:
+        number:
+          mode: box
+    offset:
+      name: Offset
+      description: Direct offset added to the calculated Total sensor value.
+      example: 1000
+      selector:
+        number:
+          mode: box
+
+reset_stats_value:
+  name: Reset stats total value
+  description: Remove the stored offset from a derived SOLARWATT stats total sensor.
+  target:
+    entity:
+      domain: sensor
+      integration: solarwatt_manager

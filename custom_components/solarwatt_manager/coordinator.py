@@ -5,7 +5,7 @@ from datetime import timedelta
 import logging
 import re
 import time
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -26,11 +26,15 @@ from .entity_helpers import detach_entityless_thing_devices, ensure_parent_devic
 from .hems_api import item_names_to_thing_uids
 from .state_parser import SOLARWATTItem, parse_state
 
+if TYPE_CHECKING:
+    from .stats_total import StatsTotalStore
+
 
 class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     def __init__(self, hass: HomeAssistant, entry, client: SOLARWATTClient):
         self.entry = entry
         self.client = client
+        self.stats_total_store: StatsTotalStore | None = None
         self.things: dict[str, dict[str, Any]] = {}
         self.item_to_thing_uid: dict[str, str] = {}
         self.item_to_channel_metadata: dict[str, dict[str, str]] = {}
@@ -364,6 +368,25 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     def invalidate_hems_cache(self) -> None:
         """Force the next refresh to fetch KiwiGrid HEMS data immediately."""
         self._hems_last_poll = None
+
+    async def async_calculate_hems_stats_total_value(
+        self,
+        item_name: str,
+        *,
+        max_years: int = 20,
+        history_cache: dict[tuple[str, int], dict[str, Any]] | None = None,
+    ) -> tuple[float, list[int]]:
+        """Calculate a KiwiGrid stats offset from completed historic year values."""
+        hems_enabled, hems_username, hems_password = self._hems_credentials()
+        if not hems_enabled or not (hems_username and hems_password):
+            raise SolarwattError("KiwiGrid HEMS is not configured")
+        return await self.client.async_calculate_hems_stats_total_value(
+            item_name,
+            username=hems_username,
+            password=hems_password,
+            max_years=max_years,
+            history_cache=history_cache,
+        )
 
     def _patch_hems_thing_property(self, device_id: str, key: str, value: str) -> bool:
         """Patch freshly changed HEMS properties into thing metadata."""

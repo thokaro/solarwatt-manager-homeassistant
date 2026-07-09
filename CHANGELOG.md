@@ -3,6 +3,8 @@
 ## 2026.7.2
 
 ### Changes
+- KiwiGrid Stats: added derived year-to-total energy sensors with persistent rollover handling and calibration offset services.
+- KiwiGrid Stats: added services to calculate offsets automatically from completed previous KiwiGrid year values, either for all Total sensors or selected sensors.
 - KiwiGrid analytics: added month and year values for storage, independence, and finance.
 - KiwiGrid analytics: removed the redundant PV optimization consumption endpoint.
 - KiwiGrid analytics: removed duplicate physical-device analytics sensors and cleans up previously registered duplicates.
