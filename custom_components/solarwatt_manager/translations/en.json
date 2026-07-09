@@ -97,5 +97,45 @@
         }
       }
     }
+  },
+  "services": {
+    "calculate_all_stats_values": {
+      "name": "Calculate all stats total values",
+      "description": "Calculate offsets for all SOLARWATT stats total sensors from completed previous KiwiGrid year values.",
+      "fields": {
+        "max_years": {
+          "name": "Maximum previous years",
+          "description": "Maximum number of completed previous years to read. The current year is not included."
+        }
+      }
+    },
+    "calculate_stats_value": {
+      "name": "Calculate stats total value",
+      "description": "Calculate the offset for selected SOLARWATT stats total sensors from completed previous KiwiGrid year values.",
+      "fields": {
+        "max_years": {
+          "name": "Maximum previous years",
+          "description": "Maximum number of completed previous years to read. The current year is not included."
+        }
+      }
+    },
+    "set_stats_value": {
+      "name": "Set stats total value",
+      "description": "Set either the desired Total sensor value or the direct offset.",
+      "fields": {
+        "value": {
+          "name": "Desired Total value",
+          "description": "Desired Total sensor value in the sensor's native unit. The stored offset is calculated from this value."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "Direct offset added to the calculated Total sensor value."
+        }
+      }
+    },
+    "reset_stats_value": {
+      "name": "Reset stats total value",
+      "description": "Remove the stored offset from a SOLARWATT stats total sensor."
+    }
   }
 }

@@ -97,5 +97,45 @@
         }
       }
     }
+  },
+  "services": {
+    "calculate_all_stats_values": {
+      "name": "Calculer toutes les valeurs totales statistiques",
+      "description": "Calcule les offsets de tous les capteurs Total statistiques SOLARWATT à partir des valeurs annuelles KiwiGrid précédentes terminées.",
+      "fields": {
+        "max_years": {
+          "name": "Années précédentes maximales",
+          "description": "Nombre maximal d'années précédentes terminées à lire. L'année en cours n'est pas incluse."
+        }
+      }
+    },
+    "calculate_stats_value": {
+      "name": "Calculer la valeur totale statistique",
+      "description": "Calcule l'offset des capteurs Total statistiques SOLARWATT sélectionnés à partir des valeurs annuelles KiwiGrid précédentes terminées.",
+      "fields": {
+        "max_years": {
+          "name": "Années précédentes maximales",
+          "description": "Nombre maximal d'années précédentes terminées à lire. L'année en cours n'est pas incluse."
+        }
+      }
+    },
+    "set_stats_value": {
+      "name": "Définir la valeur totale statistique",
+      "description": "Définit soit la valeur souhaitée du capteur Total, soit l'offset direct.",
+      "fields": {
+        "value": {
+          "name": "Valeur Total souhaitée",
+          "description": "Valeur souhaitée du capteur Total dans l'unité native du capteur. L'offset enregistré est calculé à partir de cette valeur."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "Offset direct ajouté à la valeur calculée du capteur Total."
+        }
+      }
+    },
+    "reset_stats_value": {
+      "name": "Réinitialiser la valeur totale statistique",
+      "description": "Supprime l'offset enregistré d'un capteur Total statistique SOLARWATT."
+    }
   }
 }

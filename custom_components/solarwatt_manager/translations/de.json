@@ -97,5 +97,45 @@
         }
       }
     }
+  },
+  "services": {
+    "calculate_all_stats_values": {
+      "name": "Alle Statistik-Totalwerte berechnen",
+      "description": "Berechnet Offsets für alle SOLARWATT Statistik-Total-Sensoren aus abgeschlossenen vorherigen KiwiGrid-Jahreswerten.",
+      "fields": {
+        "max_years": {
+          "name": "Maximale Vorjahre",
+          "description": "Maximale Anzahl abgeschlossener Vorjahre, die gelesen werden. Das aktuelle Jahr ist nicht enthalten."
+        }
+      }
+    },
+    "calculate_stats_value": {
+      "name": "Statistik-Totalwert berechnen",
+      "description": "Berechnet den Offset für ausgewählte SOLARWATT Statistik-Total-Sensoren aus abgeschlossenen vorherigen KiwiGrid-Jahreswerten.",
+      "fields": {
+        "max_years": {
+          "name": "Maximale Vorjahre",
+          "description": "Maximale Anzahl abgeschlossener Vorjahre, die gelesen werden. Das aktuelle Jahr ist nicht enthalten."
+        }
+      }
+    },
+    "set_stats_value": {
+      "name": "Statistik-Totalwert setzen",
+      "description": "Setzt entweder den gewünschten Total-Sensorwert oder den direkten Offset.",
+      "fields": {
+        "value": {
+          "name": "Gewünschter Totalwert",
+          "description": "Gewünschter Total-Sensorwert in der nativen Einheit des Sensors. Der gespeicherte Offset wird aus diesem Wert berechnet."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "Direkter Offset, der zum berechneten Total-Sensorwert addiert wird."
+        }
+      }
+    },
+    "reset_stats_value": {
+      "name": "Statistik-Totalwert zurücksetzen",
+      "description": "Entfernt den gespeicherten Offset von einem SOLARWATT Statistik-Total-Sensor."
+    }
   }
 }
