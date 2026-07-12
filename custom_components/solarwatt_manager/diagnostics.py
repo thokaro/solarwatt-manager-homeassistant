@@ -17,6 +17,9 @@ def _redact(obj: Any) -> Any:
         out: dict[str, Any] = {}
         for k, v in obj.items():
             lk = str(k).lower()
+            normalized_key = lk.replace("_", "").replace("-", "")
+            if normalized_key in {"serial", "serialnumber"}:
+                continue
             if any(s in lk for s in ("password", "token", "cookie", "authorization", "session")):
                 out[k] = "REDACTED"
             else:
@@ -138,6 +141,20 @@ def _collect_item_diagnostics(items: dict[str, Any]) -> tuple[dict[str, Any], di
     )
 
 
+def _hems_status_payload(coordinator: Any) -> dict[str, Any]:
+    """Return the latest partial-update status for KiwiGrid HEMS."""
+    last_success = getattr(coordinator, "hems_last_success", None)
+    return {
+        "last_success": (
+            datetime.fromtimestamp(last_success, timezone.utc).isoformat()
+            if isinstance(last_success, (int, float))
+            else None
+        ),
+        "last_error": getattr(coordinator, "hems_last_error", None),
+        "cache_age_seconds": getattr(coordinator, "hems_cache_age_seconds", None),
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: SOLARWATTConfigEntry
 ) -> dict[str, Any]:
@@ -209,6 +226,7 @@ async def async_get_config_entry_diagnostics(
             "numeric_items": item_stats["numeric_items"],
             "last_exception": repr(getattr(coordinator, "last_exception", None)) if getattr(coordinator, "last_exception", None) else None,
         },
+        "kiwigrid_hems": _redact(_hems_status_payload(coordinator)),
         "energy_settings": {
             "energy_delta_kwh": energy_delta_kwh,
             "energy_sensors_last_write": _redact(energy_sensor_writes),

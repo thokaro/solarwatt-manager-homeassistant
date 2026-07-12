@@ -50,6 +50,10 @@ from .client import (
 from .entity_helpers import sync_selected_thing_entities
 from .hems_api import is_energy_overview_thing, is_hems_thing, is_kiwigrid_flow_thing
 from .registry_migrations import mark_pending_registry_migration
+from .thing_matching import (
+    is_local_bridge_thing as _is_bridge_type,
+    merge_selection_things,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _HOST_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -398,205 +402,17 @@ def _merge_selection_things(
     incoming_things: Mapping[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     """Merge duplicate local/HEMS things for one selection checkbox per device."""
-    merged: dict[str, dict[str, Any]] = dict(base_things)
-    for raw_uid, thing in incoming_things.items():
-        uid = _selection_merge_uid(merged, thing, raw_uid)
-        if uid != raw_uid:
-            thing = dict(thing)
-            thing["UID"] = uid
-            thing["uid"] = uid
-        if uid in merged:
-            thing = _merge_thing_records_for_selection(merged[uid], thing)
-        merged[uid] = thing
-    return merged
-
-
-def _selection_merge_uid(
-    existing_things: Mapping[str, dict[str, Any]],
-    incoming: Mapping[str, Any],
-    fallback_uid: str,
-) -> str:
-    """Return an existing UID for a matching incoming thing."""
-    if _is_local_bridge_thing(incoming):
-        return fallback_uid
-
-    incoming_serial = _selection_serial_key(incoming)
-    incoming_label = _selection_label_key(incoming)
-    incoming_name = _selection_name_key(incoming)
-    incoming_type = _selection_type_key(incoming)
-    if not incoming_serial and not incoming_label and not incoming_name:
-        return fallback_uid
-
-    for existing_uid, existing in existing_things.items():
-        if (
-            not isinstance(existing, Mapping)
-            or _is_kiwigrid_hems_thing(existing)
-            or _is_local_bridge_thing(existing)
-        ):
-            continue
-        existing_serial = _selection_serial_key(existing)
-        if incoming_serial and existing_serial and incoming_serial == existing_serial:
-            return existing_uid
-        if incoming_serial and existing_serial and incoming_serial != existing_serial:
-            continue
-        existing_label = _selection_label_key(existing)
-        if incoming_label and existing_label and incoming_label == existing_label:
-            return existing_uid
-        existing_name = _selection_name_key(existing)
-        if (
-            incoming_name
-            and existing_name
-            and incoming_name == existing_name
-            and _selection_types_compatible(incoming_type, _selection_type_key(existing))
-        ):
-            return existing_uid
-    return fallback_uid
-
-
-def _is_kiwigrid_hems_thing(thing: Mapping[str, Any]) -> bool:
-    properties = thing.get("properties")
-    props = properties if isinstance(properties, Mapping) else {}
-    return bool(str(props.get("kiwigridKind") or props.get("kiwigridEndpoint") or "").strip())
+    return merge_selection_things(
+        base_things,
+        incoming_things,
+        is_hems_thing=is_hems_thing,
+        is_bridge_thing=_is_local_bridge_thing,
+    )
 
 
 def _is_local_bridge_thing(thing: Mapping[str, Any]) -> bool:
     """Return True for local HEMS configurator bridge/container things."""
-    if not is_hems_thing(thing):
-        return False
-    thing_type_uid = str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "").lower()
-    return ":bridge" in thing_type_uid or thing_type_uid.endswith(":bridge")
-
-
-def _selection_label_key(thing: Mapping[str, Any]) -> str:
-    return _canonical_selection_key(thing.get("label"))
-
-
-def _selection_name_key(thing: Mapping[str, Any]) -> str:
-    label = str(thing.get("label") or "").strip()
-    if not label:
-        return ""
-    normalized = re.sub(
-        r"\s*\(([^)]*)\)\s*",
-        lambda match: " " if _is_selection_detail_text(match.group(1)) else f" {match.group(1)} ",
-        label,
-    )
-    return _canonical_selection_key(normalized)
-
-
-def _is_selection_detail_text(value: Any) -> bool:
-    text = str(value or "").strip().lower()
-    if not text:
-        return True
-    if re.search(r"\d", text) and len(_canonical_selection_key(text)) >= 6:
-        return True
-    return any(
-        token in text
-        for token in (
-            "battery",
-            "ev_station",
-            "inverter",
-            "kecontact",
-            "manager",
-            "meter",
-            "plug",
-            "pv",
-            "solarwatt",
-            "switch",
-            "wallbox",
-            "wechselrichter",
-        )
-    )
-
-
-def _selection_type_key(thing: Mapping[str, Any]) -> str:
-    properties = thing.get("properties")
-    props = properties if isinstance(properties, Mapping) else {}
-    candidates = (
-        props.get("thingTypeCategory"),
-        props.get("model"),
-        props.get("generatedLabel"),
-        props.get("thingTypeTitle"),
-        thing.get("thingTypeUID"),
-        thing.get("thingTypeUid"),
-    )
-    text = " ".join(str(value or "") for value in candidates).lower()
-    for key, tokens in {
-        "battery": ("battery",),
-        "evstation": ("ev_station", "evstation", "wallbox", "keba", "kecontact"),
-        "inverter": ("inverter", "wechselrichter"),
-        "meter": ("meter", "zaehler", "zähler"),
-        "plug": ("plug", "mystrom", "switch", "steckdose"),
-        "pv": ("pv", "photovoltaic"),
-        "energy_manager": ("energy_manager", "manager"),
-    }.items():
-        if any(token in text for token in tokens):
-            return key
-    return ""
-
-
-def _selection_types_compatible(left: str, right: str) -> bool:
-    return not left or not right or left == right
-
-
-def _selection_serial_key(thing: Mapping[str, Any]) -> str:
-    properties = thing.get("properties")
-    props = properties if isinstance(properties, Mapping) else {}
-    return _canonical_selection_key(
-        props.get("serialNumber")
-        or props.get("serial")
-        or _selection_label_serial(thing)
-    )
-
-
-def _selection_label_serial(thing: Mapping[str, Any]) -> str:
-    label = str(thing.get("label") or "").strip()
-    for detail in re.findall(r"\(([^)]*)\)", label):
-        text = str(detail or "").strip()
-        if re.search(r"\d", text) and len(_canonical_selection_key(text)) >= 6:
-            return text
-    return ""
-
-
-def _canonical_selection_key(value: Any) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
-
-
-def _merge_thing_records_for_selection(
-    existing: dict[str, Any],
-    incoming: dict[str, Any],
-) -> dict[str, Any]:
-    """Merge enough thing metadata for a single useful selection entry."""
-    merged = dict(existing)
-    existing_props = existing.get("properties") if isinstance(existing.get("properties"), dict) else {}
-    incoming_props = incoming.get("properties") if isinstance(incoming.get("properties"), dict) else {}
-    merged["properties"] = {**existing_props, **incoming_props}
-    merged["channels"] = _merge_selection_channels(
-        existing.get("channels") if isinstance(existing.get("channels"), list) else [],
-        incoming.get("channels") if isinstance(incoming.get("channels"), list) else [],
-    )
-    return merged
-
-
-def _merge_selection_channels(
-    existing_channels: list[Any],
-    incoming_channels: list[Any],
-) -> list[Any]:
-    channels = list(existing_channels)
-    seen = {
-        str(channel.get("uid") or channel.get("id") or "")
-        for channel in channels
-        if isinstance(channel, Mapping)
-    }
-    for channel in incoming_channels:
-        if not isinstance(channel, Mapping):
-            continue
-        key = str(channel.get("uid") or channel.get("id") or "")
-        if key and key in seen:
-            continue
-        if key:
-            seen.add(key)
-        channels.append(dict(channel))
-    return channels
+    return is_hems_thing(thing) and _is_bridge_type(thing)
 
 
 def _kiwigrid_hems_selection_thing() -> dict[str, Any]:
@@ -1035,20 +851,6 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
             **dict(self.config_entry.options),
             **dict(user_input or {}),
         }
-        schema: dict[Any, Any] = {
-            vol.Optional(CONF_HOST, default=values.get(CONF_HOST) or ""): str,
-            vol.Optional(
-                CONF_USERNAME,
-                default=values.get(CONF_USERNAME) or "installer",
-            ): str,
-            vol.Optional(CONF_PASSWORD, default=values.get(CONF_PASSWORD) or ""): str,
-            vol.Optional(
-                CONF_REBUILD_ENTITY_IDS,
-                default=False,
-            ): bool,
-            **_build_option_schema_fields(values),
-        }
-
         available_things = self._available_things(values)
         if user_input is not None and self._device_fields:
             selected_things = set(_selected_checkbox_uids(self._device_fields, user_input))
@@ -1063,7 +865,20 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
             available_things,
             selected_things,
         )
-        schema.update(thing_schema)
+        schema: dict[Any, Any] = {
+            **thing_schema,
+            vol.Optional(
+                CONF_REBUILD_ENTITY_IDS,
+                default=False,
+            ): bool,
+            vol.Optional(CONF_HOST, default=values.get(CONF_HOST) or ""): str,
+            vol.Optional(
+                CONF_USERNAME,
+                default=values.get(CONF_USERNAME) or "installer",
+            ): str,
+            vol.Optional(CONF_PASSWORD, default=values.get(CONF_PASSWORD) or ""): str,
+            **_build_option_schema_fields(values),
+        }
 
         return vol.Schema(schema)
 

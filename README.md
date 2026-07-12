@@ -89,14 +89,35 @@ After restarting Home Assistant:
 
 You can adjust these in the integration options:
 
-* **Update interval (seconds)** – polling interval
+* **Update interval (seconds)** – polling interval for local Manager devices and live `KiwiGrid Flow` data
 * **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
 * **Power unavailable threshold (polls)** – applies to power sensors only. If SOLARWATT briefly returns `unavailable`, the last valid power value is kept until the configured consecutive poll limit is reached. Example: `3` means the 1st and 2nd `unavailable` poll keep the previous value, and the sensor only switches to `unavailable` on the 3rd poll. Set to `0` to disable this debounce completely.
 * **Disable duplicate item entities** – disabled by default. When enabled and a thing channel exposes multiple linked items for the same value, the integration keeps the UID-based channel item (for example `keba_wallbox_12345678_channels_state`) active and creates the additional item entities as disabled-by-default entries. They remain visible in Home Assistant and can still be enabled manually.
 * **Enable KiwiGrid HEMS (SOLARWATT Manager Portal)** – disabled by default. When enabled, the integration signs in with the configured KiwiGrid/SOLARWATT Manager Portal username or email address and password and adds supported HEMS data.
-* **KiwiGrid HEMS poll interval (seconds)** – separate HEMS polling interval. The default is `60` seconds so HEMS analytics and metadata are not requested as frequently as local Manager values.
+* **KiwiGrid HEMS poll interval (seconds)** – separate polling interval for physical KiwiGrid devices and `KiwiGrid Stats`. The default is `60` seconds so HEMS analytics and metadata are not requested as frequently as local Manager values.
 * **Device selection** – choose which detected SOLARWATT devices should be created in Home Assistant
 * **Rebuild entity IDs when saving** – rebuild managed `entity_id`s using `device name + sensor name`
+
+---
+
+### Poll interval assignment
+
+Poll intervals are assigned by data source, not by sensor type or device class. A power
+sensor therefore does not automatically use the faster update interval.
+
+| Data source / device | Poll configuration |
+| --- | --- |
+| All local SOLARWATT Manager devices and items | Update interval |
+| Local `Energy Overview` | Update interval |
+| `KiwiGrid Flow`, including live consumer values | Update interval |
+| KiwiGrid batteries, PV plants, EV chargers, plugs, meters, inverters, and other physical HEMS devices | KiwiGrid HEMS poll interval |
+| `KiwiGrid Stats`, including today, month, and year values | KiwiGrid HEMS poll interval |
+
+For example, with a 15-second update interval and a 60-second HEMS interval, local
+production power and `KiwiGrid Flow` power are refreshed every 15 seconds, while a
+KiwiGrid battery power sensor and `KiwiGrid Stats` power sensor are refreshed every
+60 seconds. All entities read the shared coordinator snapshot; individual entities do
+not perform their own HTTP requests or have their own poll interval.
 
 ---
 

@@ -4,6 +4,10 @@
 
 ### Changes
 - Fixed KiwiGrid Stats Total sensors repeatedly adding transiently decreasing year values by limiting rollovers to actual calendar-year changes.
+- Moved device selection to the top of the integration options and clarified which data sources use the local and KiwiGrid HEMS poll intervals.
+- Unified local and KiwiGrid thing matching so duplicate physical devices are merged consistently during discovery and option selection.
+- Added KiwiGrid HEMS update status to diagnostics and extended diagnostic redaction to serial-number fields.
+- Documented the poll interval assignment for local devices, KiwiGrid Flow, physical KiwiGrid devices, and KiwiGrid Stats.
 
 ## 2026.7.3
 

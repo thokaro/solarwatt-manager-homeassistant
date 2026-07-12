@@ -26,14 +26,14 @@
           "host": "Lokaler SOLARWATT Manager Host/IP",
           "username": "Lokaler SOLARWATT Manager Benutzername",
           "password": "Lokales SOLARWATT Manager Passwort",
-          "scan_interval": "Update-Intervall (Sekunden)",
+          "scan_interval": "Update-Intervall: lokale Geräte und KiwiGrid Flow (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
           "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert",
           "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen",
           "kiwigrid_hems_enabled": "KiwiGrid HEMS aktivieren (SOLARWATT Manager Portal)",
           "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager Portal) Benutzername oder E-Mailadresse",
           "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager Portal) Passwort",
-          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS Poll-Intervall (Sekunden)"
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS Intervall: KiwiGrid-Geräte und Stats (Sekunden)"
         }
       },
       "devices": {
@@ -64,14 +64,14 @@
           "username": "Lokaler SOLARWATT Manager Benutzername",
           "password": "Lokales SOLARWATT Manager Passwort",
           "rebuild_entity_ids": "Entitäts-IDs beim Speichern neu aufbauen (Gerätename + Sensorname)",
-          "scan_interval": "Update-Intervall (Sekunden)",
+          "scan_interval": "Update-Intervall: lokale Geräte und KiwiGrid Flow (Sekunden)",
           "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
           "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert",
           "disable_duplicate_item_entities": "Doppelte Item-Entitäten deaktivieren und UID-basierten Kanal-Eintrag bevorzugen",
           "kiwigrid_hems_enabled": "KiwiGrid HEMS aktivieren (SOLARWATT Manager Portal)",
           "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager Portal) Benutzername oder E-Mailadresse",
           "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager Portal) Passwort",
-          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS Poll-Intervall (Sekunden)"
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS Intervall: KiwiGrid-Geräte und Stats (Sekunden)"
         }
       }
     }

@@ -26,14 +26,14 @@
           "host": "IP/Host del SOLARWATT Manager locale",
           "username": "Nome utente del SOLARWATT Manager locale",
           "password": "Password del SOLARWATT Manager locale",
-          "scan_interval": "Intervallo di aggiornamento (secondi)",
+          "scan_interval": "Intervallo di aggiornamento: dispositivi locali e KiwiGrid Flow (secondi)",
           "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
           "power_unavailable_threshold": "Soglia unavailable potenza (poll). Mantieni l'ultimo valore fino all'N-esimo unavailable; 0 = disattiva",
           "disable_duplicate_item_entities": "Disattiva le entità item duplicate e preferisci l'item canale basato sull'UID",
           "kiwigrid_hems_enabled": "Abilita KiwiGrid HEMS (portale SOLARWATT Manager)",
           "kiwigrid_hems_username": "KiwiGrid (portale SOLARWATT Manager) nome utente o indirizzo e-mail",
           "kiwigrid_hems_password": "KiwiGrid (portale SOLARWATT Manager) password",
-          "kiwigrid_hems_scan_interval": "Intervallo di polling KiwiGrid HEMS (secondi)"
+          "kiwigrid_hems_scan_interval": "Intervallo KiwiGrid HEMS: dispositivi KiwiGrid e Stats (secondi)"
         }
       },
       "devices": {
@@ -64,14 +64,14 @@
           "username": "Nome utente del SOLARWATT Manager locale",
           "password": "Password del SOLARWATT Manager locale",
           "rebuild_entity_ids": "Ricostruisci gli ID entità al salvataggio (nome dispositivo + nome sensore)",
-          "scan_interval": "Intervallo di aggiornamento (secondi)",
+          "scan_interval": "Intervallo di aggiornamento: dispositivi locali e KiwiGrid Flow (secondi)",
           "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
           "power_unavailable_threshold": "Soglia unavailable potenza (poll). Mantieni l'ultimo valore fino all'N-esimo unavailable; 0 = disattiva",
           "disable_duplicate_item_entities": "Disattiva le entità item duplicate e preferisci l'item canale basato sull'UID",
           "kiwigrid_hems_enabled": "Abilita KiwiGrid HEMS (portale SOLARWATT Manager)",
           "kiwigrid_hems_username": "KiwiGrid (portale SOLARWATT Manager) nome utente o indirizzo e-mail",
           "kiwigrid_hems_password": "KiwiGrid (portale SOLARWATT Manager) password",
-          "kiwigrid_hems_scan_interval": "Intervallo di polling KiwiGrid HEMS (secondi)"
+          "kiwigrid_hems_scan_interval": "Intervallo KiwiGrid HEMS: dispositivi KiwiGrid e Stats (secondi)"
         }
       }
     }

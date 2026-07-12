@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from datetime import timedelta
 import logging
-import re
 import time
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -25,6 +24,11 @@ from .const import (
 from .entity_helpers import detach_entityless_thing_devices, ensure_parent_devices_registered
 from .hems_api import item_names_to_thing_uids
 from .state_parser import SOLARWATTItem, parse_state
+from .thing_matching import (
+    canonicalize_thing_key as _canonicalize_item_reference,
+    merge_thing_records as _merge_thing_records,
+    resolve_thing_uid as _resolve_thing_uid,
+)
 
 if TYPE_CHECKING:
     from .stats_total import StatsTotalStore
@@ -42,6 +46,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self._discovery_callbacks: set[Callable[[Mapping[str, Any] | None], None]] = set()
         self._hems_items_cache: list[dict[str, Any]] = []
         self._hems_last_poll: float | None = None
+        self.hems_last_success: float | None = None
+        self.hems_last_error: str | None = None
 
         scan = _validated_scan_interval(
             entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
@@ -97,27 +103,35 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         hems_enabled, hems_username, hems_password = self._hems_credentials()
         if hems_enabled:
             if not (hems_username and hems_password):
-                self.logger.warning(
-                    "KiwiGrid HEMS is enabled but no HEMS login credentials are configured"
-                )
+                error = "KiwiGrid HEMS login credentials are not configured"
+                self.logger.warning(error)
+                self.hems_last_error = error
                 self._hems_items_cache = []
                 self._hems_last_poll = None
             else:
-                items.extend(
-                    await self._async_get_hems_items_for_update(
-                        username=hems_username,
-                        password=hems_password,
-                    )
+                hems_items, hems_items_error = await self._async_get_hems_items_for_update(
+                    username=hems_username,
+                    password=hems_password,
                 )
-                items.extend(
+                energy_flow_items, energy_flow_error = (
                     await self._async_get_hems_energy_flow_items_for_update(
                         username=hems_username,
                         password=hems_password,
                     )
                 )
+                items.extend(hems_items)
+                items.extend(energy_flow_items)
+                errors = [error for error in (hems_items_error, energy_flow_error) if error]
+                if errors:
+                    self.hems_last_error = "; ".join(errors)
+                else:
+                    self.hems_last_success = time.time()
+                    self.hems_last_error = None
         else:
             self._hems_items_cache = []
             self._hems_last_poll = None
+            self.hems_last_success = None
+            self.hems_last_error = None
 
         def _to_item(name: str, it: dict[str, Any]) -> SOLARWATTItem:
             pattern = (it.get("stateDescription") or {}).get("pattern")
@@ -143,13 +157,13 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         username: str,
         password: str,
         include_energy_flow: bool = False,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], str | None]:
         now = time.monotonic()
         if (
             self._hems_last_poll is not None
             and now - self._hems_last_poll < self._hems_scan_interval
         ):
-            return _without_kiwigrid_flow_items(self._hems_items_cache)
+            return _without_kiwigrid_flow_items(self._hems_items_cache), None
 
         try:
             hems_items = await self.client.async_get_hems_items(
@@ -165,20 +179,24 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                 self.logger.debug("KiwiGrid HEMS is enabled but returned no items")
         except SolarwattError as err:
             self.logger.warning("Unable to fetch KiwiGrid HEMS data: %s", err)
+            error = f"Unable to fetch KiwiGrid HEMS data: {err}"
         except Exception as err:
             self.logger.warning(
                 "Unexpected error fetching KiwiGrid HEMS data: %s",
                 err,
                 exc_info=True,
             )
-        return _without_kiwigrid_flow_items(self._hems_items_cache)
+            error = f"Unexpected error fetching KiwiGrid HEMS data: {err}"
+        else:
+            error = None
+        return _without_kiwigrid_flow_items(self._hems_items_cache), error
 
     async def _async_get_hems_energy_flow_items_for_update(
         self,
         *,
         username: str,
         password: str,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], str | None]:
         try:
             energy_flow_items = await self.client.async_get_hems_energy_flow_items(
                 username=username,
@@ -189,16 +207,18 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                     "Fetched %s KiwiGrid HEMS energy flow items",
                     len(energy_flow_items),
                 )
-            return list(energy_flow_items or [])
+            return list(energy_flow_items or []), None
         except SolarwattError as err:
             self.logger.warning("Unable to fetch KiwiGrid HEMS energy flow: %s", err)
+            error = f"Unable to fetch KiwiGrid HEMS energy flow: {err}"
         except Exception as err:
             self.logger.warning(
                 "Unexpected error fetching KiwiGrid HEMS energy flow: %s",
                 err,
                 exc_info=True,
             )
-        return []
+            error = f"Unexpected error fetching KiwiGrid HEMS energy flow: {err}"
+        return [], error
 
     async def async_set_hems_device_optimization_mode(
         self,
@@ -369,6 +389,13 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         """Force the next refresh to fetch KiwiGrid HEMS data immediately."""
         self._hems_last_poll = None
 
+    @property
+    def hems_cache_age_seconds(self) -> int | None:
+        """Return the age of the cached HEMS item snapshot."""
+        if self._hems_last_poll is None:
+            return None
+        return max(0, int(time.monotonic() - self._hems_last_poll))
+
     async def async_calculate_hems_stats_total_value(
         self,
         item_name: str,
@@ -410,239 +437,10 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         return False
 
 
-_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
-
-
 def _validated_scan_interval(value: Any, *, default: int) -> int:
     if not isinstance(value, int) or value < MIN_SCAN_INTERVAL:
         return default
     return min(value, MAX_SCAN_INTERVAL)
-
-
-def _canonicalize_item_reference(value: Any) -> str:
-    """Return a case-insensitive identifier used to match channels to linked items."""
-    return _NON_ALNUM_RE.sub("_", str(value or "").strip().lower()).strip("_")
-
-
-def _is_hems_thing(thing: Mapping[str, Any]) -> bool:
-    """Return True if a thing record was generated from the KiwiGrid HEMS API."""
-    properties = thing.get("properties")
-    props = properties if isinstance(properties, Mapping) else {}
-    return bool(str(props.get("kiwigridKind") or props.get("kiwigridEndpoint") or "").strip())
-
-
-def _is_local_bridge_thing(thing: Mapping[str, Any]) -> bool:
-    """Return True for local HEMS configurator bridge/container things."""
-    thing_type_uid = str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "").lower()
-    return ":bridge" in thing_type_uid or thing_type_uid.endswith(":bridge")
-
-
-def _thing_label_key(thing: Mapping[str, Any]) -> str:
-    """Return a normalized label key for matching local and HEMS thing records."""
-    return _canonicalize_item_reference(thing.get("label"))
-
-
-def _thing_name_key(thing: Mapping[str, Any]) -> str:
-    """Return a normalized hardware name without technical parenthesis details."""
-    label = str(thing.get("label") or "").strip()
-    if not label:
-        return ""
-    normalized = re.sub(
-        r"\s*\(([^)]*)\)\s*",
-        lambda match: " " if _is_thing_detail_text(match.group(1)) else f" {match.group(1)} ",
-        label,
-    )
-    return _canonicalize_item_reference(normalized)
-
-
-def _is_thing_detail_text(value: Any) -> bool:
-    text = str(value or "").strip().lower()
-    if not text:
-        return True
-    if re.search(r"\d", text) and len(_canonicalize_item_reference(text)) >= 6:
-        return True
-    return any(
-        token in text
-        for token in (
-            "battery",
-            "ev_station",
-            "inverter",
-            "kecontact",
-            "manager",
-            "meter",
-            "plug",
-            "pv",
-            "solarwatt",
-            "switch",
-            "wallbox",
-            "wechselrichter",
-        )
-    )
-
-
-def _thing_type_key(thing: Mapping[str, Any]) -> str:
-    properties = thing.get("properties")
-    props = properties if isinstance(properties, Mapping) else {}
-    candidates = (
-        props.get("thingTypeCategory"),
-        props.get("model"),
-        props.get("generatedLabel"),
-        props.get("thingTypeTitle"),
-        thing.get("thingTypeUID"),
-        thing.get("thingTypeUid"),
-    )
-    text = " ".join(str(value or "") for value in candidates).lower()
-    for key, tokens in {
-        "battery": ("battery",),
-        "evstation": ("ev_station", "evstation", "wallbox", "keba", "kecontact"),
-        "inverter": ("inverter", "wechselrichter"),
-        "meter": ("meter", "zaehler", "zähler"),
-        "plug": ("plug", "mystrom", "switch", "steckdose"),
-        "pv": ("pv", "photovoltaic"),
-        "energy_manager": ("energy_manager", "manager"),
-    }.items():
-        if any(token in text for token in tokens):
-            return key
-    return ""
-
-
-def _thing_types_compatible(left: str, right: str) -> bool:
-    return not left or not right or left == right
-
-
-def _thing_serial_key(thing: Mapping[str, Any]) -> str:
-    """Return a normalized serial-number key for matching local and HEMS records."""
-    properties = thing.get("properties")
-    props = properties if isinstance(properties, Mapping) else {}
-    return _canonicalize_item_reference(
-        props.get("serialNumber")
-        or props.get("serial")
-        or _thing_label_serial(thing)
-    )
-
-
-def _thing_label_serial(thing: Mapping[str, Any]) -> str:
-    """Return a likely serial number from a parenthesized label detail."""
-    label = str(thing.get("label") or "").strip()
-    for detail in re.findall(r"\(([^)]*)\)", label):
-        text = str(detail or "").strip()
-        if re.search(r"\d", text) and len(_canonicalize_item_reference(text)) >= 6:
-            return text
-    return ""
-
-
-def _resolve_thing_uid(
-    existing_things: Mapping[str, dict[str, Any]],
-    incoming: Mapping[str, Any],
-    fallback_uid: str,
-) -> str:
-    """Return the UID that should own an incoming thing record.
-
-    Local HEMS and KiwiGrid HEMS payloads often describe the same hardware but
-    use different identifiers: the local API may expose an OpenHAB-style UID
-    such as ``foxesshybrid:battery`` while the HEMS API exposes the KiwiGrid
-    UUID. Home Assistant only merges devices when the resulting DeviceInfo
-    identifier is identical, so attach hems records to an already-known local
-    thing when we can match them by serial number or display label.
-    """
-    if _is_local_bridge_thing(incoming):
-        return fallback_uid
-
-    incoming_serial = _thing_serial_key(incoming)
-    incoming_label = _thing_label_key(incoming)
-    incoming_name = _thing_name_key(incoming)
-    incoming_type = _thing_type_key(incoming)
-    if not incoming_serial and not incoming_label and not incoming_name:
-        return fallback_uid
-
-    for existing_uid, existing in existing_things.items():
-        if (
-            not isinstance(existing, Mapping)
-            or _is_hems_thing(existing)
-            or _is_local_bridge_thing(existing)
-        ):
-            continue
-
-        existing_serial = _thing_serial_key(existing)
-        if incoming_serial and existing_serial and incoming_serial == existing_serial:
-            return existing_uid
-        if incoming_serial and existing_serial and incoming_serial != existing_serial:
-            continue
-
-        existing_label = _thing_label_key(existing)
-        if incoming_label and existing_label and incoming_label == existing_label:
-            return existing_uid
-
-        existing_name = _thing_name_key(existing)
-        if (
-            incoming_name
-            and existing_name
-            and incoming_name == existing_name
-            and _thing_types_compatible(incoming_type, _thing_type_key(existing))
-        ):
-            return existing_uid
-
-    return fallback_uid
-
-
-def _merge_thing_records(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
-    """Merge local HEMS and KiwiGrid HEMS thing records with the same UID.
-
-    The local and HEMS APIs use the same UUIDs for the physical devices.
-    Merging keeps both local and HEMS linked items on one Home Assistant
-    device while preserving the richer hems metadata where available.
-    """
-    merged = dict(existing)
-
-    existing_label = str(existing.get("label") or "").strip()
-    incoming_label = str(incoming.get("label") or "").strip()
-    existing_uid = str(existing.get("UID") or existing.get("uid") or "")
-    if incoming_label and (not existing_label or existing_label == existing_uid):
-        merged["label"] = incoming_label
-
-    existing_props = (
-        existing.get("properties") if isinstance(existing.get("properties"), dict) else {}
-    )
-    incoming_props = (
-        incoming.get("properties") if isinstance(incoming.get("properties"), dict) else {}
-    )
-    merged["properties"] = {**existing_props, **incoming_props}
-
-    existing_channels = (
-        existing.get("channels") if isinstance(existing.get("channels"), list) else []
-    )
-    incoming_channels = (
-        incoming.get("channels") if isinstance(incoming.get("channels"), list) else []
-    )
-    seen_channel_uids = {
-        str(channel.get("uid") or channel.get("id") or "")
-        for channel in existing_channels
-        if isinstance(channel, dict)
-    }
-    merged_channels = list(existing_channels)
-    for channel in incoming_channels:
-        if not isinstance(channel, dict):
-            continue
-        channel_key = str(channel.get("uid") or channel.get("id") or "")
-        if channel_key and channel_key in seen_channel_uids:
-            continue
-        if channel_key:
-            seen_channel_uids.add(channel_key)
-        merged_channels.append(channel)
-    merged["channels"] = merged_channels
-
-    existing_status = (
-        existing.get("statusInfo") if isinstance(existing.get("statusInfo"), dict) else {}
-    )
-    incoming_status = (
-        incoming.get("statusInfo") if isinstance(incoming.get("statusInfo"), dict) else {}
-    )
-    if str(existing_status.get("status") or "").upper() in {"", "UNKNOWN", "OFFLINE"}:
-        merged["statusInfo"] = {**existing_status, **incoming_status}
-
-    return merged
-
-
 def _find_kept_item_name(
     channel: dict[str, Any],
     linked_items: list[Any],

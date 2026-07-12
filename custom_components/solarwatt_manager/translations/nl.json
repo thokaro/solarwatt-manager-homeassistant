@@ -26,14 +26,14 @@
           "host": "Lokale SOLARWATT Manager IP/Host",
           "username": "Lokale SOLARWATT Manager gebruikersnaam",
           "password": "Lokale SOLARWATT Manager wachtwoord",
-          "scan_interval": "Update-interval (seconden)",
+          "scan_interval": "Update-interval: lokale apparaten en KiwiGrid Flow (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
           "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen",
           "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren",
           "kiwigrid_hems_enabled": "KiwiGrid HEMS inschakelen (SOLARWATT Manager-portaal)",
           "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
           "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord",
-          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS pollinterval (seconden)"
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS-interval: KiwiGrid-apparaten en Stats (seconden)"
         }
       },
       "devices": {
@@ -64,14 +64,14 @@
           "username": "Lokale SOLARWATT Manager gebruikersnaam",
           "password": "Lokale SOLARWATT Manager wachtwoord",
           "rebuild_entity_ids": "Entiteits-ID's opnieuw opbouwen bij opslaan (apparaatnaam + sensornaam)",
-          "scan_interval": "Update-interval (seconden)",
+          "scan_interval": "Update-interval: lokale apparaten en KiwiGrid Flow (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
           "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen",
           "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren",
           "kiwigrid_hems_enabled": "KiwiGrid HEMS inschakelen (SOLARWATT Manager-portaal)",
           "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
           "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord",
-          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS pollinterval (seconden)"
+          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS-interval: KiwiGrid-apparaten en Stats (seconden)"
         }
       }
     }
