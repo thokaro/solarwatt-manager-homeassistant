@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime
 from typing import Any
 
 
@@ -16,18 +17,34 @@ class StatsTotalState:
         self.offsets = offsets or {}
         self.dirty = False
 
-    def calculated_value(self, source_key: str, year_value: Any) -> float | None:
+    def calculated_value(
+        self,
+        source_key: str,
+        year_value: Any,
+        *,
+        calendar_year: int | None = None,
+    ) -> float | None:
         current = finite_float(year_value)
         if current is None:
             return None
 
+        current_year = calendar_year or datetime.now().astimezone().year
         source = self.sources.setdefault(source_key, {})
         previous = finite_float(source.get("last"))
+        previous_year = finite_float(source.get("year"))
         base = finite_float(source.get("base")) or 0.0
 
-        if previous is not None and current < previous:
+        if (
+            previous is not None
+            and previous_year is not None
+            and current_year > previous_year
+        ):
             base += previous
             source["base"] = base
+
+        if previous_year != current_year:
+            source["year"] = current_year
+            self.dirty = True
 
         if previous != current:
             source["last"] = current
@@ -35,8 +52,18 @@ class StatsTotalState:
 
         return base + current
 
-    def value_with_offset(self, source_key: str, year_value: Any) -> float | None:
-        calculated = self.calculated_value(source_key, year_value)
+    def value_with_offset(
+        self,
+        source_key: str,
+        year_value: Any,
+        *,
+        calendar_year: int | None = None,
+    ) -> float | None:
+        calculated = self.calculated_value(
+            source_key,
+            year_value,
+            calendar_year=calendar_year,
+        )
         if calculated is None:
             return None
         return calculated + self.offset(source_key)
@@ -87,7 +114,7 @@ def float_records(value: Any) -> dict[str, dict[str, float]]:
         if not isinstance(record, dict):
             continue
         parsed: dict[str, float] = {}
-        for record_key in ("base", "last"):
+        for record_key in ("base", "last", "year"):
             if (record_value := finite_float(record.get(record_key))) is not None:
                 parsed[record_key] = record_value
         if parsed:

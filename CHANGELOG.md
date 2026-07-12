@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.7.4
+
+### Changes
+- Fixed KiwiGrid Stats Total sensors repeatedly adding transiently decreasing year values by limiting rollovers to actual calendar-year changes.
+
 ## 2026.7.3
 
 ### Changes
