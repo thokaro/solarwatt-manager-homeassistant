@@ -32,7 +32,7 @@ _ENERGY_OVERVIEW_ITEM_NAMES = (
 )
 _ENERGY_OVERVIEW_ITEM_NAME_SET = set(_ENERGY_OVERVIEW_ITEM_NAMES)
 _HEMS_PHYSICAL_ITEM_RE = re.compile(
-    r"^hems_(?:battery|pv_plant|evstation|plug|device)_"
+    r"^hems_(?:battery|pv_plant|evstation|plug|smart_heater|device)_"
     r"(?P<id>[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12})_",
     re.IGNORECASE,
 )
@@ -144,8 +144,8 @@ def item_names_to_thing_uids(
             item_to_thing_uid[item_name] = KIWIGRID_FLOW_THING_UID
             continue
         if match := _HEMS_PHYSICAL_ITEM_RE.match(item_name):
-            if thing_uid := thing_uids_by_slug.get(match.group("id")):
-                item_to_thing_uid[item_name] = thing_uid
+            if matched_thing_uid := thing_uids_by_slug.get(match.group("id")):
+                item_to_thing_uid[item_name] = matched_thing_uid
                 continue
         for prefix, thing_uid in thing_prefixes:
             if item_name == prefix or item_name.startswith(f"{prefix}_"):

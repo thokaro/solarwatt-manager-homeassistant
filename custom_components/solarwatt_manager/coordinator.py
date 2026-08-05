@@ -6,10 +6,11 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Callable
 
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .client import SOLARWATTClient, SolarwattError
+from .client import SOLARWATTClient, SolarwattAuthError, SolarwattError
 from .const import (
     CONF_KIWIGRID_HEMS_ENABLED,
     CONF_KIWIGRID_HEMS_PASSWORD,
@@ -44,7 +45,14 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.item_to_channel_metadata: dict[str, dict[str, str]] = {}
         self.duplicate_item_targets: dict[str, str] = {}
         self._discovery_callbacks: set[Callable[[Mapping[str, Any] | None], None]] = set()
+        self._local_items_cache: list[dict[str, Any]] = []
+        self.local_last_error: str | None = None
         self._hems_items_cache: list[dict[str, Any]] = []
+        self._hems_energy_flow_cache: list[dict[str, Any]] = []
+        self._hems_items_error: SolarwattError | None = None
+        self._hems_energy_flow_error: SolarwattError | None = None
+        self._hems_last_attempt: float | None = None
+        self._hems_energy_flow_retry_at: float | None = None
         self._hems_last_poll: float | None = None
         self.hems_last_success: float | None = None
         self.hems_last_error: str | None = None
@@ -95,43 +103,31 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     async def _async_update_data(self) -> dict[str, SOLARWATTItem]:
         # Best practice for Home Assistant: do a single poll per update interval and
         # let all entities read from the same snapshot.
-        local_configured = self._local_configured()
-        if local_configured:
-            items = await self.client.async_get_items()
-        else:
-            items = []
+        items: list[dict[str, Any]] = []
+        source_successes = 0
+        source_errors: list[SolarwattError] = []
+
+        if self._local_configured():
+            local_items, local_success, local_errors = (
+                await self._async_update_local_items()
+            )
+            items.extend(local_items)
+            source_successes += int(local_success)
+            source_errors.extend(local_errors)
+
         hems_enabled, hems_username, hems_password = self._hems_credentials()
         if hems_enabled:
-            if not (hems_username and hems_password):
-                error = "KiwiGrid HEMS login credentials are not configured"
-                self.logger.warning(error)
-                self.hems_last_error = error
-                self._hems_items_cache = []
-                self._hems_last_poll = None
-            else:
-                hems_items, hems_items_error = await self._async_get_hems_items_for_update(
-                    username=hems_username,
-                    password=hems_password,
-                )
-                energy_flow_items, energy_flow_error = (
-                    await self._async_get_hems_energy_flow_items_for_update(
-                        username=hems_username,
-                        password=hems_password,
-                    )
-                )
-                items.extend(hems_items)
-                items.extend(energy_flow_items)
-                errors = [error for error in (hems_items_error, energy_flow_error) if error]
-                if errors:
-                    self.hems_last_error = "; ".join(errors)
-                else:
-                    self.hems_last_success = time.time()
-                    self.hems_last_error = None
+            hems_items, hems_success, hems_errors = await self._async_update_hems_items(
+                username=hems_username,
+                password=hems_password,
+            )
+            items.extend(hems_items)
+            source_successes += int(hems_success)
+            source_errors.extend(hems_errors)
         else:
-            self._hems_items_cache = []
-            self._hems_last_poll = None
-            self.hems_last_success = None
-            self.hems_last_error = None
+            self._reset_hems_update_state()
+
+        self._handle_source_errors(items, source_successes, source_errors)
 
         def _to_item(name: str, it: dict[str, Any]) -> SOLARWATTItem:
             pattern = (it.get("stateDescription") or {}).get("pattern")
@@ -151,20 +147,122 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             out_all[n] = _to_item(n, it)
         return out_all
 
+    async def _async_update_local_items(
+        self,
+    ) -> tuple[list[dict[str, Any]], bool, list[SolarwattError]]:
+        """Update the local source and return its latest usable snapshot."""
+        errors: list[SolarwattError] = []
+        try:
+            self._local_items_cache = list(await self.client.async_get_items())
+        except SolarwattAuthError as err:
+            errors.append(err)
+            self._set_local_error(str(err))
+        except SolarwattError as err:
+            errors.append(err)
+            self._set_local_error(str(err))
+        except Exception as err:
+            wrapped_error = SolarwattError(
+                f"Unexpected error fetching local SOLARWATT data: {err}"
+            )
+            errors.append(wrapped_error)
+            self._set_local_error(str(wrapped_error))
+            self.logger.debug(
+                "Unexpected error fetching local SOLARWATT data",
+                exc_info=True,
+            )
+        else:
+            self._set_local_error(None)
+        return list(self._local_items_cache), not errors, errors
+
+    async def _async_update_hems_items(
+        self,
+        *,
+        username: str,
+        password: str,
+    ) -> tuple[list[dict[str, Any]], bool, list[SolarwattError]]:
+        """Update HEMS sources and return their latest usable snapshots."""
+        if not (username and password):
+            auth_error = SolarwattAuthError(
+                "KiwiGrid HEMS login credentials are not configured"
+            )
+            self._set_hems_error(str(auth_error))
+            return [], False, [auth_error]
+
+        hems_items, hems_items_error = await self._async_get_hems_items_for_update(
+            username=username,
+            password=password,
+        )
+        energy_flow_items, energy_flow_error = (
+            await self._async_get_hems_energy_flow_items_for_update(
+                username=username,
+                password=password,
+            )
+        )
+        errors = [
+            error
+            for error in (hems_items_error, energy_flow_error)
+            if error is not None
+        ]
+        if errors:
+            self._set_hems_error("; ".join(str(error) for error in errors))
+        else:
+            self.hems_last_success = time.time()
+            self._set_hems_error(None)
+        return (
+            [*hems_items, *energy_flow_items],
+            hems_items_error is None or energy_flow_error is None,
+            errors,
+        )
+
+    def _reset_hems_update_state(self) -> None:
+        """Clear HEMS cache and availability state when the source is disabled."""
+        self._hems_items_cache = []
+        self._hems_energy_flow_cache = []
+        self._hems_items_error = None
+        self._hems_energy_flow_error = None
+        self._hems_last_attempt = None
+        self._hems_energy_flow_retry_at = None
+        self._hems_last_poll = None
+        self.hems_last_success = None
+        self.hems_last_error = None
+
+    def _handle_source_errors(
+        self,
+        items: list[dict[str, Any]],
+        source_successes: int,
+        source_errors: list[SolarwattError],
+    ) -> None:
+        """Start reauthentication or fail when no configured source is usable."""
+        auth_errors = [
+            error
+            for error in source_errors
+            if isinstance(error, SolarwattAuthError)
+        ]
+        if auth_errors:
+            if source_successes == 0 and not items:
+                raise ConfigEntryAuthFailed(str(auth_errors[0])) from auth_errors[0]
+            self._start_reauth()
+        if source_successes == 0 and source_errors and not items:
+            raise source_errors[0]
+
     async def _async_get_hems_items_for_update(
         self,
         *,
         username: str,
         password: str,
         include_energy_flow: bool = False,
-    ) -> tuple[list[dict[str, Any]], str | None]:
+    ) -> tuple[list[dict[str, Any]], SolarwattError | None]:
         now = time.monotonic()
         if (
-            self._hems_last_poll is not None
-            and now - self._hems_last_poll < self._hems_scan_interval
+            self._hems_last_attempt is not None
+            and now - self._hems_last_attempt < self._hems_scan_interval
         ):
-            return _without_kiwigrid_flow_items(self._hems_items_cache), None
+            return (
+                _without_kiwigrid_flow_items(self._hems_items_cache),
+                self._hems_items_error,
+            )
 
+        self._hems_last_attempt = now
         try:
             hems_items = await self.client.async_get_hems_items(
                 username=username,
@@ -173,52 +271,83 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             )
             self._hems_items_cache = _without_kiwigrid_flow_items(hems_items or [])
             self._hems_last_poll = now
+            partial_errors = tuple(
+                getattr(self.client, "hems_partial_errors", ()) or ()
+            )
+            self._hems_items_error = (
+                SolarwattError(
+                    "Some KiwiGrid HEMS endpoints are unavailable: "
+                    + "; ".join(partial_errors)
+                )
+                if partial_errors
+                else None
+            )
             if hems_items:
                 self.logger.debug("Fetched %s KiwiGrid HEMS items", len(hems_items))
             else:
                 self.logger.debug("KiwiGrid HEMS is enabled but returned no items")
+        except SolarwattAuthError as err:
+            self._hems_items_error = err
         except SolarwattError as err:
-            self.logger.warning("Unable to fetch KiwiGrid HEMS data: %s", err)
-            error = f"Unable to fetch KiwiGrid HEMS data: {err}"
+            self._hems_items_error = SolarwattError(
+                f"Unable to fetch KiwiGrid HEMS data: {err}"
+            )
         except Exception as err:
-            self.logger.warning(
-                "Unexpected error fetching KiwiGrid HEMS data: %s",
-                err,
+            self._hems_items_error = SolarwattError(
+                f"Unexpected error fetching KiwiGrid HEMS data: {err}"
+            )
+            self.logger.debug(
+                "Unexpected error fetching KiwiGrid HEMS data",
                 exc_info=True,
             )
-            error = f"Unexpected error fetching KiwiGrid HEMS data: {err}"
-        else:
-            error = None
-        return _without_kiwigrid_flow_items(self._hems_items_cache), error
+        return (
+            _without_kiwigrid_flow_items(self._hems_items_cache),
+            self._hems_items_error,
+        )
 
     async def _async_get_hems_energy_flow_items_for_update(
         self,
         *,
         username: str,
         password: str,
-    ) -> tuple[list[dict[str, Any]], str | None]:
+    ) -> tuple[list[dict[str, Any]], SolarwattError | None]:
+        now = time.monotonic()
+        if (
+            self._hems_energy_flow_retry_at is not None
+            and now < self._hems_energy_flow_retry_at
+        ):
+            return list(self._hems_energy_flow_cache), self._hems_energy_flow_error
+
         try:
             energy_flow_items = await self.client.async_get_hems_energy_flow_items(
                 username=username,
                 password=password,
             )
+            self._hems_energy_flow_cache = list(energy_flow_items or [])
+            self._hems_energy_flow_error = None
+            self._hems_energy_flow_retry_at = None
             if energy_flow_items:
                 self.logger.debug(
                     "Fetched %s KiwiGrid HEMS energy flow items",
                     len(energy_flow_items),
                 )
-            return list(energy_flow_items or []), None
+            return list(self._hems_energy_flow_cache), None
+        except SolarwattAuthError as err:
+            self._hems_energy_flow_error = err
         except SolarwattError as err:
-            self.logger.warning("Unable to fetch KiwiGrid HEMS energy flow: %s", err)
-            error = f"Unable to fetch KiwiGrid HEMS energy flow: {err}"
+            self._hems_energy_flow_error = SolarwattError(
+                f"Unable to fetch KiwiGrid HEMS energy flow: {err}"
+            )
         except Exception as err:
-            self.logger.warning(
-                "Unexpected error fetching KiwiGrid HEMS energy flow: %s",
-                err,
+            self._hems_energy_flow_error = SolarwattError(
+                f"Unexpected error fetching KiwiGrid HEMS energy flow: {err}"
+            )
+            self.logger.debug(
+                "Unexpected error fetching KiwiGrid HEMS energy flow",
                 exc_info=True,
             )
-            error = f"Unexpected error fetching KiwiGrid HEMS energy flow: {err}"
-        return [], error
+        self._hems_energy_flow_retry_at = now + self._hems_scan_interval
+        return list(self._hems_energy_flow_cache), self._hems_energy_flow_error
 
     async def async_set_hems_device_optimization_mode(
         self,
@@ -240,7 +369,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             username=hems_username,
             password=hems_password,
         )
-        self._hems_last_poll = None
+        self.invalidate_hems_cache()
         await self.async_refresh_things()
         if self._patch_hems_thing_property(
             device_id,
@@ -268,7 +397,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             username=hems_username,
             password=hems_password,
         )
-        self._hems_last_poll = None
+        self.invalidate_hems_cache()
         await self.async_refresh_things()
         if self._patch_hems_thing_property(
             device_id,
@@ -278,16 +407,23 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             self.async_update_listeners()
         await self.async_request_refresh()
 
-    async def async_refresh_things(self) -> None:
+    async def async_refresh_things(self, *, prefer_hems_cache: bool = False) -> None:
         if self._local_configured():
             try:
                 things = await self.client.async_get_things()
+            except SolarwattAuthError as err:
+                self._start_reauth()
+                self.logger.debug(
+                    "Diagnostics: authentication failed fetching local thing metadata: %s",
+                    err,
+                )
+                things = []
             except SolarwattError as err:
-                self.logger.debug("Diagnostics: unable to fetch /rest/things: %s", err)
+                self.logger.debug("Diagnostics: unable to fetch local thing metadata: %s", err)
                 things = []
             except Exception as err:
                 self.logger.debug(
-                    "Diagnostics: unexpected error fetching /rest/things: %s",
+                    "Diagnostics: unexpected error fetching local thing metadata: %s",
                     err,
                     exc_info=True,
                 )
@@ -302,10 +438,17 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                     username=hems_username,
                     password=hems_password,
                     include_energy_flow=True,
+                    use_cached=prefer_hems_cache,
                 )
                 if hems_things:
                     self.logger.debug("Fetched %s KiwiGrid HEMS devices", len(hems_things))
                     things = list(things or []) + hems_things
+            except SolarwattAuthError as err:
+                self._start_reauth()
+                self.logger.debug(
+                    "Authentication failed fetching KiwiGrid HEMS devices: %s",
+                    err,
+                )
             except SolarwattError as err:
                 self.logger.warning("Unable to fetch KiwiGrid HEMS devices: %s", err)
             except Exception as err:
@@ -387,7 +530,35 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
 
     def invalidate_hems_cache(self) -> None:
         """Force the next refresh to fetch KiwiGrid HEMS data immediately."""
+        self._hems_last_attempt = None
+        self._hems_energy_flow_retry_at = None
         self._hems_last_poll = None
+
+    def _set_local_error(self, error: str | None) -> None:
+        """Log local source availability transitions without repeated warnings."""
+        previous_error = self.local_last_error
+        self.local_last_error = error
+        if error and previous_error is None:
+            self.logger.warning("Local SOLARWATT data became unavailable: %s", error)
+        elif error and error != previous_error:
+            self.logger.debug("Local SOLARWATT data remains unavailable: %s", error)
+        elif error is None and previous_error is not None:
+            self.logger.info("Local SOLARWATT data is available again")
+
+    def _set_hems_error(self, error: str | None) -> None:
+        """Log HEMS availability transitions without repeated warnings."""
+        previous_error = self.hems_last_error
+        self.hems_last_error = error
+        if error and previous_error is None:
+            self.logger.warning("KiwiGrid HEMS became unavailable: %s", error)
+        elif error and error != previous_error:
+            self.logger.debug("KiwiGrid HEMS remains unavailable: %s", error)
+        elif error is None and previous_error is not None:
+            self.logger.info("KiwiGrid HEMS is available again")
+
+    def _start_reauth(self) -> None:
+        """Start reauthentication while cached source data stays usable."""
+        self.entry.async_start_reauth(self.hass)
 
     @property
     def hems_cache_age_seconds(self) -> int | None:

@@ -139,11 +139,13 @@ def merge_thing_records(existing: dict[str, Any], incoming: dict[str, Any]) -> d
     merged["properties"] = _merged_properties(existing, incoming)
     merged["channels"] = _merge_channels(existing, incoming, copy_incoming=False)
 
-    existing_status = (
-        existing.get("statusInfo") if isinstance(existing.get("statusInfo"), dict) else {}
+    raw_existing_status = existing.get("statusInfo")
+    existing_status: dict[str, Any] = (
+        raw_existing_status if isinstance(raw_existing_status, dict) else {}
     )
-    incoming_status = (
-        incoming.get("statusInfo") if isinstance(incoming.get("statusInfo"), dict) else {}
+    raw_incoming_status = incoming.get("statusInfo")
+    incoming_status: dict[str, Any] = (
+        raw_incoming_status if isinstance(raw_incoming_status, dict) else {}
     )
     if str(existing_status.get("status") or "").upper() in {"", "UNKNOWN", "OFFLINE"}:
         merged["statusInfo"] = {**existing_status, **incoming_status}

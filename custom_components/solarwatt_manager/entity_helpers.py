@@ -8,11 +8,13 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
+    CONF_HOST,
     DOMAIN,
     SOLARWATTConfigEntry,
     build_thing_device_identifier,
     build_thing_device_info,
     get_disable_duplicate_item_entities,
+    get_device_registry_anchor,
     get_preferred_parent_thing_uid,
     get_selected_thing_uids,
 )
@@ -266,9 +268,8 @@ def ensure_parent_devices_registered(
     things: Mapping[str, Any] | None,
 ) -> None:
     """Pre-register visible parent devices so child entities can safely reference `via_device`."""
-    host = str(entry.data.get("host") or "").strip().lower()
-    if not host:
-        return
+    device_anchor = get_device_registry_anchor(entry)
+    configuration_host = str(entry.data.get(CONF_HOST) or "").strip().lower()
 
     selected_thing_uids = get_selected_thing_uids(entry.options)
     things_by_uid = {
@@ -292,10 +293,11 @@ def ensure_parent_devices_registered(
 
         device_info = build_thing_device_info(
             hass,
-            host,
+            device_anchor,
             parent_thing,
             things_by_uid,
             selected_thing_uids,
+            configuration_host,
         )
         dev_reg.async_get_or_create(
             config_entry_id=entry.entry_id,
@@ -313,9 +315,7 @@ def detach_entityless_thing_devices(
     things: Mapping[str, Any] | None,
 ) -> None:
     """Detach this config entry from thing devices that have no managed entities."""
-    host = str(entry.data.get("host") or "").strip().lower()
-    if not host:
-        return
+    device_anchor = get_device_registry_anchor(entry)
 
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
@@ -327,7 +327,7 @@ def detach_entityless_thing_devices(
 
     for thing_uid in (things or {}).keys():
         device = dev_reg.async_get_device(
-            identifiers={build_thing_device_identifier(host, thing_uid)}
+            identifiers={build_thing_device_identifier(device_anchor, thing_uid)}
         )
         if not device or entry.entry_id not in device.config_entries:
             continue
@@ -343,14 +343,12 @@ def _sync_thing_device_assignments(
     selected_thing_uids: set[str] | None,
 ) -> None:
     """Attach or detach this config entry on thing devices based on selection."""
-    host = str(entry.data.get("host") or "").strip().lower()
-    if not host:
-        return
+    device_anchor = get_device_registry_anchor(entry)
 
     dev_reg = dr.async_get(hass)
     for thing_uid in (things or {}).keys():
         device = dev_reg.async_get_device(
-            identifiers={build_thing_device_identifier(host, thing_uid)}
+            identifiers={build_thing_device_identifier(device_anchor, thing_uid)}
         )
         if not device:
             continue

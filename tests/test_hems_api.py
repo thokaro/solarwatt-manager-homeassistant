@@ -194,6 +194,7 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
             "feedIn",
             "hems_flow_batteryPower",
             "hems_plug_15922327_c7d9_4fb9_ba65_9073bb627993_state_device",
+            "hems_smart_heater_700ff539_7ae2_4802_83f8_afa1949ec7d0_temperature",
             "kiwigrid_location_standard_location_id_harmonized_power_consumed",
             "foxesshybrid_battery_serial_harmonized_power_out",
             "unknown_prefix_power",
@@ -201,6 +202,7 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
         [
             {"UID": "energy-overview:standard:energy-overview"},
             {"UID": "15922327-c7d9-4fb9-ba65-9073bb627993"},
+            {"UID": "700ff539-7ae2-4802-83f8-afa1949ec7d0"},
             {"UID": "kiwigrid-location:standard:location-id"},
             {"UID": "foxesshybrid:battery:serial"},
         ],
@@ -212,6 +214,9 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
         "hems_flow_batteryPower": KIWIGRID_FLOW_THING_UID,
         "hems_plug_15922327_c7d9_4fb9_ba65_9073bb627993_state_device": (
             "15922327-c7d9-4fb9-ba65-9073bb627993"
+        ),
+        "hems_smart_heater_700ff539_7ae2_4802_83f8_afa1949ec7d0_temperature": (
+            "700ff539-7ae2-4802-83f8-afa1949ec7d0"
         ),
         "kiwigrid_location_standard_location_id_harmonized_power_consumed": (
             "kiwigrid-location:standard:location-id"

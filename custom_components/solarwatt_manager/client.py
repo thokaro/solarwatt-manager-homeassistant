@@ -54,6 +54,10 @@ class SolarwattProtocolError(SolarwattError):
 
 HEMSEndpointGetter = Callable[[], Awaitable[Any]]
 HEMS_STATS_HISTORY_REQUEST_TIMEOUT = 300
+LOCAL_ITEMS_SOURCE_ENERGY_OVERVIEW = "energy_overview"
+LOCAL_ITEMS_SOURCE_REST = "rest_items"
+LOCAL_THINGS_SOURCE_HEMS_CONFIGURATOR = "hems_configurator"
+LOCAL_THINGS_SOURCE_REST = "rest_things"
 HEMS_YEAR_ANALYTICS_GETTERS: dict[str, str] = {
     "analytics_consumption_year": "async_get_analytics_consumption_year",
     "analytics_production_year": "async_get_analytics_production_year",
@@ -83,6 +87,13 @@ class SOLARWATTClient:
         self._session = ClientSession(cookie_jar=CookieJar(unsafe=True))
         self.session_ttl = 900
         self._last_login = 0.0
+        self._local_items_source: str | None = None
+        self._local_things_source: str | None = None
+        self._hems_configurator_things_cache: list[dict[str, Any]] | None = None
+        self._hems_client: KiwiGridHEMSClient | None = None
+        self._hems_client_credentials: tuple[str, str] | None = None
+        self._hems_payload_cache: dict[str, Any] = {}
+        self.hems_partial_errors: tuple[str, ...] = ()
         self._log = logging.getLogger(__name__)
 
     def _set_base(self, base: str) -> None:
@@ -153,6 +164,22 @@ class SOLARWATTClient:
     async def async_close(self) -> None:
         if not self._session.closed:
             await self._session.close()
+
+    def _get_hems_client(self, username: str, password: str) -> KiwiGridHEMSClient:
+        """Return the reusable HEMS client for the current credentials."""
+        credentials = (str(username or "").strip(), str(password or ""))
+        if self._hems_client is not None and self._hems_client_credentials == credentials:
+            return self._hems_client
+
+        self._hems_client = KiwiGridHEMSClient(
+            self._session,
+            username=credentials[0],
+            password=credentials[1],
+        )
+        self._hems_client_credentials = credentials
+        self._hems_payload_cache.clear()
+        self.hems_partial_errors = ()
+        return self._hems_client
 
     async def async_login(self) -> None:
         if not self.host:
@@ -386,17 +413,15 @@ class SOLARWATTClient:
 
             items = energy_overview_to_items(payload)
             try:
-                things = await self._async_get_json_endpoint(
-                    THINGS_PATH,
-                    where=f"GET {THINGS_PATH}",
+                things = self._hems_configurator_things_cache
+                if things is None:
+                    things = await self.async_get_hems_configurator_things()
+                existing_names = {item.get("name") for item in items}
+                items.extend(
+                    item
+                    for item in energy_overview_to_legacy_items(payload, things)
+                    if item.get("name") not in existing_names
                 )
-                if isinstance(things, list):
-                    existing_names = {item.get("name") for item in items}
-                    items.extend(
-                        item
-                        for item in energy_overview_to_legacy_items(payload, things)
-                        if item.get("name") not in existing_names
-                    )
             except SolarwattError as err:
                 self._log.debug("Unable to build legacy HEMS item aliases: %s", err)
 
@@ -423,7 +448,10 @@ class SOLARWATTClient:
             )
             if not isinstance(payload, list):
                 raise SolarwattProtocolError("HEMS things response is not a list")
-            return things_to_openhab_things(payload)
+            things = things_to_openhab_things(payload)
+            self._hems_configurator_things_cache = things
+            self._local_things_source = LOCAL_THINGS_SOURCE_HEMS_CONFIGURATOR
+            return things
         except SolarwattError:
             raise
         except ClientResponseError as e:
@@ -443,11 +471,7 @@ class SOLARWATTClient:
         include_energy_flow: bool = False,
     ) -> list[dict[str, Any]]:
         """Fetch supported KiwiGrid HEMS data and convert it to item records."""
-        hems = KiwiGridHEMSClient(
-            self._session,
-            username=username,
-            password=password,
-        )
+        hems = self._get_hems_client(username, password)
         status_items: list[dict[str, Any]] = []
 
         def _hems_status_item(name: str, state: str) -> dict[str, Any]:
@@ -476,11 +500,13 @@ class SOLARWATTClient:
                 _hems_count_item(0),
             ]
 
+        self.hems_partial_errors = ()
         payloads, errors = await self._async_fetch_hems_payloads(
             hems,
             collect_errors=True,
             include_energy_flow=include_energy_flow,
         )
+        self.hems_partial_errors = tuple(errors)
 
         hems_items = hems_payloads_to_items(**payloads)
         status_items.append(_hems_status_item("status", "ok" if hems_items else "empty"))
@@ -496,16 +522,13 @@ class SOLARWATTClient:
         password: str = "",
     ) -> list[dict[str, Any]]:
         """Fetch live KiwiGrid HEMS energy-flow values as KiwiGrid Flow items."""
-        hems = KiwiGridHEMSClient(
-            self._session,
-            username=username,
-            password=password,
-        )
+        hems = self._get_hems_client(username, password)
         if not hems.enabled:
             return []
 
         try:
             payload = await hems.async_get_energy_flow()
+            self._hems_payload_cache["energy_flow"] = payload
         except KiwiGridHEMSAuthError as err:
             raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
         except (KiwiGridHEMSProtocolError, KiwiGridHEMSConnectionError) as err:
@@ -515,6 +538,7 @@ class SOLARWATTClient:
 
         try:
             consumers = await hems.async_get_home_consumption_consumers()
+            self._hems_payload_cache["home_consumption_consumers"] = consumers
         except KiwiGridHEMSAuthError as err:
             raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
         except KiwiGridHEMSError as err:
@@ -522,28 +546,23 @@ class SOLARWATTClient:
                 "KiwiGrid HEMS consumer consumption unavailable for energy flow: %s",
                 err,
             )
-            consumers = []
+            consumers = self._hems_payload_cache.get(
+                "home_consumption_consumers",
+                [],
+            )
 
-        name_payloads: dict[str, list[dict[str, Any]]] = {}
-        for key, getter in (
-            ("devices", hems.async_get_devices),
-            ("device_optimizations", hems.async_get_device_optimizations),
-            ("batteries", hems.async_get_battery),
-            ("pv_plants", hems.async_get_pv_plants),
-            ("evstations", hems.async_get_evstations),
-            ("plugs", hems.async_get_plugs),
-        ):
-            try:
-                name_payloads[key] = await getter()
-            except KiwiGridHEMSAuthError as err:
-                raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
-            except KiwiGridHEMSError as err:
-                self._log.debug(
-                    "KiwiGrid HEMS %s names unavailable for energy flow: %s",
-                    key,
-                    err,
-                )
-                name_payloads[key] = []
+        name_payloads = {
+            key: self._hems_payload_cache.get(key, [])
+            for key in (
+                "devices",
+                "device_optimizations",
+                "batteries",
+                "pv_plants",
+                "evstations",
+                "plugs",
+                "smart_heaters",
+            )
+        }
 
         return energy_flow_endpoint_to_items(
             payload,
@@ -619,25 +638,27 @@ class SOLARWATTClient:
         username: str = "",
         password: str = "",
         include_energy_flow: bool = False,
+        use_cached: bool = False,
     ) -> list[dict[str, Any]]:
         """Fetch supported KiwiGrid HEMS data and convert it to thing records."""
-        hems = KiwiGridHEMSClient(
-            self._session,
-            username=username,
-            password=password,
-        )
+        hems = self._get_hems_client(username, password)
         if not hems.enabled:
             return []
 
-        payloads, _errors = await self._async_fetch_hems_payloads(
-            hems,
-            collect_errors=False,
-            include_energy_flow=include_energy_flow,
-        )
+        if use_cached and self._hems_payload_cache:
+            payloads = dict(self._hems_payload_cache)
+        else:
+            payloads, _errors = await self._async_fetch_hems_payloads(
+                hems,
+                collect_errors=False,
+                include_energy_flow=include_energy_flow,
+            )
 
         things = hems_payloads_to_things(**payloads)
         if include_energy_flow:
-            existing_uids = {str(thing.get("UID") or thing.get("uid") or "") for thing in things}
+            existing_uids = {
+                str(thing.get("UID") or thing.get("uid") or "") for thing in things
+            }
             thing = kiwigrid_flow_thing()
             thing_uid = str(thing.get("UID") or thing.get("uid") or "")
             if thing_uid and thing_uid not in existing_uids:
@@ -654,25 +675,57 @@ class SOLARWATTClient:
         """Fetch all supported KiwiGrid HEMS endpoint payloads."""
         payloads: dict[str, Any] = {}
         errors: list[str] = []
+        semaphore = asyncio.Semaphore(4)
 
-        for key, getter in self._hems_endpoint_getters(
-            hems,
-            include_energy_flow=include_energy_flow,
-        ):
+        if hems.enabled:
             try:
-                payloads[key] = await getter()
+                await hems.async_ensure_authenticated()
             except KiwiGridHEMSAuthError as err:
-                raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
-            except (KiwiGridHEMSProtocolError, KiwiGridHEMSConnectionError) as err:
-                self._log.debug("KiwiGrid HEMS endpoint %s could not be fetched: %s", key, err)
-                if collect_errors:
-                    errors.append(f"{key}: {err}")
-                payloads[key] = []
+                raise SolarwattAuthError(
+                    f"KiwiGrid HEMS authentication failed: {err}"
+                ) from err
             except KiwiGridHEMSError as err:
-                self._log.debug("KiwiGrid HEMS endpoint %s failed: %s", key, err)
-                if collect_errors:
-                    errors.append(f"{key}: {err}")
-                payloads[key] = []
+                raise SolarwattConnectionError(
+                    f"KiwiGrid HEMS authentication failed: {err}"
+                ) from err
+
+        async def _fetch_endpoint(
+            key: str,
+            getter: HEMSEndpointGetter,
+        ) -> tuple[str, Any | None, KiwiGridHEMSError | None]:
+            async with semaphore:
+                try:
+                    return key, await getter(), None
+                except KiwiGridHEMSError as err:
+                    return key, None, err
+
+        results = await asyncio.gather(
+            *(
+                _fetch_endpoint(key, getter)
+                for key, getter in self._hems_endpoint_getters(
+                    hems,
+                    include_energy_flow=include_energy_flow,
+                )
+            )
+        )
+
+        for key, payload, error in results:
+            if error is None:
+                payloads[key] = payload
+                self._hems_payload_cache[key] = payload
+                continue
+            if isinstance(error, KiwiGridHEMSAuthError):
+                raise SolarwattAuthError(
+                    f"KiwiGrid HEMS authentication failed: {error}"
+                ) from error
+            self._log.debug(
+                "KiwiGrid HEMS endpoint %s could not be fetched: %s",
+                key,
+                error,
+            )
+            if collect_errors:
+                errors.append(f"{key}: {error}")
+            payloads[key] = self._hems_payload_cache.get(key, [])
 
         return payloads, errors
 
@@ -690,6 +743,7 @@ class SOLARWATTClient:
             ("pv_plants", hems.async_get_pv_plants),
             ("evstations", hems.async_get_evstations),
             ("plugs", hems.async_get_plugs),
+            ("smart_heaters", hems.async_get_smart_heaters),
             ("analytics_consumption", hems.async_get_analytics_consumption),
             ("analytics_production", hems.async_get_analytics_production),
             (
@@ -718,13 +772,13 @@ class SOLARWATTClient:
             ("user_profile", hems.async_get_user_profile),
         )
         if include_energy_flow:
-            getters = getters[:6] + (
+            getters = getters[:7] + (
                 ("energy_flow", hems.async_get_energy_flow),
                 (
                     "home_consumption_consumers",
                     hems.async_get_home_consumption_consumers,
                 ),
-            ) + getters[6:]
+            ) + getters[7:]
         return getters
 
     async def async_set_hems_device_optimization_mode(
@@ -736,11 +790,7 @@ class SOLARWATTClient:
         password: str = "",
     ) -> None:
         """Set the optimization mode for one KiwiGrid HEMS device."""
-        hems = KiwiGridHEMSClient(
-            self._session,
-            username=username,
-            password=password,
-        )
+        hems = self._get_hems_client(username, password)
         if not hems.enabled:
             raise SolarwattAuthError("KiwiGrid HEMS credentials are missing")
         try:
@@ -759,11 +809,7 @@ class SOLARWATTClient:
         password: str = "",
     ) -> None:
         """Switch one KiwiGrid HEMS optimizable device on or off."""
-        hems = KiwiGridHEMSClient(
-            self._session,
-            username=username,
-            password=password,
-        )
+        hems = self._get_hems_client(username, password)
         if not hems.enabled:
             raise SolarwattAuthError("KiwiGrid HEMS credentials are missing")
         try:
@@ -774,11 +820,19 @@ class SOLARWATTClient:
             raise SolarwattConnectionError(f"KiwiGrid HEMS device switch failed: {err}") from err
 
     async def async_get_items(self) -> list[dict[str, Any]]:
+        if self._local_items_source == LOCAL_ITEMS_SOURCE_ENERGY_OVERVIEW:
+            try:
+                return await self.async_get_energy_overview_items()
+            except SolarwattNotManagerError:
+                self._local_items_source = None
+
         try:
-            return await self._async_get_json_endpoint(
+            items = await self._async_get_json_endpoint(
                 "/rest/items",
                 where="GET /rest/items",
             )
+            self._local_items_source = LOCAL_ITEMS_SOURCE_REST
+            return items
         except SolarwattError:
             raise
         except ClientResponseError as e:
@@ -789,7 +843,9 @@ class SOLARWATTClient:
                     "Legacy /rest/items endpoint not found on %s; trying HEMS energy overview",
                     self.host,
                 )
-                return await self.async_get_energy_overview_items()
+                items = await self.async_get_energy_overview_items()
+                self._local_items_source = LOCAL_ITEMS_SOURCE_ENERGY_OVERVIEW
+                return items
             self._log.error(f"HTTP error {e.status} fetching items from {self.host}")
             raise SolarwattConnectionError(f"HTTP error {e.status}") from e
         except (ClientError, asyncio.TimeoutError) as e:
@@ -800,6 +856,12 @@ class SOLARWATTClient:
             raise SolarwattConnectionError(str(e)) from e
 
     async def async_get_things(self) -> list[dict[str, Any]]:
+        if self._local_things_source == LOCAL_THINGS_SOURCE_REST:
+            try:
+                return await self._async_get_legacy_things()
+            except SolarwattNotManagerError:
+                self._local_things_source = None
+
         try:
             return await self.async_get_hems_configurator_things()
         except SolarwattError as err:
@@ -810,21 +872,35 @@ class SOLARWATTClient:
             )
 
         try:
-            return await self._async_get_json_endpoint(
+            things = await self._async_get_legacy_things()
+        except SolarwattNotManagerError:
+            self._log.debug(
+                "Legacy /rest/things endpoint not found on %s",
+                self.host,
+            )
+            return []
+        self._local_things_source = LOCAL_THINGS_SOURCE_REST
+        return things
+
+    async def _async_get_legacy_things(self) -> list[dict[str, Any]]:
+        """Fetch thing metadata from the legacy local endpoint."""
+        try:
+            payload = await self._async_get_json_endpoint(
                 "/rest/things",
                 where="GET /rest/things",
             )
+            if not isinstance(payload, list):
+                raise SolarwattProtocolError("Legacy things response is not a list")
+            return payload
         except SolarwattError:
             raise
         except ClientResponseError as e:
             if e.status in (401, 403):
                 raise SolarwattAuthError("HTTP error fetching things") from e
             if e.status == 404:
-                self._log.debug(
-                    "Legacy /rest/things endpoint not found on %s",
-                    self.host,
-                )
-                return []
+                raise SolarwattNotManagerError(
+                    "Legacy /rest/things endpoint not found"
+                ) from e
             raise SolarwattConnectionError(f"HTTP error {e.status}") from e
         except (ClientError, asyncio.TimeoutError) as e:
             raise SolarwattConnectionError(f"Connection error fetching things: {e}") from e
@@ -845,7 +921,8 @@ def _hems_stats_item_value(
     item_name: str,
     payload: dict[str, Any],
 ) -> float | None:
-    items = hems_payloads_to_items(**{payload_key: payload})
+    payloads: dict[str, Any] = {payload_key: payload}
+    items = hems_payloads_to_items(**payloads)
     for item in items:
         if item.get("name") != item_name:
             continue

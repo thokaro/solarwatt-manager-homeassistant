@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from hashlib import sha256
 from typing import Any
 from typing import TYPE_CHECKING, TypeAlias
 
@@ -9,14 +10,18 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 
+from .naming import normalize_display_acronyms
+
 if TYPE_CHECKING:
     from .coordinator import SOLARWATTCoordinator
 
 SOLARWATTConfigEntry: TypeAlias = ConfigEntry["SOLARWATTCoordinator"]
 
 DOMAIN = "solarwatt_manager"
+CONFIG_ENTRY_VERSION = 2
 
 CONF_HOST = "host"
+CONF_INSTALLATION_ID = "installation_id"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_SCAN_INTERVAL = "scan_interval"
@@ -24,7 +29,6 @@ CONF_ENERGY_DELTA_KWH = "energy_delta_kwh"
 CONF_POWER_UNAVAILABLE_THRESHOLD = "power_unavailable_threshold"
 CONF_DISABLE_DUPLICATE_ITEM_ENTITIES = "disable_duplicate_item_entities"
 CONF_ENABLED_THINGS = "enabled_things"
-CONF_REBUILD_ENTITY_IDS = "rebuild_entity_ids"
 CONF_KIWIGRID_HEMS_ENABLED = "kiwigrid_hems_enabled"
 CONF_KIWIGRID_HEMS_USERNAME = "kiwigrid_hems_username"
 CONF_KIWIGRID_HEMS_PASSWORD = "kiwigrid_hems_password"
@@ -47,20 +51,83 @@ DEVICE_MODEL = "Manager flex / rail"
 _DEVICE_DETAIL_PLACEHOLDERS = {"", "0", "none", "null", "unknown", "n/a", "-"}
 
 
-def build_device_info(host: str, device_name: str) -> DeviceInfo:
+def build_device_info(
+    device_anchor: str,
+    device_name: str,
+    configuration_host: str = "",
+) -> DeviceInfo:
     """Build shared device metadata for all SOLARWATT entities."""
     return DeviceInfo(
-        identifiers={(DOMAIN, host)},
+        identifiers={(DOMAIN, device_anchor)},
         name=device_name,
         manufacturer=DEVICE_MANUFACTURER,
         model=DEVICE_MODEL,
-        configuration_url=f"http://{host}",
+        **(
+            {"configuration_url": f"http://{configuration_host}"}
+            if configuration_host
+            else {}
+        ),
     )
 
 
-def build_thing_device_identifier(host: str, thing_uid: str) -> tuple[str, str]:
+def build_thing_device_identifier(device_anchor: str, thing_uid: str) -> tuple[str, str]:
     """Return the stable device-registry identifier for a SOLARWATT thing."""
-    return DOMAIN, f"{host}:{thing_uid}"
+    return DOMAIN, f"{device_anchor}:{thing_uid}"
+
+
+def get_device_registry_anchor(entry: SOLARWATTConfigEntry) -> str:
+    """Return the device-registry anchor used by local and cloud-only entries."""
+    installation_id = str(entry.data.get(CONF_INSTALLATION_ID) or "").strip()
+    if installation_id:
+        return installation_id
+    host = str(entry.data.get(CONF_HOST) or "").strip().lower()
+    return host or entry.entry_id
+
+
+def derive_installation_id(
+    entry_data: Mapping[str, Any],
+    options: Mapping[str, Any],
+    things: Mapping[str, Mapping[str, Any]] | None = None,
+) -> str | None:
+    """Return a stable installation identifier independent of the local host."""
+    existing_id = str(entry_data.get(CONF_INSTALLATION_ID) or "").strip()
+    host = str(entry_data.get(CONF_HOST) or "").strip().lower()
+
+    if host:
+        if existing_id and not existing_id.startswith("manager:"):
+            return existing_id
+        location_uids = sorted(
+            {
+                uid
+                for key, thing in (things or {}).items()
+                if "location"
+                in (
+                    thing_type_uid := str(
+                        thing.get("thingTypeUID") or thing.get("thingTypeUid") or ""
+                    ).lower()
+                )
+                if not thing_type_uid.startswith("kiwigrid-hems")
+                if (uid := str(thing.get("UID") or thing.get("uid") or key).strip())
+            }
+        )
+        if len(location_uids) == 1:
+            return f"local:{location_uids[0]}"
+        if existing_id:
+            return existing_id
+        return f"manager:{_identifier_digest(host)}"
+
+    if existing_id:
+        return existing_id
+
+    hems_username = str(options.get(CONF_KIWIGRID_HEMS_USERNAME) or "").strip().casefold()
+    if options.get(CONF_KIWIGRID_HEMS_ENABLED) and hems_username:
+        return f"hems:{_identifier_digest(hems_username)}"
+    return None
+
+
+def _identifier_digest(value: str) -> str:
+    """Return a non-reversible stable digest for identity fallback values."""
+    return sha256(value.encode()).hexdigest()
 
 
 def get_thing_bridge_uid(thing: Mapping[str, Any]) -> str | None:
@@ -126,7 +193,7 @@ def get_thing_display_name(thing: Mapping[str, Any], fallback: str = "") -> str:
 
     if (not label or label.lower() == "location") and "location" in thing_type_uid:
         return "KiwiGrid"
-    return label or fallback
+    return normalize_display_acronyms(label or fallback)
 
 
 def get_thing_selection_detail(thing: Mapping[str, Any]) -> str:
@@ -165,14 +232,15 @@ def _clean_device_detail(value: Any) -> str:
 
 def build_thing_device_info(
     hass: HomeAssistant | None,
-    host: str,
+    device_anchor: str,
     thing: dict[str, Any],
     things: Mapping[str, dict[str, Any]] | None = None,
     selected_thing_uids: set[str] | None = None,
+    configuration_host: str = "",
 ) -> DeviceInfo:
     """Build device metadata for a SOLARWATT thing node."""
     thing_uid = str(thing.get("UID") or thing.get("uid") or "").strip()
-    label = get_thing_display_name(thing, thing_uid or host)
+    label = get_thing_display_name(thing, thing_uid or device_anchor)
     properties = thing.get("properties")
     props = properties if isinstance(properties, dict) else {}
     selection_detail = get_thing_selection_detail(thing)
@@ -196,13 +264,13 @@ def build_thing_device_info(
     if selected_thing_uids is not None and parent_thing_uid not in selected_thing_uids:
         parent_thing_uid = None
     if hass is not None and parent_thing_uid:
-        parent_identifier = build_thing_device_identifier(host, parent_thing_uid)
+        parent_identifier = build_thing_device_identifier(device_anchor, parent_thing_uid)
         parent_device = dr.async_get(hass).async_get_device(identifiers={parent_identifier})
         if parent_device is not None:
             via_device = parent_identifier
 
     return DeviceInfo(
-        identifiers={build_thing_device_identifier(host, thing_uid)},
+        identifiers={build_thing_device_identifier(device_anchor, thing_uid)},
         name=label,
         manufacturer=str(manufacturer).strip(),
         model=str(model).strip() if model else None,
@@ -210,7 +278,11 @@ def build_thing_device_info(
         sw_version=str(sw_version).strip() if sw_version else None,
         hw_version=str(hw_version).strip() if hw_version else None,
         via_device=via_device,
-        configuration_url=f"http://{host}",
+        **(
+            {"configuration_url": f"http://{configuration_host}"}
+            if configuration_host
+            else {}
+        ),
     )
 
 
@@ -223,7 +295,7 @@ def get_selected_thing_uids(options: Mapping[str, Any] | None) -> set[str] | Non
     if raw_values is None:
         return None
     if isinstance(raw_values, str):
-        values = [raw_values]
+        values: Iterable[Any] = [raw_values]
     elif isinstance(raw_values, (list, tuple, set)):
         values = raw_values
     else:

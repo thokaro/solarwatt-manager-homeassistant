@@ -16,15 +16,16 @@ from .const import (
     CONF_ENABLED_THINGS,
     CONF_ENERGY_DELTA_KWH,
     CONF_HOST,
+    CONF_INSTALLATION_ID,
     CONF_KIWIGRID_HEMS_ENABLED,
     CONF_KIWIGRID_HEMS_PASSWORD,
     CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
     CONF_KIWIGRID_HEMS_USERNAME,
     CONF_PASSWORD,
     CONF_POWER_UNAVAILABLE_THRESHOLD,
-    CONF_REBUILD_ENTITY_IDS,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
+    CONFIG_ENTRY_VERSION,
     DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
     DEFAULT_ENERGY_DELTA_KWH,
     DEFAULT_KIWIGRID_HEMS_ENABLED,
@@ -36,6 +37,7 @@ from .const import (
     MIN_ENERGY_DELTA_KWH,
     MIN_POWER_UNAVAILABLE_THRESHOLD,
     MIN_SCAN_INTERVAL,
+    derive_installation_id,
     get_selected_thing_uids,
     get_thing_display_name,
     get_thing_selection_detail,
@@ -49,7 +51,6 @@ from .client import (
 )
 from .entity_helpers import sync_selected_thing_entities
 from .hems_api import is_energy_overview_thing, is_hems_thing, is_kiwigrid_flow_thing
-from .registry_migrations import mark_pending_registry_migration
 from .thing_matching import (
     is_local_bridge_thing as _is_bridge_type,
     merge_selection_things,
@@ -66,6 +67,79 @@ _KNOWN_CLIENT_ERRORS: tuple[tuple[type[Exception], str, str], ...] = (
     (SolarwattConnectionError, "cannot_connect", "Connection error while %s: %s"),
     (SolarwattProtocolError, "connection_failed", "Unexpected SOLARWATT response while %s: %s"),
 )
+
+
+async def _async_with_client(
+    hass,
+    *,
+    host: str,
+    username: str,
+    password: str,
+    action: Callable[[SOLARWATTClient], Awaitable[Any]],
+    action_label: str,
+    auth_error_code: str = "invalid_local_auth",
+) -> tuple[Any | None, dict[str, str]]:
+    """Run one client action and map known failures to config-flow errors."""
+    try:
+        client = SOLARWATTClient(
+            hass,
+            host=host,
+            username=username,
+            password=password,
+        )
+        try:
+            return await action(client), {}
+        finally:
+            await client.async_close()
+    except SolarwattAuthError as err:
+        _LOGGER.warning("Invalid SOLARWATT credentials while %s: %s", action_label, err)
+        return None, {"base": auth_error_code}
+    except Exception as err:
+        for error_type, error_code, log_message in _KNOWN_CLIENT_ERRORS:
+            if isinstance(err, error_type):
+                _LOGGER.warning(log_message, action_label, err)
+                return None, {"base": error_code}
+        _LOGGER.exception("Unexpected error while %s: %s", action_label, err)
+        return None, {"base": "unknown_error"}
+
+
+async def _async_validate_connection_settings(
+    hass,
+    entry_data: Mapping[str, Any],
+    options: Mapping[str, Any],
+) -> dict[str, str]:
+    """Validate configured local and cloud connections before saving."""
+    errors = _validate_user_data(entry_data, options)
+    if errors:
+        return errors
+
+    host = entry_data.get(CONF_HOST)
+    if host is not None:
+        _, errors = await _async_with_client(
+            hass,
+            host=host,
+            username=str(entry_data[CONF_USERNAME]),
+            password=str(entry_data[CONF_PASSWORD]),
+            action=SOLARWATTClient.async_validate_connection,
+            action_label="testing SOLARWATT connection",
+        )
+        if errors:
+            return errors
+
+    if options.get(CONF_KIWIGRID_HEMS_ENABLED):
+        _, errors = await _async_with_client(
+            hass,
+            host="",
+            username="",
+            password="",
+            action=lambda client: client.async_get_hems_things(
+                username=str(options[CONF_KIWIGRID_HEMS_USERNAME]),
+                password=str(options[CONF_KIWIGRID_HEMS_PASSWORD]),
+            ),
+            action_label="testing KiwiGrid HEMS connection",
+            auth_error_code="invalid_hems_auth",
+        )
+    return errors
 
 
 def _normalize_host(raw_host: str | None) -> str | None:
@@ -287,16 +361,23 @@ def _normalize_options_entry_data(
     raw_host = _normalize_text(
         user_input.get(CONF_HOST, current_data.get(CONF_HOST, ""))
     )
-    return {
-        CONF_HOST: _normalize_host(raw_host),
-        _RAW_HOST_KEY: raw_host,
-        CONF_USERNAME: _normalize_text(
-            user_input.get(CONF_USERNAME, current_data.get(CONF_USERNAME, "installer"))
-        ),
-        CONF_PASSWORD: _normalize_text(
-            user_input.get(CONF_PASSWORD, current_data.get(CONF_PASSWORD, ""))
-        ),
-    }
+    entry_data = dict(current_data)
+    entry_data.update(
+        {
+            CONF_HOST: _normalize_host(raw_host),
+            _RAW_HOST_KEY: raw_host,
+            CONF_USERNAME: _normalize_text(
+                user_input.get(
+                    CONF_USERNAME,
+                    current_data.get(CONF_USERNAME, "installer"),
+                )
+            ),
+            CONF_PASSWORD: _normalize_text(
+                user_input.get(CONF_PASSWORD, current_data.get(CONF_PASSWORD, ""))
+            ),
+        }
+    )
+    return entry_data
 
 
 def _validate_options_data(options: Mapping[str, Any]) -> dict[str, str]:
@@ -405,7 +486,6 @@ def _merge_selection_things(
     return merge_selection_things(
         base_things,
         incoming_things,
-        is_hems_thing=is_hems_thing,
         is_bridge_thing=_is_local_bridge_thing,
     )
 
@@ -451,8 +531,11 @@ def _kiwigrid_hems_selection_thing() -> dict[str, Any]:
     }
 
 
-class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+class SOLARWATTItemsConfigFlow(  # type: ignore[call-arg]
+    config_entries.ConfigFlow,
+    domain=DOMAIN,
+):
+    VERSION = CONFIG_ENTRY_VERSION
 
     def __init__(self) -> None:
         self._pending_entry_data: dict[str, Any] | None = None
@@ -477,7 +560,85 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-    async def async_step_user(self, user_input=None):
+    def _build_connection_schema(
+        self,
+        values: Mapping[str, Any],
+        *,
+        reauth: bool,
+    ) -> vol.Schema:
+        """Build a schema for reauthentication or connection reconfiguration."""
+        local_configured = bool(values.get(CONF_HOST))
+        hems_enabled = bool(values.get(CONF_KIWIGRID_HEMS_ENABLED))
+        schema: dict[Any, Any] = {}
+
+        if not reauth or local_configured:
+            schema.update(
+                {
+                    vol.Optional(CONF_HOST, default=values.get(CONF_HOST, "")): str,
+                    vol.Optional(
+                        CONF_USERNAME,
+                        default=values.get(CONF_USERNAME, "installer"),
+                    ): str,
+                    vol.Optional(
+                        CONF_PASSWORD,
+                        default=values.get(CONF_PASSWORD, ""),
+                    ): str,
+                }
+            )
+        if not reauth:
+            schema[
+                vol.Optional(
+                    CONF_KIWIGRID_HEMS_ENABLED,
+                    default=hems_enabled,
+                )
+            ] = bool
+        if not reauth or hems_enabled:
+            schema.update(
+                {
+                    vol.Optional(
+                        CONF_KIWIGRID_HEMS_USERNAME,
+                        default=values.get(CONF_KIWIGRID_HEMS_USERNAME, ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_KIWIGRID_HEMS_PASSWORD,
+                        default=values.get(CONF_KIWIGRID_HEMS_PASSWORD, ""),
+                    ): str,
+                }
+            )
+        return vol.Schema(schema)
+
+    async def _async_process_connection_input(
+        self,
+        entry: Any,
+        user_input: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, str]]:
+        """Normalize and validate connection input for an existing entry."""
+        values = {
+            **dict(entry.data),
+            **dict(entry.options),
+            **dict(user_input),
+        }
+        normalized_entry_data = _normalize_options_entry_data(values, entry.data)
+        options = {
+            **dict(entry.options),
+            **_normalize_options_input(values, entry.options),
+        }
+        errors = await _async_validate_connection_settings(
+            self.hass,
+            normalized_entry_data,
+            options,
+        )
+        clean_entry_data = {
+            key: value
+            for key, value in normalized_entry_data.items()
+            if key != _RAW_HOST_KEY
+        }
+        return values, clean_entry_data, options, errors
+
+    async def async_step_user(
+        self,
+        user_input: Mapping[str, Any] | None = None,
+    ) -> Any:
         errors: dict[str, str] = {}
         things: dict[str, dict[str, Any]] = {}
 
@@ -487,7 +648,8 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host = entry_data.get(CONF_HOST)
 
             if not errors and host is not None:
-                _, errors = await self._async_with_client(
+                _, errors = await _async_with_client(
+                    self.hass,
                     host=host,
                     username=entry_data[CONF_USERNAME],
                     password=entry_data[CONF_PASSWORD],
@@ -496,17 +658,21 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
             if not errors and host is not None:
-                await self.async_set_unique_id(host)
-                self._abort_if_unique_id_configured()
                 things, errors = await self._async_fetch_things(
                     host=host,
                     username=entry_data[CONF_USERNAME],
                     password=entry_data[CONF_PASSWORD],
                 )
                 things = _merge_selection_things({}, things)
-            elif not errors:
-                await self.async_set_unique_id("kiwigrid_hems")
-                self._abort_if_unique_id_configured()
+
+            if not errors:
+                installation_id = derive_installation_id(entry_data, options, things)
+                if installation_id is None:
+                    errors["base"] = "invalid_input"
+                else:
+                    entry_data[CONF_INSTALLATION_ID] = installation_id
+                    await self.async_set_unique_id(installation_id)
+                    self._abort_if_unique_id_configured()
 
             if not errors and options.get(CONF_KIWIGRID_HEMS_ENABLED):
                 hems_things, errors = await self._async_fetch_hems_things(
@@ -536,7 +702,81 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_devices(self, user_input=None):
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> Any:
+        """Start reauthentication for an existing config entry."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self,
+        user_input: Mapping[str, Any] | None = None,
+    ) -> Any:
+        """Validate replacement credentials and update the existing entry."""
+        return await self._async_step_connection_update(
+            self._get_reauth_entry(),
+            user_input,
+            step_id="reauth_confirm",
+            reauth=True,
+        )
+
+    async def async_step_reconfigure(
+        self,
+        user_input: Mapping[str, Any] | None = None,
+    ) -> Any:
+        """Validate and update connection settings for an existing entry."""
+        return await self._async_step_connection_update(
+            self._get_reconfigure_entry(),
+            user_input,
+            step_id="reconfigure",
+            reauth=False,
+        )
+
+    async def _async_step_connection_update(
+        self,
+        entry: Any,
+        user_input: Mapping[str, Any] | None,
+        *,
+        step_id: str,
+        reauth: bool,
+    ) -> Any:
+        """Handle a validated reauth or reconfigure connection update."""
+        values = {**dict(entry.data), **dict(entry.options)}
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            values, entry_data, options, errors = (
+                await self._async_process_connection_input(entry, user_input)
+            )
+            if not errors:
+                if reauth:
+                    return self.async_update_and_abort(
+                        entry,
+                        data=entry_data,
+                        options=options,
+                    )
+                host = str(entry_data.get(CONF_HOST) or "")
+                title = (
+                    f"SOLARWATT ({host})" if host else "SOLARWATT KiwiGrid HEMS"
+                )
+                return self.async_update_and_abort(
+                    entry,
+                    title=title,
+                    data=entry_data,
+                    options=options,
+                )
+
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self._build_connection_schema(
+                values,
+                reauth=reauth,
+            ),
+            errors=errors,
+        )
+
+    async def async_step_devices(
+        self,
+        user_input: Mapping[str, Any] | None = None,
+    ) -> Any:
         if self._pending_entry_data is None or self._pending_options is None:
             return await self.async_step_user()
 
@@ -557,7 +797,10 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return vol.Schema(schema)
 
-    def _async_create_config_entry(self, selected_thing_uids: list[str] | None):
+    def _async_create_config_entry(
+        self,
+        selected_thing_uids: list[str] | None,
+    ) -> Any:
         """Create the config entry using the pending validated data."""
         assert self._pending_entry_data is not None
         assert self._pending_options is not None
@@ -589,7 +832,8 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
         """Fetch device metadata for the device selection step."""
         things_by_uid: dict[str, dict[str, Any]] = {}
-        result, errors = await self._async_with_client(
+        result, errors = await _async_with_client(
+            self.hass,
             host=host,
             username=username,
             password=password,
@@ -616,7 +860,8 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
         """Fetch KiwiGrid HEMS device metadata for the device selection step."""
         things_by_uid: dict[str, dict[str, Any]] = {}
-        result, errors = await self._async_with_client(
+        result, errors = await _async_with_client(
+            self.hass,
             host="",
             username="",
             password="",
@@ -638,39 +883,6 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
 
         return things_by_uid, errors
-
-    async def _async_with_client(
-        self,
-        *,
-        host: str,
-        username: str,
-        password: str,
-        action: Callable[[SOLARWATTClient], Awaitable[Any]],
-        action_label: str,
-        auth_error_code: str = "invalid_local_auth",
-    ) -> tuple[Any | None, dict[str, str]]:
-        """Run one client action and map known failures to config-flow errors."""
-        try:
-            client = SOLARWATTClient(
-                self.hass,
-                host=host,
-                username=username,
-                password=password,
-            )
-            try:
-                return await action(client), {}
-            finally:
-                await client.async_close()
-        except SolarwattAuthError as err:
-            _LOGGER.warning("Invalid SOLARWATT credentials while %s: %s", action_label, err)
-            return None, {"base": auth_error_code}
-        except Exception as err:
-            for error_type, error_code, log_message in _KNOWN_CLIENT_ERRORS:
-                if isinstance(err, error_type):
-                    _LOGGER.warning(log_message, action_label, err)
-                    return None, {"base": error_code}
-            _LOGGER.exception("Unexpected error while %s: %s", action_label, err)
-            return None, {"base": "unknown_error"}
 
     @staticmethod
     def _sorted_things(things: Mapping[str, dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
@@ -769,28 +981,50 @@ class SOLARWATTItemsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(config_entry: Any) -> Any:
         return SOLARWATTItemsOptionsFlow(config_entry)
 
 
 class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
-    def __init__(self, config_entry):
+    def __init__(self, config_entry: Any) -> None:
         # Home Assistant exposes `config_entry` as a read-only property on
         # OptionsFlow (no setter). Store the entry in the internal attribute
         # expected by the base class so this works across HA versions.
         self._config_entry = config_entry
         self._device_fields: dict[str, str] = {}
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(
+        self,
+        user_input: Mapping[str, Any] | None = None,
+    ) -> Any:
         if user_input is not None:
             entry_data = _normalize_options_entry_data(user_input, self.config_entry.data)
             data = self._build_options_data(user_input)
             errors = _validate_user_data(entry_data, data)
+            clean_entry_data = {
+                key: value
+                for key, value in entry_data.items()
+                if key != _RAW_HOST_KEY
+            }
+            connection_options = (
+                CONF_KIWIGRID_HEMS_ENABLED,
+                CONF_KIWIGRID_HEMS_USERNAME,
+                CONF_KIWIGRID_HEMS_PASSWORD,
+            )
+            connection_changed = clean_entry_data != dict(
+                self.config_entry.data
+            ) or any(
+                data.get(key) != self.config_entry.options.get(key)
+                for key in connection_options
+            )
+            if not errors and connection_changed:
+                errors = await _async_validate_connection_settings(
+                    self.hass,
+                    entry_data,
+                    data,
+                )
 
             if not errors:
-                rebuild_requested = bool(user_input.get(CONF_REBUILD_ENTITY_IDS))
-                if rebuild_requested:
-                    mark_pending_registry_migration(self.hass, self.config_entry.entry_id)
                 coordinator = getattr(self.config_entry, "runtime_data", None)
                 if coordinator is not None:
                     sync_selected_thing_entities(
@@ -803,27 +1037,6 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                         data,
                     )
                     coordinator.run_discovery_callbacks(data)
-                if rebuild_requested:
-                    current_options = dict(self.config_entry.options)
-                    clean_entry_data = {
-                        key: value
-                        for key, value in entry_data.items()
-                        if key != _RAW_HOST_KEY
-                    }
-                    if data != current_options or clean_entry_data != dict(self.config_entry.data):
-                        self.hass.config_entries.async_update_entry(
-                            self.config_entry,
-                            data=clean_entry_data,
-                            options=data,
-                        )
-                    else:
-                        await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-                    return self.async_abort(reason="rebuild_entity_ids_done")
-                clean_entry_data = {
-                    key: value
-                    for key, value in entry_data.items()
-                    if key != _RAW_HOST_KEY
-                }
                 if clean_entry_data != dict(self.config_entry.data):
                     self.hass.config_entries.async_update_entry(
                         self.config_entry,
@@ -852,6 +1065,7 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
             **dict(user_input or {}),
         }
         available_things = self._available_things(values)
+        selected_things: set[str] | None
         if user_input is not None and self._device_fields:
             selected_things = set(_selected_checkbox_uids(self._device_fields, user_input))
         else:
@@ -867,10 +1081,6 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         )
         schema: dict[Any, Any] = {
             **thing_schema,
-            vol.Optional(
-                CONF_REBUILD_ENTITY_IDS,
-                default=False,
-            ): bool,
             vol.Optional(CONF_HOST, default=values.get(CONF_HOST) or ""): str,
             vol.Optional(
                 CONF_USERNAME,

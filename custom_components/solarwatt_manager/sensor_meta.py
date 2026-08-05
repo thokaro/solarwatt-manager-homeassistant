@@ -106,7 +106,26 @@ _DOMAIN_META: dict[str, dict[str, Any]] = {
     "resistance": {"state_class": SensorStateClass.MEASUREMENT},
 }
 
-_BATTERY_PERCENTAGE_TOKENS = ("soc", "stateofcharge", "battery", "akku")
+_PRIMARY_BATTERY_PERCENTAGE_SUFFIXES = (
+    "soc",
+    "stateofcharge",
+    "batterypercentage",
+    "batterypercent",
+    "batterylevel",
+    "battery",
+    "akkustand",
+    "akku",
+    "ladezustand",
+)
+_SECONDARY_BATTERY_PERCENTAGE_TOKENS = (
+    "backup",
+    "limit",
+    "maximum",
+    "minimum",
+    "reserve",
+    "target",
+    "threshold",
+)
 _PERCENT_CHANNEL_HINTS = ("power-factor", "powerfactor", "percentage")
 
 _DERIVED_HEMS_POWER_NAMES = {
@@ -144,7 +163,8 @@ def guess_ha_meta(
         else None
     )
 
-    meta: dict[str, Any] = {"suggested_unit": _SUGGESTED_UNIT_MAP.get(unit, unit)}
+    suggested_unit = _SUGGESTED_UNIT_MAP.get(unit, unit) if unit is not None else None
+    meta: dict[str, Any] = {"suggested_unit": suggested_unit}
 
     seed_domain = name_domain or _UNIT_DOMAIN_MAP.get(unit or "")
     if seed_domain:
@@ -285,8 +305,16 @@ def _apply_domain_meta(
     if domain != "percentage":
         return
 
-    if any(token in name_l for token in _BATTERY_PERCENTAGE_TOKENS):
+    if _is_primary_battery_percentage(name_l):
         meta["device_class"] = SensorDeviceClass.BATTERY
+
+
+def _is_primary_battery_percentage(item_name: str) -> bool:
+    """Return True only for the current charge level, not SOC limits or reserves."""
+    compact_name = _compact_name(item_name)
+    return not any(
+        token in compact_name for token in _SECONDARY_BATTERY_PERCENTAGE_TOKENS
+    ) and compact_name.endswith(_PRIMARY_BATTERY_PERCENTAGE_SUFFIXES)
 
 
 def _is_total_increasing_energy(

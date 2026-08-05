@@ -12,6 +12,7 @@ from .const import (
     DOMAIN,
     SOLARWATTConfigEntry,
     build_thing_device_identifier,
+    get_device_registry_anchor,
 )
 from .hems_api import is_hems_thing
 
@@ -67,8 +68,8 @@ def _remove_orphaned_thing_devices(
     thing_uids: set[str],
 ) -> None:
     """Detach the config entry from empty-channel thing devices if they no longer have entities."""
-    host = str(entry.data.get("host") or "").strip().lower()
-    if not host or not thing_uids:
+    device_anchor = get_device_registry_anchor(entry)
+    if not thing_uids:
         return
 
     dev_reg = dr.async_get(hass)
@@ -77,7 +78,7 @@ def _remove_orphaned_thing_devices(
 
     for thing_uid in thing_uids:
         device = dev_reg.async_get_device(
-            identifiers={build_thing_device_identifier(host, thing_uid)}
+            identifiers={build_thing_device_identifier(device_anchor, thing_uid)}
         )
         if not device or entry.entry_id not in device.config_entries:
             continue

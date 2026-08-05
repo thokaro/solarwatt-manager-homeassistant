@@ -18,6 +18,10 @@
       "unknown_error": "Er is een onbekende fout opgetreden.",
       "missing_connection": "Configureer de lokale manager, KiwiGrid HEMS of beide."
     },
+    "abort": {
+      "reauth_successful": "De authenticatie is succesvol bijgewerkt.",
+      "reconfigure_successful": "De verbindingsinstellingen zijn succesvol bijgewerkt."
+    },
     "step": {
       "user": {
         "title": "Verbind SOLARWATT",
@@ -39,17 +43,48 @@
       "devices": {
         "title": "Selecteer apparaten",
         "description": "Selecteer met selectievakjes welke apparaten moeten worden aangemaakt. KiwiGrid en Battery staan standaard aan."
+      },
+      "reauth_confirm": {
+        "title": "SOLARWATT opnieuw authenticeren",
+        "description": "Werk de inloggegevens van de geconfigureerde SOLARWATT-verbindingen bij.",
+        "data": {
+          "host": "Lokale SOLARWATT Manager IP/Host",
+          "username": "Lokale SOLARWATT Manager gebruikersnaam",
+          "password": "Lokale SOLARWATT Manager wachtwoord",
+          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
+          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord"
+        }
+      },
+      "reconfigure": {
+        "title": "SOLARWATT opnieuw configureren",
+        "description": "Werk de verbindingen met de lokale Manager en KiwiGrid HEMS bij en valideer ze.",
+        "data": {
+          "host": "Lokale SOLARWATT Manager IP/Host",
+          "username": "Lokale SOLARWATT Manager gebruikersnaam",
+          "password": "Lokale SOLARWATT Manager wachtwoord",
+          "kiwigrid_hems_enabled": "KiwiGrid HEMS inschakelen (SOLARWATT Manager-portaal)",
+          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
+          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord"
+        }
       }
     }
   },
   "options": {
-    "abort": {
-      "rebuild_entity_ids_done": "Entiteits-ID's zijn opnieuw opgebouwd volgens het schema apparaatnaam + sensornaam."
-    },
     "error": {
+      "invalid_host": "Ongeldige host of IP-adres.",
+      "invalid_username": "Ongeldige gebruikersnaam.",
+      "invalid_password": "Ongeldig wachtwoord.",
       "invalid_scan_interval": "Update-interval moet tussen 10 en 3600 seconden liggen.",
       "invalid_energy_delta_kwh": "Energie-delta moet 0 of hoger zijn (kWh).",
-      "invalid_power_unavailable_threshold": "De power-unavailable-drempel moet 0 of hoger zijn."
+      "invalid_power_unavailable_threshold": "De power-unavailable-drempel moet 0 of hoger zijn.",
+      "invalid_input": "Ongeldige invoer.",
+      "invalid_local_auth": "Ongeldige gebruikersnaam of wachtwoord voor de lokale SOLARWATT Manager.",
+      "invalid_hems_auth": "Ongeldige gebruikersnaam of wachtwoord voor KiwiGrid HEMS (SOLARWATT Manager-portaal).",
+      "not_solarwatt": "Host lijkt geen SOLARWATT Manager te zijn.",
+      "cannot_connect": "Kan geen verbinding maken met de SOLARWATT Manager.",
+      "connection_failed": "Verbinding met SOLARWATT Manager mislukt.",
+      "unknown_error": "Er is een onbekende fout opgetreden.",
+      "missing_connection": "Configureer de lokale manager, KiwiGrid HEMS of beide."
     },
     "step": {
       "init": {
@@ -63,7 +98,6 @@
           "host": "Lokale SOLARWATT Manager IP/Host",
           "username": "Lokale SOLARWATT Manager gebruikersnaam",
           "password": "Lokale SOLARWATT Manager wachtwoord",
-          "rebuild_entity_ids": "Entiteits-ID's opnieuw opbouwen bij opslaan (apparaatnaam + sensornaam)",
           "scan_interval": "Update-interval: lokale apparaten en KiwiGrid Flow (seconden)",
           "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
           "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen",

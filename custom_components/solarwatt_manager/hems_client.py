@@ -28,6 +28,7 @@ ENDPOINT_HOME_CONSUMPTION_CONSUMERS = "/home/consumption/consumers"
 ENDPOINT_PV_PLANT = "/pv-plant"
 ENDPOINT_EVSTATION = "/evstation"
 ENDPOINT_PLUG = "/plug"
+ENDPOINT_SMART_HEATER = "/smart-heater"
 ENDPOINT_ANALYTICS_CONSUMPTION = "/analytics/consumption"
 ENDPOINT_ANALYTICS_PRODUCTION = "/analytics/production"
 ENDPOINT_ANALYTICS_STORAGE = "/analytics/storage"
@@ -127,6 +128,15 @@ class KiwiGridHEMSProtocolError(KiwiGridHEMSError):
     """Unexpected API response."""
 
 
+def _raise_for_login_http_error(status: int, *, where: str) -> None:
+    """Classify login HTTP failures as authentication or connection errors."""
+    if status < 400:
+        return
+    if status in (401, 403):
+        raise KiwiGridHEMSAuthError(f"{where} failed with HTTP {status}")
+    raise KiwiGridHEMSConnectionError(f"{where} failed with HTTP {status}")
+
+
 class KiwiGridHEMSClient:
     """Client for the KiwiGrid HEMS v11 HEMS API.
 
@@ -151,11 +161,16 @@ class KiwiGridHEMSClient:
         self._password = str(password or "")
         self._api_base = api_base.rstrip("/")
         self._request_timeout = max(int(request_timeout), 1)
+        self._auth_lock = asyncio.Lock()
 
     @property
     def enabled(self) -> bool:
         """Return whether the client can authenticate and make requests."""
         return bool(self._access_token or (self._username and self._password))
+
+    async def async_ensure_authenticated(self) -> None:
+        """Authenticate once before issuing concurrent endpoint requests."""
+        await self._async_ensure_access_token()
 
     def update_access_token(self, access_token: str) -> None:
         """Update the access token used for subsequent requests."""
@@ -200,10 +215,7 @@ class KiwiGridHEMSClient:
             async with self._session.get(auth_url, timeout=20, allow_redirects=True) as resp:
                 html = await resp.text()
                 login_url = str(resp.url)
-                if resp.status >= 400:
-                    raise KiwiGridHEMSAuthError(
-                        f"HEMS login start failed with HTTP {resp.status}"
-                    )
+                _raise_for_login_http_error(resp.status, where="HEMS login start")
         except KiwiGridHEMSError:
             raise
         except ClientError as err:
@@ -236,11 +248,15 @@ class KiwiGridHEMSClient:
                 timeout=20,
                 allow_redirects=False,
             ) as resp:
-                if resp.status in (400, 401, 403):
+                if resp.status in (401, 403):
                     text = await resp.text()
                     raise KiwiGridHEMSAuthError(
                         f"HEMS login credentials rejected: {text[:250]}"
                     )
+                _raise_for_login_http_error(
+                    resp.status,
+                    where="HEMS credential submit",
+                )
                 next_url = resp.headers.get("Location")
                 if not next_url:
                     text = await resp.text()
@@ -271,9 +287,9 @@ class KiwiGridHEMSClient:
                     continue
                 if 200 <= resp.status < 400:
                     return
-                text = await resp.text()
-                raise KiwiGridHEMSAuthError(
-                    f"HEMS login redirect failed with HTTP {resp.status}: {text[:250]}"
+                _raise_for_login_http_error(
+                    resp.status,
+                    where="HEMS login redirect",
                 )
         raise KiwiGridHEMSAuthError("HEMS login had too many redirects")
 
@@ -368,15 +384,26 @@ class KiwiGridHEMSClient:
     async def _async_ensure_access_token(self) -> None:
         if self._access_token:
             return
-        await self.async_login()
+        async with self._auth_lock:
+            if self._access_token:
+                return
+            await self.async_login()
+
+    async def _async_refresh_access_token(self, stale_token: str) -> None:
+        """Refresh an expired token once across concurrent endpoint requests."""
+        async with self._auth_lock:
+            if self._access_token and self._access_token != stale_token:
+                return
+            await self.async_refresh_token()
 
     async def _async_get_json(self, path: str, *, where: str) -> Any:
         await self._async_ensure_access_token()
 
         for attempt in range(2):
             url = f"{self._api_base}{path}"
+            request_token = self._access_token
             headers = {
-                "Authorization": f"Bearer {self._access_token}",
+                "Authorization": f"Bearer {request_token}",
                 "Accept": "application/json",
             }
 
@@ -388,7 +415,7 @@ class KiwiGridHEMSClient:
                 ) as resp:
                     if resp.status in (401, 403):
                         if attempt == 0 and (self._refresh_token or (self._username and self._password)):
-                            await self.async_refresh_token()
+                            await self._async_refresh_access_token(request_token)
                             continue
                         raise KiwiGridHEMSAuthError(
                             f"HEMS authentication failed while requesting {where}"
@@ -443,8 +470,9 @@ class KiwiGridHEMSClient:
 
         for attempt in range(2):
             url = f"{self._api_base}{path}"
+            request_token = self._access_token
             headers = {
-                "Authorization": f"Bearer {self._access_token}",
+                "Authorization": f"Bearer {request_token}",
                 "Accept": "application/json",
                 "Content-Type": "application/json",
             }
@@ -459,7 +487,7 @@ class KiwiGridHEMSClient:
                 ) as resp:
                     if resp.status in (401, 403):
                         if attempt == 0 and (self._refresh_token or (self._username and self._password)):
-                            await self.async_refresh_token()
+                            await self._async_refresh_access_token(request_token)
                             continue
                         raise KiwiGridHEMSAuthError(
                             f"HEMS authentication failed while requesting {where}"
@@ -578,6 +606,14 @@ class KiwiGridHEMSClient:
         return await self._async_get_list_endpoint(
             ENDPOINT_PLUG,
             where="GET /v11/plug",
+        )
+
+    # /v11/smart-heater ----------------------------------------------------
+    async def async_get_smart_heaters(self) -> list[dict[str, Any]]:
+        """Fetch smart heater details from /v11/smart-heater."""
+        return await self._async_get_list_endpoint(
+            ENDPOINT_SMART_HEATER,
+            where="GET /v11/smart-heater",
         )
 
     # /v11/energy-flow -----------------------------------------------------
@@ -879,9 +915,6 @@ class KiwiGridHEMSClient:
         return payload
 
 
-# Endpoint payload mapping -------------------------------------------------
-
-
 def hems_payloads_to_items(
     *,
     batteries: list[dict[str, Any]] | None = None,
@@ -890,6 +923,7 @@ def hems_payloads_to_items(
     pv_plants: list[dict[str, Any]] | None = None,
     evstations: list[dict[str, Any]] | None = None,
     plugs: list[dict[str, Any]] | None = None,
+    smart_heaters: list[dict[str, Any]] | None = None,
     energy_flow: dict[str, Any] | None = None,
     home_consumption_consumers: list[dict[str, Any]] | None = None,
     analytics_consumption: dict[str, Any] | None = None,
@@ -920,6 +954,7 @@ def hems_payloads_to_items(
         pv_plants=pv_plants,
         evstations=evstations,
         plugs=plugs,
+        smart_heaters=smart_heaters,
     )
     device_names_by_id = _device_names_by_id(
         batteries=batteries,
@@ -928,18 +963,24 @@ def hems_payloads_to_items(
         pv_plants=pv_plants,
         evstations=evstations,
         plugs=plugs,
+        smart_heaters=smart_heaters,
     )
     optimization_by_id = _payloads_by_id(device_optimizations or [])
     batteries = _merge_optimization_payloads(batteries or [], optimization_by_id)
     devices = _merge_optimization_payloads(devices or [], optimization_by_id)
     evstations = _merge_optimization_payloads(evstations or [], optimization_by_id)
     plugs = _merge_optimization_payloads(plugs or [], optimization_by_id)
+    smart_heaters = _merge_optimization_payloads(
+        smart_heaters or [],
+        optimization_by_id,
+    )
 
     items: list[dict[str, Any]] = []
     items.extend(battery_endpoint_to_items(batteries))
     items.extend(pv_plant_endpoint_to_items(pv_plants or []))
     items.extend(evstation_endpoint_to_items(evstations))
     items.extend(plug_endpoint_to_items(plugs))
+    items.extend(smart_heater_endpoint_to_items(smart_heaters))
     items.extend(device_endpoint_to_items(devices, skip_ids=specific_ids))
     items.extend(
         energy_flow_endpoint_to_items(
@@ -982,6 +1023,13 @@ def hems_payloads_to_items(
 # /v11/battery -------------------------------------------------------------
 
 
+def _defined_items(
+    items: Iterable[dict[str, Any] | None],
+) -> list[dict[str, Any]]:
+    """Return only item payloads that contain a usable value."""
+    return [item for item in items if item is not None]
+
+
 def battery_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Map /v11/battery payloads to items."""
     items: list[dict[str, Any]] = []
@@ -989,7 +1037,7 @@ def battery_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[st
         prefix = _hems_prefix("battery", battery)
         items.extend(
             _hems_common_device_items(prefix, battery)
-            + [
+            + _defined_items([
                 _number_item(prefix, "state_of_charge", battery.get("state_of_charge"), "%", "Number:Dimensionless", scale=100),
                 _number_item(prefix, "state_of_charge_minimum", battery.get("state_of_charge_minimum"), "%", "Number:Dimensionless", scale=100),
                 _number_item(prefix, "backup_state_of_charge", battery.get("backup_state_of_charge"), "%", "Number:Dimensionless", scale=100),
@@ -1000,7 +1048,7 @@ def battery_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[st
                 _bool_item(prefix, "backup_active", battery.get("backup_active")),
                 _bool_item(prefix, "backup_available", battery.get("backup_available")),
                 _bool_item(prefix, "time_of_use_available", battery.get("time_of_use_available")),
-            ]
+            ])
         )
     return items
 
@@ -1015,12 +1063,12 @@ def pv_plant_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[s
         prefix = _hems_prefix("pv_plant", pv_plant)
         items.extend(
             _hems_common_device_items(prefix, pv_plant)
-            + [
+            + _defined_items([
                 _number_item(prefix, "power_installed_peak", pv_plant.get("power_installed_peak"), "W", "Number:Power"),
                 _number_item(prefix, "module_orientation", _value_from_unit_dict(pv_plant.get("module_orientation")), "°", "Number"),
                 _number_item(prefix, "module_tilt", _value_from_unit_dict(pv_plant.get("module_tilt")), "°", "Number"),
                 _string_item(prefix, "date_installation", _date_ms_to_iso(pv_plant.get("date_installation"))),
-            ]
+            ])
         )
     return items
 
@@ -1035,10 +1083,10 @@ def evstation_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[
         prefix = _hems_prefix("evstation", evstation)
         items.extend(
             _hems_common_device_items(prefix, evstation)
-            + [
+            + _defined_items([
                 _string_item(prefix, "mode", evstation.get("mode")),
                 _string_item(prefix, "connectivity_status", evstation.get("connectivity_status")),
-            ]
+            ])
         )
     return items
 
@@ -1052,6 +1100,38 @@ def plug_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[str, 
     for plug in payload:
         prefix = _hems_prefix("plug", plug)
         items.extend(_hems_common_device_items(prefix, plug))
+    return items
+
+
+# /v11/smart-heater --------------------------------------------------------
+
+
+def smart_heater_endpoint_to_items(
+    payload: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Map /v11/smart-heater payloads to items."""
+    items: list[dict[str, Any]] = []
+    for heater in payload:
+        prefix = _hems_prefix("smart_heater", heater)
+        items.extend(
+            _hems_common_device_items(prefix, heater)
+            + _defined_items([
+                _number_item(
+                    prefix,
+                    "temperature",
+                    heater.get("temperature"),
+                    "°C",
+                    "Number:Temperature",
+                ),
+                _number_item(
+                    prefix,
+                    "power_ac_in_max",
+                    heater.get("power_ac_in_max"),
+                    "W",
+                    "Number:Power",
+                ),
+            ])
+        )
     return items
 
 
@@ -1238,11 +1318,12 @@ def device_endpoint_to_items(
         prefix = _hems_prefix("device", device)
         items.extend(_hems_common_device_items(prefix, device))
         if "mode" in device:
-            items.append(_string_item(prefix, "mode", device.get("mode")))
+            if item := _string_item(prefix, "mode", device.get("mode")):
+                items.append(item)
     return items
 
 
-# /v11/analytics and forecast time series ---------------------------------
+# /v11/analytics time series ----------------------------------------------
 
 
 def _analytics_payload_to_items(
@@ -1334,8 +1415,7 @@ def _analytics_timeseries_endpoint_to_items(
             aggregated=True,
             currency=currency,
         )
-        items.append(
-            _number_item(
+        if aggregated_item := _number_item(
                 prefix,
                 suffix,
                 series.get("aggregated"),
@@ -1343,8 +1423,8 @@ def _analytics_timeseries_endpoint_to_items(
                 aggregated_type,
                 scale=aggregated_scale,
                 label=label,
-            )
-        )
+            ):
+            items.append(aggregated_item)
         latest = _latest_timeseries_value(series.get("values"))
         if include_latest and latest is not None:
             _, latest_value = latest
@@ -1353,8 +1433,7 @@ def _analytics_timeseries_endpoint_to_items(
                 aggregated=False,
                 currency=currency,
             )
-            items.append(
-                _number_item(
+            if latest_item := _number_item(
                     prefix,
                     f"{suffix}_latest",
                     latest_value,
@@ -1362,8 +1441,8 @@ def _analytics_timeseries_endpoint_to_items(
                     item_type,
                     scale=latest_scale,
                     label=f"{label} Latest",
-                )
-            )
+                ):
+                items.append(latest_item)
 
     return items
 
@@ -1483,6 +1562,7 @@ def hems_payloads_to_things(
     pv_plants: list[dict[str, Any]] | None = None,
     evstations: list[dict[str, Any]] | None = None,
     plugs: list[dict[str, Any]] | None = None,
+    smart_heaters: list[dict[str, Any]] | None = None,
     energy_flow: dict[str, Any] | None = None,
     home_consumption_consumers: list[dict[str, Any]] | None = None,
     analytics_consumption: dict[str, Any] | None = None,
@@ -1507,25 +1587,32 @@ def hems_payloads_to_things(
 
     Each endpoint-specific payload becomes its own Home Assistant device via
     the existing thing/device mapping. This keeps HEMS battery, PV plant, EV
-    station, plug and generic device data visually separated in Home Assistant.
+    station, plug, smart heater and generic device data visually separated in
+    Home Assistant.
     """
     specific_ids = _known_specific_device_ids(
         batteries=batteries,
         pv_plants=pv_plants,
         evstations=evstations,
         plugs=plugs,
+        smart_heaters=smart_heaters,
     )
     optimization_by_id = _payloads_by_id(device_optimizations or [])
     batteries = _merge_optimization_payloads(batteries or [], optimization_by_id)
     devices = _merge_optimization_payloads(devices or [], optimization_by_id)
     evstations = _merge_optimization_payloads(evstations or [], optimization_by_id)
     plugs = _merge_optimization_payloads(plugs or [], optimization_by_id)
+    smart_heaters = _merge_optimization_payloads(
+        smart_heaters or [],
+        optimization_by_id,
+    )
 
     things: list[dict[str, Any]] = []
     things.extend(_endpoint_payloads_to_things("battery", batteries))
     things.extend(_endpoint_payloads_to_things("pv_plant", pv_plants or []))
     things.extend(_endpoint_payloads_to_things("evstation", evstations))
     things.extend(_endpoint_payloads_to_things("plug", plugs))
+    things.extend(_endpoint_payloads_to_things("smart_heater", smart_heaters))
     things.extend(
         _endpoint_payloads_to_things(
             "device",
@@ -1636,7 +1723,7 @@ def _hems_payload_to_thing(kind: str, payload: dict[str, Any]) -> dict[str, Any]
         "thingTypeUID": f"kiwigrid-hems:{kind}",
         "thingTypeUid": f"kiwigrid-hems:{kind}",
         "statusInfo": {
-            "status": _hems_device_status(payload),
+            "status": "ONLINE" if is_synthetic_hems_device else _hems_device_status(payload),
             "statusDetail": "NONE",
         },
         "properties": _hems_thing_properties(kind, payload, title),
@@ -1653,6 +1740,8 @@ def _items_for_hems_payload(kind: str, payload: dict[str, Any]) -> list[dict[str
         return evstation_endpoint_to_items([payload])
     if kind == "plug":
         return plug_endpoint_to_items([payload])
+    if kind == "smart_heater":
+        return smart_heater_endpoint_to_items([payload])
     if kind == "device":
         return device_endpoint_to_items([payload])
     if kind in ANALYTICS_KIND_CONFIG:
@@ -1697,7 +1786,7 @@ def _hems_thing_properties(kind: str, payload: dict[str, Any], title: str) -> di
 
 def _is_synthetic_hems_kind(kind: str) -> bool:
     """Return True for HEMS endpoints grouped under the synthetic HEMS device."""
-    return kind.startswith(("analytics_", "forecast_"))
+    return kind.startswith("analytics_")
 
 
 def _hems_device_model(payload: Mapping[str, Any], title: str) -> str:
@@ -1754,6 +1843,7 @@ def _hems_kind_title(kind: str) -> str:
         "pv_plant": "KiwiGrid HEMS PV Plant",
         "evstation": "KiwiGrid HEMS EV Station",
         "plug": "KiwiGrid HEMS Plug",
+        "smart_heater": "KiwiGrid HEMS Smart Heater",
         "device": "KiwiGrid HEMS Device",
         "analytics_consumption": "KiwiGrid Stats",
         "analytics_production": "KiwiGrid Stats",
@@ -1769,6 +1859,7 @@ def _hems_kind_endpoint(kind: str) -> str:
         "pv_plant": "/v11/pv-plant",
         "evstation": "/v11/evstation",
         "plug": "/v11/plug",
+        "smart_heater": "/v11/smart-heater",
         "device": "/v11/device",
         "analytics_consumption": "/v11/analytics/consumption",
         "analytics_production": "/v11/analytics/production",
@@ -1787,26 +1878,26 @@ def _hems_common_device_items(prefix: str, payload: dict[str, Any]) -> list[dict
     firmware is intentionally not exposed as separate entities. It is mapped
     to Home Assistant DeviceInfo via hems_payloads_to_things() instead.
     """
-    return [
+    return _defined_items([
         _diagnostic_string_item(prefix, "type", payload.get("type")),
         _diagnostic_string_item(prefix, "state_device", payload.get("state_device")),
         _bool_item(prefix, "configured_in_location", payload.get("configured_in_location")),
-    ] + _hems_optimization_items(prefix, payload)
+    ]) + _hems_optimization_items(prefix, payload)
 
 
-def _hems_optimization_items(prefix: str, payload: dict[str, Any]) -> list[dict[str, Any] | None]:
+def _hems_optimization_items(prefix: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
     optimization = payload.get("optimization")
     if not isinstance(optimization, dict):
         return []
     config = optimization.get("config")
     config = config if isinstance(config, dict) else {}
-    return [
+    return _defined_items([
         _diagnostic_string_item(prefix, "optimization_mode", config.get("optimization_mode")),
         _diagnostic_string_item(prefix, "switch_state", optimization.get("switch_state")),
         _diagnostic_bool_item(prefix, "schedule_exists", optimization.get("schedule_exists")),
         _diagnostic_bool_item(prefix, "supports_switching", optimization.get("supports_switching")),
         _diagnostic_bool_item(prefix, "requires_override", optimization.get("requires_override")),
-    ]
+    ])
 
 
 def _known_specific_device_ids(
@@ -1815,9 +1906,10 @@ def _known_specific_device_ids(
     pv_plants: list[dict[str, Any]] | None,
     evstations: list[dict[str, Any]] | None,
     plugs: list[dict[str, Any]] | None,
+    smart_heaters: list[dict[str, Any]] | None,
 ) -> set[str]:
     ids: set[str] = set()
-    for payloads in (batteries, pv_plants, evstations, plugs):
+    for payloads in (batteries, pv_plants, evstations, plugs, smart_heaters):
         for payload in payloads or []:
             if payload_id := _payload_id(payload):
                 ids.add(payload_id)
@@ -1840,10 +1932,19 @@ def _device_names_by_id(
     pv_plants: Iterable[dict[str, Any]] | None = None,
     evstations: Iterable[dict[str, Any]] | None = None,
     plugs: Iterable[dict[str, Any]] | None = None,
+    smart_heaters: Iterable[dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     """Return HEMS device display names keyed by KiwiGrid device id."""
     names: dict[str, str] = {}
-    for payloads in (devices, device_optimizations, batteries, pv_plants, evstations, plugs):
+    for payloads in (
+        devices,
+        device_optimizations,
+        batteries,
+        pv_plants,
+        evstations,
+        plugs,
+        smart_heaters,
+    ):
         for payload in payloads or ():
             if not isinstance(payload, Mapping):
                 continue
@@ -1862,6 +1963,7 @@ def hems_device_names_by_id(
     pv_plants: Iterable[dict[str, Any]] | None = None,
     evstations: Iterable[dict[str, Any]] | None = None,
     plugs: Iterable[dict[str, Any]] | None = None,
+    smart_heaters: Iterable[dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     """Return HEMS device display names keyed by KiwiGrid device id."""
     return _device_names_by_id(
@@ -1871,6 +1973,7 @@ def hems_device_names_by_id(
         pv_plants=pv_plants,
         evstations=evstations,
         plugs=plugs,
+        smart_heaters=smart_heaters,
     )
 
 

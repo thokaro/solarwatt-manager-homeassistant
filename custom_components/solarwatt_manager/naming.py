@@ -44,6 +44,16 @@ SPECIAL_DISPLAY_NAMES: dict[str, str] = {
     "batterySoc": "Battery SoC",
 }
 
+_DISPLAY_ACRONYMS = {
+    "ev": "EV",
+    "pv": "PV",
+    "soc": "SoC",
+}
+_DISPLAY_ACRONYM_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?P<acronym>ev|pv|soc)(?P<digits>\d*)(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
 
 @lru_cache(maxsize=1)
 def _compiled_conditional_id_rules() -> list[re.Pattern[str]]:
@@ -56,36 +66,16 @@ def _compiled_static_normalization_rules() -> list[tuple[re.Pattern[str], str]]:
 
 
 _HEMS_ITEM_RE = re.compile(
-    r"^hems_(?P<kind>battery|pv_plant|evstation|plug|device|flow|analytics_consumption|analytics_production|analytics_storage|analytics_independence|analytics_finance)_"
+    r"^hems_(?P<kind>battery|pv_plant|evstation|plug|smart_heater|device|flow|analytics_consumption|analytics_production|analytics_storage|analytics_independence|analytics_finance)_"
     r"(?:(?P<id>[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}|v11)_)?"
     r"(?P<suffix>.+)$",
     re.IGNORECASE,
 )
-_HEMS_ANALYTICS_KINDS = {
-    "analytics_consumption",
-    "analytics_production",
-    "analytics_storage",
-    "analytics_independence",
-    "analytics_finance",
-}
 
 
 def _hems_item_match(raw: str) -> re.Match[str] | None:
     """Return parsed KiwiGrid HEMS item metadata."""
     return _HEMS_ITEM_RE.match(clean_item_key(raw))
-
-
-def _is_hems_analytics_kind(kind: str | None) -> bool:
-    """Return True for synthetic daily hems analytics items."""
-    return bool(kind and kind.lower() in _HEMS_ANALYTICS_KINDS)
-
-
-def hems_item_kind(raw: str) -> str | None:
-    """Return the KiwiGrid HEMS item kind."""
-    match = _hems_item_match(raw)
-    if not match:
-        return None
-    return match.group("kind").lower()
 
 
 def hems_item_suffix(raw: str) -> str | None:
@@ -99,47 +89,6 @@ def hems_item_suffix(raw: str) -> str | None:
 def is_hems_item_name(raw: str) -> bool:
     """Return True for item names generated from the KiwiGrid HEMS API."""
     return hems_item_suffix(raw) is not None
-
-
-def hems_entity_object_id(device_name: str, item_name: str) -> str | None:
-    """Return a compact object_id for a KiwiGrid HEMS entity.
-
-    The OpenHAB-like item name keeps the KiwiGrid UUID for uniqueness, but the
-    Home Assistant entity_id should be user-friendly. For example:
-    ``hems_battery_<uuid>_state_of_charge`` on device
-    ``SOLARWATT Battery vision three`` becomes
-    ``solarwatt_battery_vision_three_state_of_charge``.
-    """
-    suffix = hems_item_suffix(item_name)
-    if not suffix:
-        return None
-
-    device_slug = slugify_entity_name(device_name)
-    kind = hems_item_kind(item_name)
-    suffix_slug = _hems_entity_suffix_slug(
-        suffix,
-        device_name,
-        is_physical=not _is_hems_analytics_kind(kind),
-    )
-
-    if not _is_hems_analytics_kind(kind):
-        return compose_slug_parts(device_slug, suffix_slug) or None
-
-    return compose_slug_parts(device_slug, suffix_slug) or None
-
-
-def _hems_entity_suffix_slug(
-    suffix: str,
-    device_name: str,
-    *,
-    is_physical: bool,
-) -> str:
-    """Return the object-id suffix for a HEMS item."""
-    normalized_suffix = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", suffix)
-    suffix_slug = trim_device_tokens(normalized_suffix, device_name)
-    if not is_physical:
-        return suffix_slug
-    return _strip_leading_slug_token(suffix_slug, "hems")
 
 
 def clean_item_key(raw: str) -> str:
@@ -182,6 +131,25 @@ def item_entity_name(
     return format_display_name(base_name)
 
 
+def normalize_display_acronyms(name: str) -> str:
+    """Normalize known acronyms without changing other display-name casing."""
+    return _DISPLAY_ACRONYM_RE.sub(
+        lambda match: (
+            f"{_DISPLAY_ACRONYMS[match.group('acronym').lower()]}"
+            f"{match.group('digits')}"
+        ),
+        name,
+    )
+
+
+def item_display_name(raw: str, label: str | None = None) -> str:
+    """Return an item label with consistent acronym casing."""
+    clean_label = str(label or "").strip()
+    if clean_label:
+        return normalize_display_acronyms(clean_label)
+    return item_entity_name(raw)
+
+
 def slugify_entity_name(name: str) -> str:
     """Return a Home Assistant friendly object-id fragment."""
     slug = re.sub(r"[^a-z0-9]+", "_", (name or "").strip().lower())
@@ -197,22 +165,6 @@ def _slug_tokens(name: str) -> list[str]:
 def _join_slug_tokens(tokens: list[str]) -> str:
     """Join slug tokens into one Home Assistant object-id fragment."""
     return "_".join(token for token in tokens if token)
-
-
-def _strip_leading_slug_token(slug: str, token: str) -> str:
-    """Remove one leading marker token from a slug."""
-    tokens = _slug_tokens(slug)
-    if tokens[:1] == [token]:
-        tokens = tokens[1:]
-    return _join_slug_tokens(tokens)
-
-
-def _move_leading_slug_token_to_end(slug: str, token: str) -> str:
-    """Move one leading marker token to the end of a slug."""
-    tokens = _slug_tokens(slug)
-    if tokens[:1] == [token] and len(tokens) > 1:
-        tokens = tokens[1:] + [token]
-    return _join_slug_tokens(tokens)
 
 
 def trim_device_tokens(entity_name: str, device_name: str) -> str:
@@ -235,21 +187,6 @@ def trim_device_tokens(entity_name: str, device_name: str) -> str:
     return _join_slug_tokens(entity_tokens)
 
 
-def compose_slug_parts(*parts: str | None) -> str:
-    """Return one object-id slug from already-normalized or display-name parts."""
-    tokens: list[str] = []
-    for part in parts:
-        tokens.extend(_slug_tokens(part or ""))
-    return _join_slug_tokens(tokens)
-
-
-def compose_entity_object_id(device_name: str, entity_name: str) -> str:
-    """Return a stable object-id from device and entity names without duplicates."""
-    clean_device_name = slugify_entity_name(device_name)
-    clean_entity_name = trim_device_tokens(entity_name, device_name)
-    return compose_slug_parts(clean_device_name, clean_entity_name)
-
-
 def format_display_name(name: str) -> str:
     """Format a human-friendly display name (Title Case with exceptions)."""
     if not name:
@@ -268,6 +205,7 @@ def format_display_name(name: str) -> str:
             ("soh", "SoH"),
             ("ac", "AC"),
             ("dc", "DC"),
+            ("ev", "EV"),
             ("pv", "PV"),
             ("mppt", "MPPT"),
             ("acs", "ACS"),

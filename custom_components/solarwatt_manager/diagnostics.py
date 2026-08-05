@@ -8,7 +8,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH, DOMAIN, SOLARWATTConfigEntry
+from .const import (
+    CONF_ENERGY_DELTA_KWH,
+    DEFAULT_ENERGY_DELTA_KWH,
+    DOMAIN,
+    SOLARWATTConfigEntry,
+    get_device_registry_anchor,
+)
 
 
 def _redact(obj: Any) -> Any:
@@ -20,7 +26,10 @@ def _redact(obj: Any) -> Any:
             normalized_key = lk.replace("_", "").replace("-", "")
             if normalized_key in {"serial", "serialnumber"}:
                 continue
-            if any(s in lk for s in ("password", "token", "cookie", "authorization", "session")):
+            if normalized_key in {"host", "installationid", "username"} or any(
+                s in lk
+                for s in ("password", "token", "cookie", "authorization", "session")
+            ):
                 out[k] = "REDACTED"
             else:
                 out[k] = _redact(v)
@@ -166,8 +175,8 @@ async def async_get_config_entry_diagnostics(
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
 
-    host = getattr(getattr(coordinator, "client", None), "host", None) or entry.entry_id
-    dev = dev_reg.async_get_device(identifiers={(DOMAIN, host)})
+    device_anchor = get_device_registry_anchor(entry)
+    dev = dev_reg.async_get_device(identifiers={(DOMAIN, device_anchor)})
     device = (
         {
             "name": dev.name,

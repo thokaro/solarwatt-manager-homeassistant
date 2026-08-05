@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     SOLARWATTConfigEntry,
     build_thing_device_info,
+    get_device_registry_anchor,
     get_selected_thing_uids,
     get_thing_display_name,
 )
@@ -121,10 +122,11 @@ class SOLARWATTHEMSOptimizationSwitch(CoordinatorEntity, SwitchEntity):
         )
         self._attr_device_info = build_thing_device_info(
             self.coordinator.hass,
-            str(self.coordinator.client.host or entry_id),
+            get_device_registry_anchor(self.coordinator.entry),
             thing,
             self.coordinator.things,
             selected_thing_uids,
+            str(self.coordinator.client.host or ""),
         )
 
     @property

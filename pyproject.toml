@@ -4,16 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "solarwatt-manager-homeassistant"
-version = "2026.7.4"
+version = "2026.8.0"
 description = "SOLARWATT Manager custom integration for Home Assistant"
 license = { file = "LICENSE" }
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = []
 
 [project.optional-dependencies]
 test = [
     "aiohttp>=3.9",
+    "mypy>=1.15",
     "pytest>=8.0",
+    "ruff>=0.11",
 ]
 
 [tool.setuptools.packages.find]
@@ -22,3 +24,10 @@ include = ["custom_components*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.mypy]
+files = ["custom_components/solarwatt_manager"]
+follow_imports = "skip"
+ignore_missing_imports = true
+python_version = "3.13"
+show_error_codes = true

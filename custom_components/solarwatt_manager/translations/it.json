@@ -18,6 +18,10 @@
       "unknown_error": "Si e verificato un errore sconosciuto.",
       "missing_connection": "Configura il manager locale, KiwiGrid HEMS o entrambi."
     },
+    "abort": {
+      "reauth_successful": "L'autenticazione è stata aggiornata correttamente.",
+      "reconfigure_successful": "Le impostazioni di connessione sono state aggiornate correttamente."
+    },
     "step": {
       "user": {
         "title": "Connetti SOLARWATT",
@@ -39,17 +43,48 @@
       "devices": {
         "title": "Seleziona dispositivi",
         "description": "Seleziona con le caselle i dispositivi da creare. KiwiGrid e Battery sono attivi per impostazione predefinita."
+      },
+      "reauth_confirm": {
+        "title": "Autentica nuovamente SOLARWATT",
+        "description": "Aggiorna le credenziali delle connessioni SOLARWATT configurate.",
+        "data": {
+          "host": "IP/Host del SOLARWATT Manager locale",
+          "username": "Nome utente del SOLARWATT Manager locale",
+          "password": "Password del SOLARWATT Manager locale",
+          "kiwigrid_hems_username": "KiwiGrid (portale SOLARWATT Manager) nome utente o indirizzo e-mail",
+          "kiwigrid_hems_password": "KiwiGrid (portale SOLARWATT Manager) password"
+        }
+      },
+      "reconfigure": {
+        "title": "Riconfigura SOLARWATT",
+        "description": "Aggiorna e convalida le connessioni al Manager locale e a KiwiGrid HEMS.",
+        "data": {
+          "host": "IP/Host del SOLARWATT Manager locale",
+          "username": "Nome utente del SOLARWATT Manager locale",
+          "password": "Password del SOLARWATT Manager locale",
+          "kiwigrid_hems_enabled": "Abilita KiwiGrid HEMS (portale SOLARWATT Manager)",
+          "kiwigrid_hems_username": "KiwiGrid (portale SOLARWATT Manager) nome utente o indirizzo e-mail",
+          "kiwigrid_hems_password": "KiwiGrid (portale SOLARWATT Manager) password"
+        }
       }
     }
   },
   "options": {
-    "abort": {
-      "rebuild_entity_ids_done": "Gli ID entità sono stati ricostruiti secondo lo schema nome dispositivo + nome sensore."
-    },
     "error": {
+      "invalid_host": "Host o indirizzo IP non valido.",
+      "invalid_username": "Nome utente non valido.",
+      "invalid_password": "Password non valida.",
       "invalid_scan_interval": "L'intervallo di aggiornamento deve essere compreso tra 10 e 3600 secondi.",
       "invalid_energy_delta_kwh": "Il delta energia deve essere maggiore o uguale a 0 (kWh).",
-      "invalid_power_unavailable_threshold": "La soglia unavailable della potenza deve essere maggiore o uguale a 0."
+      "invalid_power_unavailable_threshold": "La soglia unavailable della potenza deve essere maggiore o uguale a 0.",
+      "invalid_input": "Input non valido.",
+      "invalid_local_auth": "Nome utente o password non validi per il SOLARWATT Manager locale.",
+      "invalid_hems_auth": "Nome utente o password non validi per KiwiGrid HEMS (portale SOLARWATT Manager).",
+      "not_solarwatt": "L'host non sembra essere un SOLARWATT Manager.",
+      "cannot_connect": "Impossibile connettersi al SOLARWATT Manager.",
+      "connection_failed": "Connessione al SOLARWATT Manager non riuscita.",
+      "unknown_error": "Si e verificato un errore sconosciuto.",
+      "missing_connection": "Configura il manager locale, KiwiGrid HEMS o entrambi."
     },
     "step": {
       "init": {
@@ -63,7 +98,6 @@
           "host": "IP/Host del SOLARWATT Manager locale",
           "username": "Nome utente del SOLARWATT Manager locale",
           "password": "Password del SOLARWATT Manager locale",
-          "rebuild_entity_ids": "Ricostruisci gli ID entità al salvataggio (nome dispositivo + nome sensore)",
           "scan_interval": "Intervallo di aggiornamento: dispositivi locali e KiwiGrid Flow (secondi)",
           "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
           "power_unavailable_threshold": "Soglia unavailable potenza (poll). Mantieni l'ultimo valore fino all'N-esimo unavailable; 0 = disattiva",

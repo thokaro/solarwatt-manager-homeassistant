@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     SOLARWATTConfigEntry,
     build_thing_device_info,
+    get_device_registry_anchor,
     get_selected_thing_uids,
 )
 from .entity_helpers import (
@@ -68,10 +69,11 @@ class SOLARWATTDiagnosticsRefreshButton(CoordinatorEntity, ButtonEntity):
         self._attr_unique_id = build_thing_diagnostics_refresh_unique_id(entry_id, thing_uid)
         self._attr_device_info = build_thing_device_info(
             self.coordinator.hass,
-            str(self.coordinator.client.host or entry_id),
+            get_device_registry_anchor(self.coordinator.entry),
             thing,
             self.coordinator.things,
             selected_thing_uids,
+            str(self.coordinator.client.host or ""),
         )
 
     async def async_press(self) -> None:

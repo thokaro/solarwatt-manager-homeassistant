@@ -7,17 +7,37 @@ on:
 
 jobs:
   tests:
-    name: Tests
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.13"
+          - "3.14"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test dependencies
+        run: python -m pip install -e ".[test]"
+      - name: Run tests
+        run: pytest
+
+  quality:
+    name: Ruff and MyPy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
-      - name: Install test dependencies
+          python-version: "3.14"
+      - name: Install quality dependencies
         run: python -m pip install -e ".[test]"
-      - name: Run tests
-        run: pytest
+      - name: Run Ruff
+        run: ruff check custom_components tests
+      - name: Run MyPy
+        run: mypy
 
   hacs:
     name: HACS validation

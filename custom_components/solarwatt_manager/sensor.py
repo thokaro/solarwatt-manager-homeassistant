@@ -21,6 +21,7 @@ from .const import (
     build_thing_device_identifier,
     build_thing_device_info,
     get_disable_duplicate_item_entities,
+    get_device_registry_anchor,
     get_registry_device_name,
     get_selected_thing_uids,
     get_thing_display_name,
@@ -33,7 +34,7 @@ from .entity_helpers import (
     is_stats_total_source_item_name,
     iter_item_sensor_names,
 )
-from .naming import item_entity_name, slugify_entity_name, trim_device_tokens
+from .naming import item_display_name, item_entity_name, slugify_entity_name, trim_device_tokens
 from .sensor_meta import guess_ha_meta
 from .stats_total import StatsTotalStore
 
@@ -190,19 +191,25 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
 
         # Resolve the owning HA device once so naming and registry mapping stay aligned.
         things = self.coordinator.things
-        self._host = str(self.coordinator.client.host or entry_id)
+        self._device_anchor = get_device_registry_anchor(self.coordinator.entry)
+        configuration_host = str(self.coordinator.client.host or "")
         self._thing_uid = self.coordinator.item_to_thing_uid.get(item_name)
         thing = things.get(self._thing_uid) if self._thing_uid else None
         self._attr_device_info = (
             build_thing_device_info(
                 self.coordinator.hass,
-                self._host,
+                self._device_anchor,
                 thing,
                 things,
                 selected_thing_uids,
+                configuration_host,
             )
             if isinstance(thing, dict)
-            else build_device_info(self._host, device_name)
+            else build_device_info(
+                self._device_anchor,
+                device_name,
+                configuration_host,
+            )
         )
         item = (self.coordinator.data or {}).get(item_name)
         channel_metadata = self.coordinator.item_to_channel_metadata.get(item_name)
@@ -235,8 +242,8 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
 
     def _device_identifier(self) -> tuple[str, str]:
         if self._thing_uid:
-            return build_thing_device_identifier(self._host, self._thing_uid)
-        return DOMAIN, self._host
+            return build_thing_device_identifier(self._device_anchor, self._thing_uid)
+        return DOMAIN, self._device_anchor
 
     def _build_device_name(self) -> str:
         registry_device_name = get_registry_device_name(self.hass, self._device_identifier())
@@ -250,11 +257,10 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
 
     def _item_display_name(self) -> str:
         item = (self.coordinator.data or {}).get(self._item_name)
-        if item:
-            label = str(item.label or "").strip()
-            if label:
-                return label
-        return item_entity_name(self._item_name)
+        return item_display_name(
+            self._item_name,
+            item.label if item else None,
+        )
 
     def _sync_display_name(self) -> bool:
         new_name = self._item_display_name()
@@ -520,10 +526,11 @@ class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = get_thing_display_name(thing, thing_uid) or thing_uid
         self._attr_device_info = build_thing_device_info(
             self.coordinator.hass,
-            str(self.coordinator.client.host or entry_id),
+            get_device_registry_anchor(self.coordinator.entry),
             thing,
             self.coordinator.things,
             selected_thing_uids,
+            str(self.coordinator.client.host or ""),
         )
 
     def _thing(self) -> dict | None:

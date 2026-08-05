@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from .module_loader import load_component_module
 
 hems_client = load_component_module("hems_client")
 KiwiGridHEMSClient = hems_client.KiwiGridHEMSClient
+KiwiGridHEMSAuthError = hems_client.KiwiGridHEMSAuthError
+KiwiGridHEMSConnectionError = hems_client.KiwiGridHEMSConnectionError
 consumers_endpoint_to_items = hems_client.consumers_endpoint_to_items
 energy_flow_endpoint_to_items = hems_client.energy_flow_endpoint_to_items
 hems_payloads_to_items = hems_client.hems_payloads_to_items
@@ -16,6 +20,7 @@ BATTERY_ID = "9c319824-bda6-4bbd-ac20-764dc1cfa34c"
 EVSTATION_ID = "8695a754-d66c-430c-9fa6-374bac0965b3"
 PV_ID = "95c5e9fb-e3d1-42b7-9a03-fd024ca58b9e"
 GRID_METER_ID = "e34b5f52-bf2a-43b5-a2fb-caf2ed624624"
+SMART_HEATER_ID = "700ff539-7ae2-4802-83f8-afa1949ec7d0"
 ANALYTICS_PRODUCTION_PAYLOAD = {
     "timeseries": [
         {
@@ -551,10 +556,78 @@ class _FakeContextSession:
         return _FakeContextResponse()
 
 
+class _FakeLoginStartResponse(_FakeContextResponse):
+    def __init__(self, status):
+        self.status = status
+        self.url = hems_client.KIWIGRID_AUTH_URL
+
+    async def text(self):
+        return "Service Unavailable"
+
+
+class _FakeLoginStartSession:
+    def __init__(self, status):
+        self.status = status
+
+    def get(self, *args, **kwargs):
+        return _FakeLoginStartResponse(self.status)
+
+
 def test_hems_context_empty_body_returns_empty_context():
     client = KiwiGridHEMSClient(_FakeContextSession())
 
     assert asyncio.run(client._async_fetch_context()) == {}
+
+
+def test_hems_login_start_http_503_is_temporary_connection_error():
+    client = KiwiGridHEMSClient(
+        _FakeLoginStartSession(503),
+        username="user@example.com",
+        password="secret",
+    )
+
+    with pytest.raises(
+        KiwiGridHEMSConnectionError,
+        match="HEMS login start failed with HTTP 503",
+    ):
+        asyncio.run(client.async_login())
+
+
+def test_hems_login_start_http_401_is_authentication_error():
+    client = KiwiGridHEMSClient(
+        _FakeLoginStartSession(401),
+        username="user@example.com",
+        password="secret",
+    )
+
+    with pytest.raises(
+        KiwiGridHEMSAuthError,
+        match="HEMS login start failed with HTTP 401",
+    ):
+        asyncio.run(client.async_login())
+
+
+def test_concurrent_authentication_uses_one_login():
+    class FakeClient(KiwiGridHEMSClient):
+        def __init__(self):
+            super().__init__(session=None, username="user", password="pass")
+            self.login_calls = 0
+
+        async def async_login(self):
+            self.login_calls += 1
+            await asyncio.sleep(0)
+            self._access_token = "token"
+
+    client = FakeClient()
+
+    async def _authenticate_concurrently():
+        await asyncio.gather(
+            *(client.async_ensure_authenticated() for _ in range(10))
+        )
+
+    asyncio.run(_authenticate_concurrently())
+
+    assert client.login_calls == 1
 
 
 def test_hems_payloads_to_items_maps_battery_measurements_without_metadata_sensors():
@@ -597,6 +670,64 @@ def test_hems_payloads_to_items_maps_battery_measurements_without_metadata_senso
     assert not any(item["name"].endswith("_manufacturer") for item in items)
     assert not any(item["name"].endswith("_serial_number") for item in items)
     assert not any(item["name"].endswith("_firmware") for item in items)
+
+
+def test_hems_payloads_to_items_maps_smart_heater_temperature():
+    items = hems_payloads_to_items(
+        smart_heaters=[
+            {
+                "id": SMART_HEATER_ID,
+                "configured_in_location": True,
+                "firmware": "00024.10",
+                "manufacturer": "my-PV GmbH",
+                "model_code": "160150",
+                "name": "Heizstab (AC ELWA)",
+                "power_ac_in_max": 3500,
+                "state_device": "OK",
+                "temperature": 66.6,
+                "type": "SMART_HEATER",
+            }
+        ],
+    )
+
+    prefix = f"hems_smart_heater_{SMART_HEATER_ID.replace('-', '_')}"
+    mapped = {item["name"]: item for item in items}
+
+    assert mapped[f"{prefix}_temperature"]["state"] == "66.6 °C"
+    assert mapped[f"{prefix}_temperature"]["label"] == "Temperature"
+    assert mapped[f"{prefix}_temperature"]["type"] == "Number:Temperature"
+    assert mapped[f"{prefix}_power_ac_in_max"]["state"] == "3500 W"
+
+
+def test_hems_payloads_to_things_uses_smart_heater_name_and_metadata():
+    things = hems_payloads_to_things(
+        smart_heaters=[
+            {
+                "id": SMART_HEATER_ID,
+                "firmware": "00024.10",
+                "manufacturer": "my-PV GmbH",
+                "model_code": "160150",
+                "name": "Heizstab (AC ELWA)",
+                "power_ac_in_max": 3500,
+                "serial_number": "1601502404030121",
+                "state_device": "OK",
+                "temperature": 66.6,
+                "type": "SMART_HEATER",
+            }
+        ],
+    )
+
+    assert len(things) == 1
+    thing = things[0]
+    assert thing["UID"] == SMART_HEATER_ID
+    assert thing["label"] == "Heizstab (AC ELWA)"
+    assert thing["thingTypeUID"] == "kiwigrid-hems:smart_heater"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v11/smart-heater"
+    assert thing["properties"]["generatedLabel"] == "SMART_HEATER"
+    assert (
+        f"hems_smart_heater_{SMART_HEATER_ID.replace('-', '_')}_temperature"
+        in {channel["linkedItems"][0] for channel in thing["channels"]}
+    )
 
 
 def test_hems_payloads_to_items_maps_energy_flow_to_kiwigrid_flow_items():
@@ -864,6 +995,23 @@ def test_async_get_home_consumption_consumers_uses_live_endpoint_without_query_p
     assert client.requested_path == "/home/consumption/consumers"
 
 
+def test_async_get_smart_heaters_uses_live_endpoint_without_query_parameters():
+    class FakeClient(KiwiGridHEMSClient):
+        def __init__(self):
+            super().__init__(session=None, username="user", password="pass")
+            self.requested_path = None
+
+        async def _async_get_json(self, path, *, where):
+            self.requested_path = path
+            return []
+
+    client = FakeClient()
+
+    asyncio.run(client.async_get_smart_heaters())
+
+    assert client.requested_path == "/smart-heater"
+
+
 def test_hems_payloads_to_items_skips_generic_device_when_specific_endpoint_exists():
     items = hems_payloads_to_items(
         batteries=[
@@ -884,6 +1032,28 @@ def test_hems_payloads_to_items_skips_generic_device_when_specific_endpoint_exis
     )
 
     assert any(item["name"].startswith("hems_battery_") for item in items)
+    assert not any(item["name"].startswith("hems_device_") for item in items)
+
+
+def test_hems_payloads_to_items_skips_generic_smart_heater_device():
+    items = hems_payloads_to_items(
+        smart_heaters=[
+            {
+                "id": SMART_HEATER_ID,
+                "name": "Heizstab (AC ELWA)",
+                "temperature": 66.6,
+            }
+        ],
+        devices=[
+            {
+                "id": SMART_HEATER_ID,
+                "name": "Heizstab (AC ELWA)",
+                "type": "SMART_HEATER",
+            }
+        ],
+    )
+
+    assert any(item["name"].startswith("hems_smart_heater_") for item in items)
     assert not any(item["name"].startswith("hems_device_") for item in items)
 
 
@@ -1144,6 +1314,7 @@ def test_hems_payloads_to_things_adds_analytics_consumption_channels_to_kiwigrid
     assert thing["UID"] == "kiwigrid-hems"
     assert thing["label"] == "KiwiGrid Stats"
     assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_consumption"
+    assert thing["statusInfo"]["status"] == "ONLINE"
     assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/consumption"
     assert "hems_analytics_consumption_today_consumption_powerconsumed" in {
         channel["linkedItems"][0] for channel in thing["channels"]

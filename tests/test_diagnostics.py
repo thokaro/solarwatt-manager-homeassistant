@@ -1,67 +1,40 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-import sys
-from types import ModuleType
+from .module_loader import load_component_module_with_stubs, make_module
 
 
-def _load_diagnostics_module():
-    package_name = "custom_components.solarwatt_manager"
-    component_dir = (
-        Path(__file__).resolve().parents[1]
-        / "custom_components"
-        / "solarwatt_manager"
-    )
+PACKAGE_NAME = "custom_components.solarwatt_manager"
 
-    homeassistant = ModuleType("homeassistant")
-    homeassistant_core = ModuleType("homeassistant.core")
-    homeassistant_core.HomeAssistant = object
-    homeassistant_helpers = ModuleType("homeassistant.helpers")
-    device_registry = ModuleType("homeassistant.helpers.device_registry")
-    entity_registry = ModuleType("homeassistant.helpers.entity_registry")
-    homeassistant_helpers.device_registry = device_registry
-    homeassistant_helpers.entity_registry = entity_registry
+device_registry = make_module("homeassistant.helpers.device_registry")
+entity_registry = make_module("homeassistant.helpers.entity_registry")
+homeassistant_helpers = make_module(
+    "homeassistant.helpers",
+    device_registry=device_registry,
+    entity_registry=entity_registry,
+)
 
-    package = ModuleType(package_name)
-    package.__path__ = [str(component_dir)]
-    const = ModuleType(f"{package_name}.const")
-    const.CONF_ENERGY_DELTA_KWH = "energy_delta_kwh"
-    const.DEFAULT_ENERGY_DELTA_KWH = 0.01
-    const.DOMAIN = "solarwatt_manager"
-    const.SOLARWATTConfigEntry = object
-
-    stubs = {
-        "homeassistant": homeassistant,
-        "homeassistant.core": homeassistant_core,
+diagnostics = load_component_module_with_stubs(
+    "diagnostics",
+    package_name=PACKAGE_NAME,
+    stubs={
+        "homeassistant": make_module("homeassistant"),
+        "homeassistant.core": make_module(
+            "homeassistant.core",
+            HomeAssistant=object,
+        ),
         "homeassistant.helpers": homeassistant_helpers,
         "homeassistant.helpers.device_registry": device_registry,
         "homeassistant.helpers.entity_registry": entity_registry,
-        package_name: package,
-        f"{package_name}.const": const,
-    }
-    previous = {name: sys.modules.get(name) for name in stubs}
-    sys.modules.update(stubs)
-
-    module_name = f"{package_name}.diagnostics"
-    spec = importlib.util.spec_from_file_location(module_name, component_dir / "diagnostics.py")
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    try:
-        spec.loader.exec_module(module)
-        return module
-    finally:
-        sys.modules.pop(module_name, None)
-        for name, previous_module in previous.items():
-            if previous_module is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = previous_module
-
-
-diagnostics = _load_diagnostics_module()
+        f"{PACKAGE_NAME}.const": make_module(
+            f"{PACKAGE_NAME}.const",
+            CONF_ENERGY_DELTA_KWH="energy_delta_kwh",
+            DEFAULT_ENERGY_DELTA_KWH=0.01,
+            DOMAIN="solarwatt_manager",
+            SOLARWATTConfigEntry=object,
+            get_device_registry_anchor=lambda entry: entry.entry_id,
+        ),
+    },
+)
 
 
 def test_redact_removes_nested_serial_numbers_only():
@@ -78,6 +51,20 @@ def test_redact_removes_nested_serial_numbers_only():
     assert diagnostics._redact(payload) == {
         "nested": {"model": "Battery flex"},
         "label": "Basement battery",
+    }
+
+
+def test_redact_hides_config_connection_and_installation_identifiers():
+    assert diagnostics._redact(
+        {
+            "host": "192.0.2.10",
+            "username": "owner@example.com",
+            "installation_id": "local:location-uid",
+        }
+    ) == {
+        "host": "REDACTED",
+        "username": "REDACTED",
+        "installation_id": "REDACTED",
     }
 
 

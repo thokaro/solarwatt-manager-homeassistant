@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026.8.0
+
+### Changes
+- Added KiwiGrid smart heaters, including the current temperature and maximum AC input power on the API-named device.
+- Added validated reauthentication and reconfiguration flows for local Manager and KiwiGrid HEMS connection settings.
+- Removed the integration-specific entity ID rebuild option and automatic entity-registry renaming. Home Assistant now controls entity ID naming, and existing entity IDs remain unchanged unless the user explicitly recreates them in Home Assistant 2026.8 or newer.
+- Kept local Manager and KiwiGrid HEMS data independently available when only one configured source fails, using the last valid snapshot for the unavailable source.
+- Added HEMS retry backoff and availability-transition logging to avoid repeated requests and warning spam during outages.
+- Fixed temporary KiwiGrid HEMS login failures such as HTTP 503 being misclassified as invalid credentials and unnecessarily triggering reauthentication.
+- Fixed the synthetic `KiwiGrid Stats` diagnostics sensor remaining `unknown` after successful analytics updates.
+- Fixed battery device headers showing a backup or minimum state-of-charge value instead of the current `State of Charge`.
+- Updated CI to test Python 3.13 and 3.14 and to run Ruff and MyPy checks.
+- Reused one authenticated KiwiGrid HEMS client per config entry, fetched independent HEMS endpoints with bounded concurrency, and kept the latest successful payload for temporarily failing endpoints.
+- Reused cached HEMS device metadata for the fast KiwiGrid Flow poll instead of requesting all device-name endpoints every time.
+- Fixed device selection and orphan-device cleanup for cloud-only KiwiGrid HEMS entries.
+- Raised the minimum supported Home Assistant version to 2024.12.0 to match Python 3.13 and enabled MyPy checks for all integration modules.
+- Replaced host/IP-based config-entry and device identifiers with stable installation IDs. Existing devices are migrated in place, so changing the Manager address does not create duplicates and entity unique IDs remain unchanged.
+- Removed the superseded registry migrations from older releases; the migration module now contains only the stable installation-ID migration, while ongoing empty-device handling stays in registry cleanup.
+- Redacted connection and installation identifiers from diagnostics and updated device lookup to use the stable registry anchor.
+- Cached the working local items/things endpoint after capability detection, avoiding repeated `404` fallback requests on old and new Manager firmware.
+- Reused cached local thing metadata for Energy Overview compatibility aliases instead of requesting device metadata during every local value poll.
+- Fixed duplicate local and KiwiGrid HEMS devices in setup device selection, including KEBA wallboxes and multiple named myStrom switches.
+- Normalized display-name acronyms consistently to `PV`, `SoC`, and `EV` without changing other name casing.
+
 ## 2026.7.4
 
 ### Changes

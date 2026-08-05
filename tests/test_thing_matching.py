@@ -65,6 +65,92 @@ def test_merge_selection_things_preserves_local_label_and_merges_metadata():
     ]
 
 
+def test_merge_selection_things_matches_local_keba_and_cloud_device():
+    existing = {
+        "keba:wallbox:25948592": {
+            "UID": "keba:wallbox:25948592",
+            "label": "Keba P30 PV-Edition",
+            "thingTypeUID": "keba:wallbox",
+            "properties": {
+                "solarwatt.hemsConfigurator": "true",
+                "thingTypeTitle": "KEBA KeContact P30",
+            },
+            "channels": [],
+        }
+    }
+    incoming = {
+        "cloud-keba": {
+            "UID": "cloud-keba",
+            "label": "Keba P30 PV-Edition",
+            "thingTypeUID": "kiwigrid-hems:evstation",
+            "properties": {
+                "kiwigridKind": "evstation",
+                "model": "KC-P30-EC2204U2-E00-PV",
+            },
+            "channels": [],
+        }
+    }
+
+    merged = thing_matching.merge_selection_things(existing, incoming)
+
+    assert set(merged) == {"keba:wallbox:25948592"}
+    properties = merged["keba:wallbox:25948592"]["properties"]
+    assert properties["kiwigridKind"] == "evstation"
+    assert properties["model"] == "KC-P30-EC2204U2-E00-PV"
+
+
+def test_merge_selection_things_keeps_distinct_mystrom_devices():
+    existing = {
+        "mystrom:switch:C8F09E96C640": {
+            "UID": "mystrom:switch:C8F09E96C640",
+            "label": "myStrom (Waschmaschine)",
+            "thingTypeUID": "mystrom:switch",
+            "properties": {
+                "solarwatt.hemsConfigurator": "true",
+                "thingTypeTitle": "myStrom WiFi Switch",
+            },
+            "channels": [],
+        },
+        "mystrom:switch:083A8D969CF8": {
+            "UID": "mystrom:switch:083A8D969CF8",
+            "label": "myStrom (Wasserpumpe)",
+            "thingTypeUID": "mystrom:switch",
+            "properties": {
+                "solarwatt.hemsConfigurator": "true",
+                "thingTypeTitle": "myStrom WiFi Switch",
+            },
+            "channels": [],
+        },
+    }
+    incoming = {
+        "cloud-washing-machine": {
+            "UID": "cloud-washing-machine",
+            "label": "myStrom (Waschmaschine)",
+            "thingTypeUID": "kiwigrid-hems:plug",
+            "properties": {"kiwigridKind": "plug", "model": "PLUG"},
+            "channels": [],
+        },
+        "cloud-water-pump": {
+            "UID": "cloud-water-pump",
+            "label": "myStrom (Wasserpumpe)",
+            "thingTypeUID": "kiwigrid-hems:plug",
+            "properties": {"kiwigridKind": "plug", "model": "PLUG"},
+            "channels": [],
+        },
+    }
+
+    merged = thing_matching.merge_selection_things(existing, incoming)
+
+    assert set(merged) == {
+        "mystrom:switch:C8F09E96C640",
+        "mystrom:switch:083A8D969CF8",
+    }
+    assert all(
+        thing["properties"]["kiwigridKind"] == "plug"
+        for thing in merged.values()
+    )
+
+
 def test_merge_thing_records_uses_cloud_status_for_offline_local_device():
     existing = {
         "UID": "local:battery",
