@@ -25,19 +25,35 @@
     "step": {
       "user": {
         "title": "Connecter SOLARWATT",
-        "description": "Saisissez l'IP/l'hôte et les identifiants de connexion.",
-        "data": {
-          "host": "IP/Hôte du SOLARWATT Manager local",
-          "username": "Nom d'utilisateur du SOLARWATT Manager local",
-          "password": "Mot de passe du SOLARWATT Manager local",
-          "scan_interval": "Intervalle de mise à jour : appareils locaux et KiwiGrid Flow (secondes)",
-          "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
-          "power_unavailable_threshold": "Seuil d'indisponibilité de puissance (polls). Conserver la dernière valeur jusqu'à la N-ième indisponibilité ; 0 = désactiver",
-          "disable_duplicate_item_entities": "Désactiver les entités item dupliquées et préférer l'item de canal basé sur l'UID",
-          "kiwigrid_hems_enabled": "Activer KiwiGrid HEMS (portail SOLARWATT Manager)",
-          "kiwigrid_hems_username": "KiwiGrid (portail SOLARWATT Manager) nom d'utilisateur ou adresse e-mail",
-          "kiwigrid_hems_password": "KiwiGrid (portail SOLARWATT Manager) mot de passe",
-          "kiwigrid_hems_scan_interval": "Intervalle KiwiGrid HEMS : appareils KiwiGrid et Stats (secondes)"
+        "description": "Configurez le Manager local, l'accès au portail KiwiGrid ou les deux sources de données. Au moins une source est requise.",
+        "sections": {
+          "local_connection": {
+            "name": "SOLARWATT Manager local",
+            "description": "Accès direct sur le réseau local. Fournit SOLARWATT Flow et les appareils locaux sans passer par le portail.",
+            "data": {
+              "host": "Hôte/IP",
+              "username": "Nom d'utilisateur",
+              "password": "Mot de passe"
+            }
+          },
+          "kiwigrid_connection": {
+            "name": "KiwiGrid en ligne (portail SOLARWATT)",
+            "description": "Accès en ligne facultatif à KiwiGrid Flow, KiwiGrid Stats et aux appareils du portail pris en charge. Des identifiants complets activent cette source automatiquement.",
+            "data": {
+              "kiwigrid_hems_username": "Nom d'utilisateur ou adresse e-mail",
+              "kiwigrid_hems_password": "Mot de passe",
+              "kiwigrid_hems_scan_interval": "Intervalle HEMS pour appareils et Stats (secondes)"
+            }
+          },
+          "general_settings": {
+            "name": "Paramètres de mise à jour et des capteurs",
+            "description": "L'intervalle rapide s'applique aux appareils locaux, à SOLARWATT Flow et à KiwiGrid Flow. L'intervalle HEMS s'applique aux autres appareils en ligne et aux statistiques.",
+            "data": {
+              "scan_interval": "Intervalle de mise à jour (secondes)",
+              "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
+              "power_unavailable_threshold": "Seuil d'indisponibilité de puissance (polls). Conserver la dernière valeur jusqu'à la N-ième indisponibilité ; 0 = désactiver"
+            }
+          }
         }
       },
       "devices": {
@@ -47,24 +63,47 @@
       "reauth_confirm": {
         "title": "Réauthentifier SOLARWATT",
         "description": "Mettez à jour les identifiants des connexions SOLARWATT configurées.",
-        "data": {
-          "host": "IP/Hôte du SOLARWATT Manager local",
-          "username": "Nom d'utilisateur du SOLARWATT Manager local",
-          "password": "Mot de passe du SOLARWATT Manager local",
-          "kiwigrid_hems_username": "KiwiGrid (portail SOLARWATT Manager) nom d'utilisateur ou adresse e-mail",
-          "kiwigrid_hems_password": "KiwiGrid (portail SOLARWATT Manager) mot de passe"
+        "sections": {
+          "local_connection": {
+            "name": "SOLARWATT Manager local",
+            "description": "Accès direct au Manager sur le réseau local.",
+            "data": {
+              "host": "Hôte/IP",
+              "username": "Nom d'utilisateur",
+              "password": "Mot de passe"
+            }
+          },
+          "kiwigrid_connection": {
+            "name": "KiwiGrid en ligne (portail SOLARWATT)",
+            "description": "Accès en ligne à KiwiGrid Flow, KiwiGrid Stats et aux appareils du portail pris en charge.",
+            "data": {
+              "kiwigrid_hems_username": "Nom d'utilisateur ou adresse e-mail",
+              "kiwigrid_hems_password": "Mot de passe"
+            }
+          }
         }
       },
       "reconfigure": {
         "title": "Reconfigurer SOLARWATT",
         "description": "Mettez à jour et validez les connexions au Manager local et à KiwiGrid HEMS.",
-        "data": {
-          "host": "IP/Hôte du SOLARWATT Manager local",
-          "username": "Nom d'utilisateur du SOLARWATT Manager local",
-          "password": "Mot de passe du SOLARWATT Manager local",
-          "kiwigrid_hems_enabled": "Activer KiwiGrid HEMS (portail SOLARWATT Manager)",
-          "kiwigrid_hems_username": "KiwiGrid (portail SOLARWATT Manager) nom d'utilisateur ou adresse e-mail",
-          "kiwigrid_hems_password": "KiwiGrid (portail SOLARWATT Manager) mot de passe"
+        "sections": {
+          "local_connection": {
+            "name": "SOLARWATT Manager local",
+            "description": "Accès direct au Manager sur le réseau local.",
+            "data": {
+              "host": "Hôte/IP",
+              "username": "Nom d'utilisateur",
+              "password": "Mot de passe"
+            }
+          },
+          "kiwigrid_connection": {
+            "name": "KiwiGrid en ligne (portail SOLARWATT)",
+            "description": "Accès en ligne à KiwiGrid Flow, KiwiGrid Stats et aux appareils du portail pris en charge.",
+            "data": {
+              "kiwigrid_hems_username": "Nom d'utilisateur ou adresse e-mail",
+              "kiwigrid_hems_password": "Mot de passe"
+            }
+          }
         }
       }
     }
@@ -92,20 +131,34 @@
         "sections": {
           "device_selection": {
             "name": "Activer ou désactiver les appareils"
+          },
+          "local_connection": {
+            "name": "SOLARWATT Manager local",
+            "description": "Accès direct sur le réseau local. Fournit SOLARWATT Flow et les appareils locaux sans passer par le portail.",
+            "data": {
+              "host": "Hôte/IP",
+              "username": "Nom d'utilisateur",
+              "password": "Mot de passe"
+            }
+          },
+          "kiwigrid_connection": {
+            "name": "KiwiGrid en ligne (portail SOLARWATT)",
+            "description": "Accès en ligne facultatif à KiwiGrid Flow, KiwiGrid Stats et aux appareils du portail pris en charge. Des identifiants complets activent cette source automatiquement.",
+            "data": {
+              "kiwigrid_hems_username": "Nom d'utilisateur ou adresse e-mail",
+              "kiwigrid_hems_password": "Mot de passe",
+              "kiwigrid_hems_scan_interval": "Intervalle HEMS pour appareils et Stats (secondes)"
+            }
+          },
+          "general_settings": {
+            "name": "Paramètres de mise à jour et des capteurs",
+            "description": "L'intervalle rapide s'applique aux appareils locaux, à SOLARWATT Flow et à KiwiGrid Flow. L'intervalle HEMS s'applique aux autres appareils en ligne et aux statistiques.",
+            "data": {
+              "scan_interval": "Intervalle de mise à jour (secondes)",
+              "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
+              "power_unavailable_threshold": "Seuil d'indisponibilité de puissance (polls). Conserver la dernière valeur jusqu'à la N-ième indisponibilité ; 0 = désactiver"
+            }
           }
-        },
-        "data": {
-          "host": "IP/Hôte du SOLARWATT Manager local",
-          "username": "Nom d'utilisateur du SOLARWATT Manager local",
-          "password": "Mot de passe du SOLARWATT Manager local",
-          "scan_interval": "Intervalle de mise à jour : appareils locaux et KiwiGrid Flow (secondes)",
-          "energy_delta_kwh": "Seuil de variation d'énergie (kWh). Écrire uniquement si >= valeur ; 0 = écrire à chaque mise à jour",
-          "power_unavailable_threshold": "Seuil d'indisponibilité de puissance (polls). Conserver la dernière valeur jusqu'à la N-ième indisponibilité ; 0 = désactiver",
-          "disable_duplicate_item_entities": "Désactiver les entités item dupliquées et préférer l'item de canal basé sur l'UID",
-          "kiwigrid_hems_enabled": "Activer KiwiGrid HEMS (portail SOLARWATT Manager)",
-          "kiwigrid_hems_username": "KiwiGrid (portail SOLARWATT Manager) nom d'utilisateur ou adresse e-mail",
-          "kiwigrid_hems_password": "KiwiGrid (portail SOLARWATT Manager) mot de passe",
-          "kiwigrid_hems_scan_interval": "Intervalle KiwiGrid HEMS : appareils KiwiGrid et Stats (secondes)"
         }
       }
     }

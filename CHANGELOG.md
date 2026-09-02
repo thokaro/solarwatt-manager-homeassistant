@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026.9.0
+
+### Breaking Changes
+- Removed the legacy `/rest/things` metadata fallback. Local Manager firmware must now provide `/rest/hems-configurator/things` and `/rest/hems-configurator/energy-overview`.
+- Aligned visible SOLARWATT Flow sensor names with their KiwiGrid Flow counterparts, including PV Out, Grid In/Out, Consumption In, Battery In/Out, and balance values, without changing canonical sensor unique IDs.
+- Removed locally generated compatibility aliases for item names from the former OpenHAB endpoints. Their old registry entries are disabled by the integration and should be replaced with the canonical `SOLARWATT Flow` sensors.
+
+### Changes
+- Added `Battery Balance EVCC` to KiwiGrid Flow, automatically inverting `Battery Balance` so battery discharge is positive and charging is negative as expected by EVCC.
+- Renamed the local `Energy Overview` device to `SOLARWATT Flow` while preserving its stable device identifier.
+- Removed the redundant local `Battery Charge Power` and `Battery Discharge Power` sensors so SOLARWATT Flow uses the same canonical battery flow values as KiwiGrid Flow: `Battery In`, `Battery Out`, and `Battery Balance`.
+- Removed the separate KiwiGrid HEMS activation checkbox; complete Portal credentials now activate HEMS, KiwiGrid Flow, detected HEMS devices, and statistics automatically. Existing entries are migrated and their obsolete checkbox value is removed.
+- Separated local SOLARWATT Manager, KiwiGrid Online, and general settings into described setup/options sections. A complete local or KiwiGrid Online source remains mandatory, while configuring both is supported.
+- Prefilled new local Manager host fields with `energymanager.local`, while leaving the untouched local defaults inactive in KiwiGrid-only installations.
+- Updated the evcc documentation for the local `SOLARWATT Flow` device, including current sensor names, separate local/online examples, sign conventions, and guidance for preserved entity IDs.
+- Removed the legacy `/rest/items` polling path and its duplicate-item entity option; local values now come directly from the HEMS configurator Energy Overview endpoint. Existing entries are migrated and their obsolete duplicate option is removed.
+- Increased the default KiwiGrid HEMS poll interval from 60 to 120 seconds for new or not explicitly configured entries.
+- Retried up to four isolated KiwiGrid HEMS connection failures sequentially after each bounded parallel polling pass, while keeping all analytics periods on the configured HEMS interval.
+- Kept KiwiGrid HEMS available when only individual cloud endpoints fail, retaining their latest cached payload and exposing the failures as partial diagnostics.
+
 ## 2026.8.0
 
 ### Changes

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 SOLARWATTConfigEntry: TypeAlias = ConfigEntry["SOLARWATTCoordinator"]
 
 DOMAIN = "solarwatt_manager"
-CONFIG_ENTRY_VERSION = 2
+CONFIG_ENTRY_VERSION = 3
 
 CONF_HOST = "host"
 CONF_INSTALLATION_ID = "installation_id"
@@ -27,24 +27,22 @@ CONF_PASSWORD = "password"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_ENERGY_DELTA_KWH = "energy_delta_kwh"
 CONF_POWER_UNAVAILABLE_THRESHOLD = "power_unavailable_threshold"
-CONF_DISABLE_DUPLICATE_ITEM_ENTITIES = "disable_duplicate_item_entities"
 CONF_ENABLED_THINGS = "enabled_things"
-CONF_KIWIGRID_HEMS_ENABLED = "kiwigrid_hems_enabled"
 CONF_KIWIGRID_HEMS_USERNAME = "kiwigrid_hems_username"
 CONF_KIWIGRID_HEMS_PASSWORD = "kiwigrid_hems_password"
 CONF_KIWIGRID_HEMS_SCAN_INTERVAL = "kiwigrid_hems_scan_interval"
 
+DEFAULT_LOCAL_HOST = "energymanager.local"
+DEFAULT_LOCAL_USERNAME = "installer"
 DEFAULT_SCAN_INTERVAL = 15  # Sekunden
 MIN_SCAN_INTERVAL = 10  # Minimaler Scan-Interval in Sekunden
 MAX_SCAN_INTERVAL = 3600  # Maximaler Scan-Interval in Sekunden (1 Stunde)
-DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL = 60  # Sekunden
+DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL = 120  # Sekunden
 
 DEFAULT_ENERGY_DELTA_KWH = 0.01
 MIN_ENERGY_DELTA_KWH = 0.0
 DEFAULT_POWER_UNAVAILABLE_THRESHOLD = 3
 MIN_POWER_UNAVAILABLE_THRESHOLD = 0
-DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES = False
-DEFAULT_KIWIGRID_HEMS_ENABLED = False
 
 DEVICE_MANUFACTURER = "SOLARWATT"
 DEVICE_MODEL = "Manager flex / rail"
@@ -119,9 +117,9 @@ def derive_installation_id(
     if existing_id:
         return existing_id
 
-    hems_username = str(options.get(CONF_KIWIGRID_HEMS_USERNAME) or "").strip().casefold()
-    if options.get(CONF_KIWIGRID_HEMS_ENABLED) and hems_username:
-        return f"hems:{_identifier_digest(hems_username)}"
+    hems_username, hems_password = get_kiwigrid_hems_credentials(options)
+    if hems_username and hems_password:
+        return f"hems:{_identifier_digest(hems_username.casefold())}"
     return None
 
 
@@ -308,14 +306,27 @@ def get_selected_thing_uids(options: Mapping[str, Any] | None) -> set[str] | Non
     }
 
 
-def get_disable_duplicate_item_entities(options: Mapping[str, Any] | None) -> bool:
-    """Return whether duplicate item entities should be disabled."""
-    value = (options or {}).get(
-        CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
-        DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
+def get_kiwigrid_hems_credentials(
+    options: Mapping[str, Any] | None,
+) -> tuple[str, str]:
+    """Return normalized KiwiGrid HEMS credentials."""
+    resolved_options = options or {}
+    return (
+        str(resolved_options.get(CONF_KIWIGRID_HEMS_USERNAME) or "").strip(),
+        str(resolved_options.get(CONF_KIWIGRID_HEMS_PASSWORD) or "").strip(),
     )
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
+
+
+def is_unused_default_local_connection(
+    entry_data: Mapping[str, Any],
+    options: Mapping[str, Any],
+) -> bool:
+    """Return whether untouched local defaults belong to a cloud-only setup."""
+    hems_username, hems_password = get_kiwigrid_hems_credentials(options)
+    return (
+        bool(hems_username and hems_password)
+        and entry_data.get(CONF_HOST) == DEFAULT_LOCAL_HOST
+        and not str(entry_data.get(CONF_PASSWORD) or "").strip()
+        and str(entry_data.get(CONF_USERNAME) or "").strip()
+        in {"", DEFAULT_LOCAL_USERNAME}
+    )

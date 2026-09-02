@@ -12,12 +12,10 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from .const import (
-    CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
     CONF_ENABLED_THINGS,
     CONF_ENERGY_DELTA_KWH,
     CONF_HOST,
     CONF_INSTALLATION_ID,
-    CONF_KIWIGRID_HEMS_ENABLED,
     CONF_KIWIGRID_HEMS_PASSWORD,
     CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
     CONF_KIWIGRID_HEMS_USERNAME,
@@ -26,10 +24,10 @@ from .const import (
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
     CONFIG_ENTRY_VERSION,
-    DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
     DEFAULT_ENERGY_DELTA_KWH,
-    DEFAULT_KIWIGRID_HEMS_ENABLED,
     DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
+    DEFAULT_LOCAL_HOST,
+    DEFAULT_LOCAL_USERNAME,
     DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -38,9 +36,11 @@ from .const import (
     MIN_POWER_UNAVAILABLE_THRESHOLD,
     MIN_SCAN_INTERVAL,
     derive_installation_id,
+    get_kiwigrid_hems_credentials,
     get_selected_thing_uids,
     get_thing_display_name,
     get_thing_selection_detail,
+    is_unused_default_local_connection,
 )
 from .client import (
     SOLARWATTClient,
@@ -59,6 +59,14 @@ from .thing_matching import (
 _LOGGER = logging.getLogger(__name__)
 _HOST_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _DEVICE_SELECTION_SECTION = "device_selection"
+_LOCAL_CONNECTION_SECTION = "local_connection"
+_KIWIGRID_CONNECTION_SECTION = "kiwigrid_connection"
+_GENERAL_SETTINGS_SECTION = "general_settings"
+_FORM_SECTIONS = (
+    _LOCAL_CONNECTION_SECTION,
+    _KIWIGRID_CONNECTION_SECTION,
+    _GENERAL_SETTINGS_SECTION,
+)
 _KIWIGRID_HEMS_THING_UID = "kiwigrid-hems"
 _RAW_HOST_KEY = "_raw_host"
 _KNOWN_CLIENT_ERRORS: tuple[tuple[type[Exception], str, str], ...] = (
@@ -107,11 +115,11 @@ async def _async_validate_connection_settings(
     hass,
     entry_data: Mapping[str, Any],
     options: Mapping[str, Any],
-) -> dict[str, str]:
+) -> tuple[dict[str, str], list[dict[str, Any]]]:
     """Validate configured local and cloud connections before saving."""
     errors = _validate_user_data(entry_data, options)
     if errors:
-        return errors
+        return errors, []
 
     host = entry_data.get(CONF_HOST)
     if host is not None:
@@ -124,10 +132,11 @@ async def _async_validate_connection_settings(
             action_label="testing SOLARWATT connection",
         )
         if errors:
-            return errors
+            return errors, []
 
-    if options.get(CONF_KIWIGRID_HEMS_ENABLED):
-        _, errors = await _async_with_client(
+    hems_things: list[dict[str, Any]] = []
+    if _hems_configured(options):
+        result, errors = await _async_with_client(
             hass,
             host="",
             username="",
@@ -135,11 +144,13 @@ async def _async_validate_connection_settings(
             action=lambda client: client.async_get_hems_things(
                 username=str(options[CONF_KIWIGRID_HEMS_USERNAME]),
                 password=str(options[CONF_KIWIGRID_HEMS_PASSWORD]),
+                include_energy_flow=True,
             ),
             action_label="testing KiwiGrid HEMS connection",
             auth_error_code="invalid_hems_auth",
         )
-    return errors
+        hems_things = [thing for thing in (result or []) if isinstance(thing, dict)]
+    return errors, hems_things
 
 
 def _normalize_host(raw_host: str | None) -> str | None:
@@ -212,15 +223,14 @@ def _normalize_float(value: Any, *, default: float) -> float | None:
         return None
 
 
-def _normalize_bool(value: Any, *, default: bool) -> bool:
-    """Normalize boolean form values."""
-    if value is None:
-        return bool(default)
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
+def _flatten_form_sections(user_input: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return form data with connection and settings sections flattened."""
+    values = dict(user_input or {})
+    for section_name in _FORM_SECTIONS:
+        section_values = values.pop(section_name, None)
+        if isinstance(section_values, Mapping):
+            values.update(section_values)
+    return values
 
 
 def _is_invalid_scan_interval(value: Any) -> bool:
@@ -244,14 +254,6 @@ def _is_never_invalid(_: Any) -> bool:
 
 
 _OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
-    {
-        "key": CONF_KIWIGRID_HEMS_ENABLED,
-        "default": DEFAULT_KIWIGRID_HEMS_ENABLED,
-        "normalize": _normalize_bool,
-        "coerce": bool,
-        "error": "",
-        "invalid": _is_never_invalid,
-    },
     {
         "key": CONF_KIWIGRID_HEMS_USERNAME,
         "default": "",
@@ -300,18 +302,76 @@ _OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
         "error": "invalid_power_unavailable_threshold",
         "invalid": _is_invalid_power_unavailable_threshold,
     },
-    {
-        "key": CONF_DISABLE_DUPLICATE_ITEM_ENTITIES,
-        "default": DEFAULT_DISABLE_DUPLICATE_ITEM_ENTITIES,
-        "normalize": _normalize_bool,
-        "coerce": bool,
-        "error": "",
-        "invalid": _is_never_invalid,
-    },
 )
+_KIWIGRID_OPTION_KEYS = {
+    CONF_KIWIGRID_HEMS_USERNAME,
+    CONF_KIWIGRID_HEMS_PASSWORD,
+    CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
+}
+_KIWIGRID_CREDENTIAL_KEYS = {
+    CONF_KIWIGRID_HEMS_USERNAME,
+    CONF_KIWIGRID_HEMS_PASSWORD,
+}
+_GENERAL_OPTION_KEYS = {
+    CONF_SCAN_INTERVAL,
+    CONF_ENERGY_DELTA_KWH,
+    CONF_POWER_UNAVAILABLE_THRESHOLD,
+}
 
 
-def _build_option_schema_fields(values: Mapping[str, Any]) -> dict[Any, Any]:
+def _build_local_connection_fields(values: Mapping[str, Any]) -> dict[Any, Any]:
+    """Build local Manager connection fields."""
+    return {
+        vol.Optional(
+            CONF_HOST,
+            default=values.get(CONF_HOST) or DEFAULT_LOCAL_HOST,
+        ): str,
+        vol.Optional(
+            CONF_USERNAME,
+            default=values.get(CONF_USERNAME) or DEFAULT_LOCAL_USERNAME,
+        ): str,
+        vol.Optional(CONF_PASSWORD, default=values.get(CONF_PASSWORD) or ""): str,
+    }
+
+
+def _build_connection_sections(
+    values: Mapping[str, Any],
+    *,
+    include_local: bool = True,
+    include_kiwigrid: bool = True,
+    include_settings: bool = False,
+) -> dict[Any, Any]:
+    """Build visually separated local, online, and settings form sections."""
+    schema: dict[Any, Any] = {}
+    if include_local:
+        schema[vol.Required(_LOCAL_CONNECTION_SECTION)] = section(
+            vol.Schema(_build_local_connection_fields(values)),
+            {"collapsed": False},
+        )
+    if include_kiwigrid:
+        schema[vol.Required(_KIWIGRID_CONNECTION_SECTION)] = section(
+            vol.Schema(
+                _build_option_schema_fields(
+                    values,
+                    _KIWIGRID_OPTION_KEYS
+                    if include_settings
+                    else _KIWIGRID_CREDENTIAL_KEYS,
+                )
+            ),
+            {"collapsed": False},
+        )
+    if include_settings:
+        schema[vol.Required(_GENERAL_SETTINGS_SECTION)] = section(
+            vol.Schema(_build_option_schema_fields(values, _GENERAL_OPTION_KEYS)),
+            {"collapsed": True},
+        )
+    return schema
+
+
+def _build_option_schema_fields(
+    values: Mapping[str, Any],
+    keys: set[str] | None = None,
+) -> dict[Any, Any]:
     """Build voluptuous schema fields for all user-visible options."""
     return {
         vol.Optional(
@@ -319,6 +379,7 @@ def _build_option_schema_fields(values: Mapping[str, Any]) -> dict[Any, Any]:
             default=values.get(field["key"], field["default"]),
         ): field["coerce"]
         for field in _OPTION_FIELD_SPECS
+        if keys is None or field["key"] in keys
     }
 
 
@@ -328,9 +389,10 @@ def _normalize_options_input(
 ) -> dict[str, Any]:
     """Normalize user-visible options."""
     current = dict(current_options or {})
+    values = _flatten_form_sections(user_input)
     return {
         field["key"]: field["normalize"](
-            user_input.get(
+            values.get(
                 field["key"],
                 current.get(field["key"], field["default"]),
             ),
@@ -342,14 +404,16 @@ def _normalize_options_input(
 
 def _normalize_user_input(user_input: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Normalize config-entry data and options from the user step."""
-    raw_host = _normalize_text(user_input.get(CONF_HOST))
+    values = _flatten_form_sections(user_input)
+    raw_host = _normalize_text(values.get(CONF_HOST))
     entry_data = {
         CONF_HOST: _normalize_host(raw_host),
         _RAW_HOST_KEY: raw_host,
-        CONF_USERNAME: _normalize_text(user_input.get(CONF_USERNAME)),
-        CONF_PASSWORD: _normalize_text(user_input.get(CONF_PASSWORD)),
+        CONF_USERNAME: _normalize_text(values.get(CONF_USERNAME)),
+        CONF_PASSWORD: _normalize_text(values.get(CONF_PASSWORD)),
     }
-    options = _normalize_options_input(user_input)
+    options = _normalize_options_input(values)
+    _clear_unused_default_local_connection(entry_data, options)
     return entry_data, options
 
 
@@ -358,8 +422,9 @@ def _normalize_options_entry_data(
     current_data: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Normalize config-entry data from the options step."""
+    values = _flatten_form_sections(user_input)
     raw_host = _normalize_text(
-        user_input.get(CONF_HOST, current_data.get(CONF_HOST, ""))
+        values.get(CONF_HOST, current_data.get(CONF_HOST, ""))
     )
     entry_data = dict(current_data)
     entry_data.update(
@@ -367,13 +432,13 @@ def _normalize_options_entry_data(
             CONF_HOST: _normalize_host(raw_host),
             _RAW_HOST_KEY: raw_host,
             CONF_USERNAME: _normalize_text(
-                user_input.get(
+                values.get(
                     CONF_USERNAME,
-                    current_data.get(CONF_USERNAME, "installer"),
+                    current_data.get(CONF_USERNAME, DEFAULT_LOCAL_USERNAME),
                 )
             ),
             CONF_PASSWORD: _normalize_text(
-                user_input.get(CONF_PASSWORD, current_data.get(CONF_PASSWORD, ""))
+                values.get(CONF_PASSWORD, current_data.get(CONF_PASSWORD, ""))
             ),
         }
     )
@@ -387,12 +452,48 @@ def _validate_options_data(options: Mapping[str, Any]) -> dict[str, str]:
         for field in _OPTION_FIELD_SPECS
         if field["invalid"](options.get(field["key"]))
     }
-    if options.get(CONF_KIWIGRID_HEMS_ENABLED):
-        if not str(options.get(CONF_KIWIGRID_HEMS_USERNAME) or "").strip():
-            errors[CONF_KIWIGRID_HEMS_USERNAME] = "invalid_username"
-        if not str(options.get(CONF_KIWIGRID_HEMS_PASSWORD) or "").strip():
-            errors[CONF_KIWIGRID_HEMS_PASSWORD] = "invalid_password"
+    hems_username, hems_password = get_kiwigrid_hems_credentials(options)
+    if hems_password and not hems_username:
+        errors[CONF_KIWIGRID_HEMS_USERNAME] = "invalid_username"
+    if hems_username and not hems_password:
+        errors[CONF_KIWIGRID_HEMS_PASSWORD] = "invalid_password"
     return errors
+
+
+def _hems_configured(options: Mapping[str, Any]) -> bool:
+    """Return whether complete KiwiGrid HEMS credentials are configured."""
+    username, password = get_kiwigrid_hems_credentials(options)
+    return bool(username and password)
+
+
+def _clear_unused_default_local_connection(
+    entry_data: dict[str, Any],
+    options: Mapping[str, Any],
+) -> None:
+    """Keep an untouched local default from enabling local access in cloud-only setups."""
+    if not is_unused_default_local_connection(entry_data, options):
+        return
+
+    entry_data[CONF_HOST] = None
+    entry_data[_RAW_HOST_KEY] = ""
+
+
+def _activate_fetched_hems_things(
+    options: dict[str, Any],
+    things: list[dict[str, Any]],
+) -> None:
+    """Add newly configured HEMS devices to an explicit device selection."""
+    selected_uids = get_selected_thing_uids(options)
+    if selected_uids is None:
+        return
+
+    selected_uids.add(_KIWIGRID_HEMS_THING_UID)
+    selected_uids.update(
+        uid
+        for thing in things
+        if (uid := str(thing.get("UID") or thing.get("uid") or "").strip())
+    )
+    options[CONF_ENABLED_THINGS] = sorted(selected_uids)
 
 
 def _validate_user_data(
@@ -405,9 +506,7 @@ def _validate_user_data(
     local_host = entry_data.get(CONF_HOST)
     local_username = str(entry_data.get(CONF_USERNAME) or "").strip()
     local_password = str(entry_data.get(CONF_PASSWORD) or "").strip()
-    hems_enabled = bool(options.get(CONF_KIWIGRID_HEMS_ENABLED))
-    hems_username = str(options.get(CONF_KIWIGRID_HEMS_USERNAME) or "").strip()
-    hems_password = str(options.get(CONF_KIWIGRID_HEMS_PASSWORD) or "").strip()
+    hems_configured = _hems_configured(options)
 
     if local_host is None and str(entry_data.get(_RAW_HOST_KEY) or "").strip():
         errors[CONF_HOST] = "invalid_host"
@@ -415,11 +514,7 @@ def _validate_user_data(
         errors[CONF_USERNAME] = "invalid_username"
     if local_host and not local_password:
         errors[CONF_PASSWORD] = "invalid_password"
-    if hems_enabled and not hems_username:
-        errors[CONF_KIWIGRID_HEMS_USERNAME] = "invalid_username"
-    if hems_enabled and not hems_password:
-        errors[CONF_KIWIGRID_HEMS_PASSWORD] = "invalid_password"
-    if not local_host and not hems_enabled:
+    if not local_host and not hems_configured:
         errors["base"] = "missing_connection"
 
     return errors
@@ -547,17 +642,12 @@ class SOLARWATTItemsConfigFlow(  # type: ignore[call-arg]
         self, user_input: Mapping[str, Any] | None = None
     ) -> vol.Schema:
         """Build the user-step schema."""
-        values = dict(user_input or {})
+        values = _flatten_form_sections(user_input)
         return vol.Schema(
-            {
-                vol.Optional(CONF_HOST, default=values.get(CONF_HOST, "")): str,
-                vol.Optional(
-                    CONF_USERNAME,
-                    default=values.get(CONF_USERNAME, "installer"),
-                ): str,
-                vol.Optional(CONF_PASSWORD, default=values.get(CONF_PASSWORD, "")): str,
-                **_build_option_schema_fields(values),
-            }
+            _build_connection_sections(
+                values,
+                include_settings=True,
+            )
         )
 
     def _build_connection_schema(
@@ -568,44 +658,14 @@ class SOLARWATTItemsConfigFlow(  # type: ignore[call-arg]
     ) -> vol.Schema:
         """Build a schema for reauthentication or connection reconfiguration."""
         local_configured = bool(values.get(CONF_HOST))
-        hems_enabled = bool(values.get(CONF_KIWIGRID_HEMS_ENABLED))
-        schema: dict[Any, Any] = {}
-
-        if not reauth or local_configured:
-            schema.update(
-                {
-                    vol.Optional(CONF_HOST, default=values.get(CONF_HOST, "")): str,
-                    vol.Optional(
-                        CONF_USERNAME,
-                        default=values.get(CONF_USERNAME, "installer"),
-                    ): str,
-                    vol.Optional(
-                        CONF_PASSWORD,
-                        default=values.get(CONF_PASSWORD, ""),
-                    ): str,
-                }
+        hems_configured = _hems_configured(values)
+        return vol.Schema(
+            _build_connection_sections(
+                values,
+                include_local=not reauth or local_configured,
+                include_kiwigrid=not reauth or hems_configured,
             )
-        if not reauth:
-            schema[
-                vol.Optional(
-                    CONF_KIWIGRID_HEMS_ENABLED,
-                    default=hems_enabled,
-                )
-            ] = bool
-        if not reauth or hems_enabled:
-            schema.update(
-                {
-                    vol.Optional(
-                        CONF_KIWIGRID_HEMS_USERNAME,
-                        default=values.get(CONF_KIWIGRID_HEMS_USERNAME, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_KIWIGRID_HEMS_PASSWORD,
-                        default=values.get(CONF_KIWIGRID_HEMS_PASSWORD, ""),
-                    ): str,
-                }
-            )
-        return vol.Schema(schema)
+        )
 
     async def _async_process_connection_input(
         self,
@@ -616,18 +676,24 @@ class SOLARWATTItemsConfigFlow(  # type: ignore[call-arg]
         values = {
             **dict(entry.data),
             **dict(entry.options),
-            **dict(user_input),
+            **_flatten_form_sections(user_input),
         }
         normalized_entry_data = _normalize_options_entry_data(values, entry.data)
-        options = {
-            **dict(entry.options),
-            **_normalize_options_input(values, entry.options),
-        }
-        errors = await _async_validate_connection_settings(
+        options = _normalize_options_input(values, entry.options)
+        if CONF_ENABLED_THINGS in entry.options:
+            options[CONF_ENABLED_THINGS] = entry.options[CONF_ENABLED_THINGS]
+        _clear_unused_default_local_connection(normalized_entry_data, options)
+        errors, hems_things = await _async_validate_connection_settings(
             self.hass,
             normalized_entry_data,
             options,
         )
+        if (
+            not errors
+            and not _hems_configured(entry.options)
+            and _hems_configured(options)
+        ):
+            _activate_fetched_hems_things(options, hems_things)
         clean_entry_data = {
             key: value
             for key, value in normalized_entry_data.items()
@@ -674,7 +740,7 @@ class SOLARWATTItemsConfigFlow(  # type: ignore[call-arg]
                     await self.async_set_unique_id(installation_id)
                     self._abort_if_unique_id_configured()
 
-            if not errors and options.get(CONF_KIWIGRID_HEMS_ENABLED):
+            if not errors and _hems_configured(options):
                 hems_things, errors = await self._async_fetch_hems_things(
                     username=options[CONF_KIWIGRID_HEMS_USERNAME],
                     password=options[CONF_KIWIGRID_HEMS_PASSWORD],
@@ -684,7 +750,7 @@ class SOLARWATTItemsConfigFlow(  # type: ignore[call-arg]
 
             if not errors:
                 selectable_things = self._selectable_things(things)
-                if options.get(CONF_KIWIGRID_HEMS_ENABLED):
+                if _hems_configured(options):
                     selectable_things.setdefault(
                         _KIWIGRID_HEMS_THING_UID,
                         _kiwigrid_hems_selection_thing(),
@@ -1000,6 +1066,7 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             entry_data = _normalize_options_entry_data(user_input, self.config_entry.data)
             data = self._build_options_data(user_input)
+            _clear_unused_default_local_connection(entry_data, data)
             errors = _validate_user_data(entry_data, data)
             clean_entry_data = {
                 key: value
@@ -1007,7 +1074,6 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                 if key != _RAW_HOST_KEY
             }
             connection_options = (
-                CONF_KIWIGRID_HEMS_ENABLED,
                 CONF_KIWIGRID_HEMS_USERNAME,
                 CONF_KIWIGRID_HEMS_PASSWORD,
             )
@@ -1017,12 +1083,19 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                 data.get(key) != self.config_entry.options.get(key)
                 for key in connection_options
             )
+            hems_things: list[dict[str, Any]] = []
             if not errors and connection_changed:
-                errors = await _async_validate_connection_settings(
+                errors, hems_things = await _async_validate_connection_settings(
                     self.hass,
                     entry_data,
                     data,
                 )
+            if (
+                not errors
+                and not _hems_configured(self.config_entry.options)
+                and _hems_configured(data)
+            ):
+                _activate_fetched_hems_things(data, hems_things)
 
             if not errors:
                 coordinator = getattr(self.config_entry, "runtime_data", None)
@@ -1033,7 +1106,6 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
                         coordinator.data,
                         coordinator.item_to_thing_uid,
                         coordinator.things,
-                        coordinator.duplicate_item_targets,
                         data,
                     )
                     coordinator.run_discovery_callbacks(data)
@@ -1062,7 +1134,7 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         values = {
             **dict(self.config_entry.data),
             **dict(self.config_entry.options),
-            **dict(user_input or {}),
+            **_flatten_form_sections(user_input),
         }
         available_things = self._available_things(values)
         selected_things: set[str] | None
@@ -1081,13 +1153,10 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         )
         schema: dict[Any, Any] = {
             **thing_schema,
-            vol.Optional(CONF_HOST, default=values.get(CONF_HOST) or ""): str,
-            vol.Optional(
-                CONF_USERNAME,
-                default=values.get(CONF_USERNAME) or "installer",
-            ): str,
-            vol.Optional(CONF_PASSWORD, default=values.get(CONF_PASSWORD) or ""): str,
-            **_build_option_schema_fields(values),
+            **_build_connection_sections(
+                values,
+                include_settings=True,
+            ),
         }
 
         return vol.Schema(schema)
@@ -1109,7 +1178,7 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
         coordinator = getattr(self.config_entry, "runtime_data", None)
         things = getattr(coordinator, "things", {}) or {}
         selectable_things = SOLARWATTItemsConfigFlow._selectable_things(things)
-        if (values or {}).get(CONF_KIWIGRID_HEMS_ENABLED):
+        if _hems_configured(values or {}):
             selectable_things.setdefault(
                 _KIWIGRID_HEMS_THING_UID,
                 _kiwigrid_hems_selection_thing(),

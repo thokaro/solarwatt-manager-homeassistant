@@ -785,7 +785,20 @@ def test_hems_payloads_to_items_maps_energy_flow_grid_import_and_battery_dischar
     assert states["hems_flow_grid_balance"] == "11 W"
     assert states["hems_flow_battery_out"] == "1030 W"
     assert states["hems_flow_battery_balance"] == "-1030 W"
+    assert states["hems_flow_battery_balance_evcc"] == "1030 W"
     assert states["hems_flow_battery_soc"] == "50 %"
+
+
+def test_energy_flow_endpoint_to_items_inverts_battery_charging_for_evcc():
+    items = energy_flow_endpoint_to_items(
+        {"battery": {"balance": 750}}
+    )
+
+    states = {item["name"]: item["state"] for item in items}
+    labels = {item["name"]: item["label"] for item in items}
+    assert states["hems_flow_battery_balance"] == "750 W"
+    assert states["hems_flow_battery_balance_evcc"] == "-750 W"
+    assert labels["hems_flow_battery_balance_evcc"] == "Battery Balance EVCC"
 
 
 def test_energy_flow_endpoint_to_items_maps_current_hems_payload_as_json_paths():
@@ -843,6 +856,7 @@ def test_energy_flow_endpoint_to_items_maps_current_hems_payload_as_json_paths()
     assert states["hems_flow_battery_out_to_grid"] == "2 W"
     assert states["hems_flow_battery_soc"] == "34.4 %"
     assert states["hems_flow_battery_balance"] == "-499 W"
+    assert states["hems_flow_battery_balance_evcc"] == "499 W"
     assert states["hems_flow_ev_in"] == "0 W"
     assert states["hems_flow_ev_out"] == "0 W"
     assert states["hems_flow_ev_balance"] == "0 W"

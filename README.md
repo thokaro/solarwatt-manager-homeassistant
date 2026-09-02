@@ -19,20 +19,19 @@ Note for users with **vision** components: If you need write/control functions s
 ## ✨ Features
 
 * Local polling of SOLARWATT Manager data
-* Fallback for newer firmware that exposes `/rest/hems-configurator/things` and `/rest/hems-configurator/energy-overview` instead of the previous `/rest/things` and `/rest/items` endpoints
-* Optional KiwiGrid HEMS polling using KiwiGrid/SOLARWATT Manager Portal login credentials
+* Local values from `/rest/hems-configurator/energy-overview` and device metadata from `/rest/hems-configurator/things`
+* Automatic KiwiGrid HEMS polling when KiwiGrid/SOLARWATT Manager Portal login credentials are configured
 * KiwiGrid HEMS devices, including smart-heater temperature, diagnostics, today values, month totals, year totals, and finance values
 * Separate `KiwiGrid Flow` device for live SOLARWATT Manager Portal energy-flow values
 * KiwiGrid HEMS controls for supported devices:
   * `select` entity for optimization mode (`Not optimized`, `PV optimized`, `Departure time`)
   * `switch` entity for supported plug/EV station switching
 * Energy Dashboard ready (correct `device_class` & `state_class`)
-* Separate HEMS poll interval, defaulting to 60 seconds
+* Separate HEMS poll interval, defaulting to 120 seconds
 * Automatic normalization of units and item names, including Wh → kWh conversion, removal of installation-specific IDs, collapsed duplicate fragments and preserved abbreviations such as BMS/SoC/SoH
 * Device-based entity structure: entities are assigned to their SOLARWATT devices, while Home Assistant manages their `entity_id`s from integration-provided naming suggestions and the user's naming preference
 * Human-friendly display names (Title Case; BMS/SoC/SoH preserved)
 * Per-device diagnostics from the available local thing-metadata endpoint, with status sensors, thing properties as attributes, and refresh buttons for item and thing discovery
-* Optional duplicate item handling: keep one UID-based channel entity active and create duplicates as disabled entities
 * Stable `unique_id`s and metadata for long-term statistics, history, and Home Assistant statistics
 
 ---
@@ -79,13 +78,50 @@ After restarting Home Assistant:
 2. Click **Add Integration**
 3. Search for **SOLARWATT Manager**
 4. Enter at least one connection type:
-   * **Local Host/IP**: hostname or IPv4 address, optionally with `:port`
+   * **Local Host/IP**: hostname or IPv4 address, optionally with `:port`. New forms are prefilled with `energymanager.local`.
    * **Local username** / **Local password**: your local SOLARWATT Manager credentials
    * Optional tuning values such as **Update interval**, **Energy delta**, and **Power unavailable threshold** can be set here already or adjusted later in the integration options
-   * If needed, you can later disable duplicate item entities in the integration options without removing them completely from Home Assistant
-   * Optional KiwiGrid HEMS credentials can be configured with **KiwiGrid (SOLARWATT Manager Portal) username or email address** and **KiwiGrid (SOLARWATT Manager Portal) password**.
+   * Optional KiwiGrid HEMS credentials can be configured with **KiwiGrid (SOLARWATT Manager Portal) username or email address** and **KiwiGrid (SOLARWATT Manager Portal) password**. Entering both fields automatically activates KiwiGrid HEMS, KiwiGrid Flow, and the available HEMS devices and statistics.
    * Do not enter a full URL for the local host. The integration automatically tries HTTP and HTTPS.
-5. Select the SOLARWATT devices you want to create. Energy Overview, KiwiGrid Flow, KiwiGrid Stats, and battery devices are preselected when available.
+5. Select the SOLARWATT devices you want to create. SOLARWATT Flow, KiwiGrid Flow, KiwiGrid Stats, and battery devices are preselected when available.
+
+At least one complete data source is required. You can configure **local access only**,
+**KiwiGrid Online only**, or **both**. Saving an installation without either a local
+Manager connection or complete KiwiGrid credentials is rejected.
+For a KiwiGrid-only installation, the untouched local defaults are ignored automatically.
+
+### Local SOLARWATT Manager vs. KiwiGrid Online
+
+The setup and options forms separate both data sources into their own sections:
+
+| Area | Connection | Data provided | Internet required |
+| --- | --- | --- | --- |
+| **Local SOLARWATT Manager** | Manager host/IP plus local username and password | `SOLARWATT Flow` and locally detected device metadata | No |
+| **KiwiGrid Online (SOLARWATT Portal)** | Portal username/email plus password | `KiwiGrid Flow`, `KiwiGrid Stats`, supported portal devices, diagnostics, and controls | Yes |
+
+When both sources are configured, they remain independent: local live values continue
+to work during a portal outage, while KiwiGrid Online adds portal devices and statistics.
+The integration keeps both flow devices separate, so their origin is always visible in
+Home Assistant.
+
+### SOLARWATT Flow (local)
+
+`SOLARWATT Flow` is the local live energy-flow view. It reads the Manager's
+`/rest/hems-configurator/energy-overview` endpoint directly and therefore does not need
+the SOLARWATT Portal or an internet connection. It is updated with the general **Update
+interval** and contains current power values rather than the portal's historical
+statistics.
+
+Its visible sensor names match the equivalent `KiwiGrid Flow` names where the same value
+exists, including `PV Out`, `Consumption In`, `Grid In`, `Grid Out`, `Grid Balance`,
+`Battery In`, `Battery Out`, `Battery Balance`, and `Battery SoC`. Additional calculated
+sensors split household consumption into `Consumption From PV`, `Consumption From Grid`,
+and `Consumption From Battery`.
+
+For the balance sensors, a positive `Grid Balance` means grid import and a negative value
+means export. A positive `Battery Balance` means battery discharge; a negative value means
+charging. The separate `Battery In`/`Battery Out` and `Grid In`/`Grid Out` sensors always
+remain non-directional positive values.
 
 ### Options
 
@@ -94,9 +130,8 @@ You can adjust these in the integration options:
 * **Update interval (seconds)** – polling interval for local Manager devices and live `KiwiGrid Flow` data
 * **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
 * **Power unavailable threshold (polls)** – applies to power sensors only. If SOLARWATT briefly returns `unavailable`, the last valid power value is kept until the configured consecutive poll limit is reached. Example: `3` means the 1st and 2nd `unavailable` poll keep the previous value, and the sensor only switches to `unavailable` on the 3rd poll. Set to `0` to disable this debounce completely.
-* **Disable duplicate item entities** – disabled by default. When enabled and a thing channel exposes multiple linked items for the same value, the integration keeps the UID-based channel item (for example `keba_wallbox_12345678_channels_state`) active and creates the additional item entities as disabled-by-default entries. They remain visible in Home Assistant and can still be enabled manually.
-* **Enable KiwiGrid HEMS (SOLARWATT Manager Portal)** – disabled by default. When enabled, the integration signs in with the configured KiwiGrid/SOLARWATT Manager Portal username or email address and password and adds supported HEMS data.
-* **KiwiGrid HEMS poll interval (seconds)** – separate polling interval for physical KiwiGrid devices and `KiwiGrid Stats`. The default is `60` seconds so HEMS analytics and metadata are not requested as frequently as local Manager values.
+* **KiwiGrid HEMS credentials** – when both the username/email and password are entered, the integration signs in automatically and activates the detected HEMS devices, `KiwiGrid Flow`, and `KiwiGrid Stats`.
+* **KiwiGrid HEMS poll interval (seconds)** – separate polling interval for physical KiwiGrid devices and `KiwiGrid Stats`. The default is `120` seconds so HEMS analytics and metadata are not requested as frequently as local Manager values.
 * **Device selection** – choose which detected SOLARWATT devices should be created in Home Assistant
 
 Connection settings can also be changed with Home Assistant's **Reconfigure** action.
@@ -105,6 +140,11 @@ KiwiGrid HEMS rejects its credentials during an update, Home Assistant opens a
 reauthentication flow. In combined installations, the other working source remains
 available and the integration keeps the last valid snapshot of the failed source.
 Failed HEMS requests are retried no more often than the configured HEMS poll interval.
+Within a HEMS poll, up to four isolated connection failures are retried once in
+sequence after the bounded parallel first pass. Endpoints that still fail keep their
+latest successful cached payload and are reported as partial diagnostics without
+marking the complete HEMS source unavailable. Month and year analytics remain part of
+every configured HEMS poll so derived Total sensors keep the same update frequency.
 
 The integration identifies a local installation by the Manager's detected location UID
 and a cloud-only installation by an anonymized account identifier. Changing the local
@@ -121,24 +161,24 @@ sensor therefore does not automatically use the faster update interval.
 | Data source / device | Poll configuration |
 | --- | --- |
 | All local SOLARWATT Manager devices and items | Update interval |
-| Local `Energy Overview` | Update interval |
+| Local `SOLARWATT Flow` | Update interval |
 | `KiwiGrid Flow`, including live consumer values | Update interval |
 | KiwiGrid batteries, PV plants, EV chargers, plugs, smart heaters, meters, inverters, and other physical HEMS devices | KiwiGrid HEMS poll interval |
 | `KiwiGrid Stats`, including today, month, and year values | KiwiGrid HEMS poll interval |
 
-For example, with a 15-second update interval and a 60-second HEMS interval, local
+For example, with a 15-second update interval and a 120-second HEMS interval, local
 production power and `KiwiGrid Flow` power are refreshed every 15 seconds, while a
 KiwiGrid battery power sensor and `KiwiGrid Stats` power sensor are refreshed every
-60 seconds. All entities read the shared coordinator snapshot; individual entities do
+120 seconds. All entities read the shared coordinator snapshot; individual entities do
 not perform their own HTTP requests or have their own poll interval.
 
 ---
 
-## ☁️ KiwiGrid HEMS
+## ☁️ KiwiGrid Online (HEMS)
 
-KiwiGrid HEMS support is optional and uses the same SOLARWATT/KiwiGrid web login flow as the SOLARWATT Manager Portal. You only need username/email address and password.
+KiwiGrid Online is the optional portal-backed part of the integration. It uses the same SOLARWATT/KiwiGrid web login flow as the SOLARWATT Manager Portal. You only need username/email address and password; no local Manager address is required for an online-only installation.
 
-When enabled, the integration adds supported HEMS data from the SOLARWATT Manager Portal:
+When complete portal credentials are configured, the integration adds supported HEMS data from the SOLARWATT Manager Portal:
 
 * HEMS devices such as batteries, PV systems, EV chargers, plugs, smart heaters, meters, and inverters
 * Current smart-heater temperature assigned to the API-provided device name
@@ -233,7 +273,7 @@ target:
 
 ### KiwiGrid Flow
 
-`KiwiGrid Flow` is a dedicated device for live energy-flow and consumer values from the SOLARWATT Manager Portal. It is independent from the local `Energy Overview` device and is also available when both local Manager access and KiwiGrid HEMS are configured. Example sensors:
+`KiwiGrid Flow` is a dedicated device for live energy-flow and consumer values from the SOLARWATT Manager Portal. It is independent from the local `SOLARWATT Flow` device and is also available when both local Manager access and KiwiGrid HEMS are configured. Example sensors:
 
 ```
 sensor.kiwigrid_flow_consumption_in
@@ -241,6 +281,7 @@ sensor.kiwigrid_flow_grid_in
 sensor.kiwigrid_flow_grid_out
 sensor.kiwigrid_flow_battery_out
 sensor.kiwigrid_flow_battery_soc
+sensor.kiwigrid_flow_battery_balance_evcc
 sensor.kiwigrid_flow_solarwatt_battery_vision_three_out
 sensor.kiwigrid_flow_mystrom_waschmaschine_consumption
 sensor.kiwigrid_flow_keba_p30_pv_edition_consumption
@@ -248,6 +289,10 @@ sensor.kiwigrid_flow_mystrom_wasserpumpe_consumption
 ```
 
 These sensors show the current portal values.
+
+`Battery Balance EVCC` is the automatically inverted `Battery Balance` value:
+battery discharge is positive and battery charging is negative, matching EVCC's
+battery-meter sign convention.
 
 ### HEMS Controls
 
@@ -268,31 +313,25 @@ Energy sensors are provided in kWh and prepared for the Energy Dashboard (`devic
 
 ## SOLARWATT Firmware 10.26.24.4
 
-On a tested SOLARWATT Manager with KiwOS Edge `10.26.24.4` / EM setup feature `4.64.1.45`, authenticated requests to the previous endpoints return `404`:
-
-* `/rest/items`
-* `/rest/things`
-
-The newer firmware exposes replacement data under:
+On a tested SOLARWATT Manager with KiwOS Edge `10.26.24.4` / EM setup feature `4.64.1.45`, local values and device metadata are exposed under:
 
 * `/rest/hems-configurator/energy-overview` - live production, grid, household, and battery power values
 * `/rest/hems-configurator/things` - thing/device metadata
 
-This integration falls back to those local HEMS configurator endpoints automatically. The direct local energy overview values are exposed under a dedicated `Energy Overview` device with sensors named like the JSON fields:
+The integration reads local values directly from the HEMS configurator Energy Overview endpoint. They are exposed under the dedicated `SOLARWATT Flow` device. Stable internal item keys still follow the JSON fields, while the visible sensor names match their `KiwiGrid Flow` counterparts where equivalent:
 
-* `production`
-* `feedIn`
-* `feedOut`
-* `householdConsumption`
-* `storagePowerIn`
-* `storagePowerOut`
+* `production` → `PV Out`
+* `feedIn` → `Grid Out`
+* `feedOut` → `Grid In`
+* `householdConsumption` → `Consumption In`
+* `storagePowerIn` → `Battery In`
+* `storagePowerOut` → `Battery Out`
+* Derived values include `Grid Balance`, `Battery Balance`, `Consumption Direct Consumption`, and `Battery SoC`
 
-The `Energy Overview` device must be enabled in the integration options/device selection for those sensors to be created. With SOLARWATT firmware `10.26.24.4`, these local Energy Overview items are currently the only item values that can be read because the full legacy `/rest/items` payload is no longer available.
+The `SOLARWATT Flow` device must be enabled in the integration options/device selection for those sensors to be created.
 
-The integration remembers the working local item and thing endpoints for the lifetime of
-the config entry client. Endpoint fallbacks are therefore probed once after setup instead
-of causing an additional failed request on every poll. Thing metadata used for legacy
-Energy Overview aliases is cached and refreshed during device discovery.
+Firmware must provide both HEMS configurator endpoints. The former `/rest/things`
+metadata fallback and legacy item aliases are no longer supported.
 
 For SOLARWATT Vision battery SoC, use the FoxESS integration [nathanmarlor/foxess_modbus](https://github.com/nathanmarlor/foxess_modbus/) or preferably the fork [WiIIiam278:feat/ivo-and-ivt](https://github.com/WiIIiam278/foxess_modbus/tree/feat/ivo-and-ivt). You can then create a SOLARWATT-adjusted SoC as a template sensor.
 
@@ -326,7 +365,18 @@ The `reserve` value (`10` in the example) represents the storage reserve configu
 
 ## 🚗 evcc Sensors
 
-If you want to use sensors from this integration in **evcc**, please refer to the instructions (in German).
+For a local evcc setup, use `Grid Balance`, `PV Out`, `Battery Balance`, and
+`Battery SoC` from the `SOLARWATT Flow` device. Local `Battery Balance` already
+uses evcc's expected sign convention: positive means discharging and negative
+means charging.
+
+When using `KiwiGrid Flow` instead, select `Battery Balance EVCC` for battery
+power because the regular online `Battery Balance` uses the opposite sign. Keep
+Grid, PV, and battery power on the same flow source when possible so their update
+timestamps match. Entity IDs are managed by Home Assistant; copy the actual IDs
+from your installation rather than relying only on the examples.
+
+The full configuration examples and migration notes are available in the German guide:
 
 * [evcc guide (German)](docs/evcc-guide-german.md)
 

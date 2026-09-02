@@ -160,6 +160,7 @@ def _hems_status_payload(coordinator: Any) -> dict[str, Any]:
             else None
         ),
         "last_error": getattr(coordinator, "hems_last_error", None),
+        "partial_errors": list(getattr(coordinator, "hems_partial_errors", ()) or ()),
         "cache_age_seconds": getattr(coordinator, "hems_cache_age_seconds", None),
     }
 

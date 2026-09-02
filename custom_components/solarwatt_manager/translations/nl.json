@@ -25,19 +25,35 @@
     "step": {
       "user": {
         "title": "Verbind SOLARWATT",
-        "description": "Voer IP/host en inloggegevens in.",
-        "data": {
-          "host": "Lokale SOLARWATT Manager IP/Host",
-          "username": "Lokale SOLARWATT Manager gebruikersnaam",
-          "password": "Lokale SOLARWATT Manager wachtwoord",
-          "scan_interval": "Update-interval: lokale apparaten en KiwiGrid Flow (seconden)",
-          "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
-          "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen",
-          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren",
-          "kiwigrid_hems_enabled": "KiwiGrid HEMS inschakelen (SOLARWATT Manager-portaal)",
-          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
-          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord",
-          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS-interval: KiwiGrid-apparaten en Stats (seconden)"
+        "description": "Configureer de lokale Manager, KiwiGrid-portaaltoegang of beide gegevensbronnen. Minstens één bron is vereist.",
+        "sections": {
+          "local_connection": {
+            "name": "Lokale SOLARWATT Manager",
+            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken.",
+            "data": {
+              "host": "Host/IP",
+              "username": "Gebruikersnaam",
+              "password": "Wachtwoord"
+            }
+          },
+          "kiwigrid_connection": {
+            "name": "KiwiGrid Online (SOLARWATT-portaal)",
+            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch.",
+            "data": {
+              "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
+              "kiwigrid_hems_password": "Wachtwoord",
+              "kiwigrid_hems_scan_interval": "HEMS-interval voor apparaten en Stats (seconden)"
+            }
+          },
+          "general_settings": {
+            "name": "Update- en sensorinstellingen",
+            "description": "Het snelle update-interval geldt voor lokale apparaten, SOLARWATT Flow en KiwiGrid Flow. Het HEMS-interval geldt voor overige online apparaten en statistieken.",
+            "data": {
+              "scan_interval": "Update-interval (seconden)",
+              "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
+              "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen"
+            }
+          }
         }
       },
       "devices": {
@@ -47,24 +63,47 @@
       "reauth_confirm": {
         "title": "SOLARWATT opnieuw authenticeren",
         "description": "Werk de inloggegevens van de geconfigureerde SOLARWATT-verbindingen bij.",
-        "data": {
-          "host": "Lokale SOLARWATT Manager IP/Host",
-          "username": "Lokale SOLARWATT Manager gebruikersnaam",
-          "password": "Lokale SOLARWATT Manager wachtwoord",
-          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
-          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord"
+        "sections": {
+          "local_connection": {
+            "name": "Lokale SOLARWATT Manager",
+            "description": "Directe toegang tot de Manager via het lokale netwerk.",
+            "data": {
+              "host": "Host/IP",
+              "username": "Gebruikersnaam",
+              "password": "Wachtwoord"
+            }
+          },
+          "kiwigrid_connection": {
+            "name": "KiwiGrid Online (SOLARWATT-portaal)",
+            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten.",
+            "data": {
+              "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
+              "kiwigrid_hems_password": "Wachtwoord"
+            }
+          }
         }
       },
       "reconfigure": {
         "title": "SOLARWATT opnieuw configureren",
         "description": "Werk de verbindingen met de lokale Manager en KiwiGrid HEMS bij en valideer ze.",
-        "data": {
-          "host": "Lokale SOLARWATT Manager IP/Host",
-          "username": "Lokale SOLARWATT Manager gebruikersnaam",
-          "password": "Lokale SOLARWATT Manager wachtwoord",
-          "kiwigrid_hems_enabled": "KiwiGrid HEMS inschakelen (SOLARWATT Manager-portaal)",
-          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
-          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord"
+        "sections": {
+          "local_connection": {
+            "name": "Lokale SOLARWATT Manager",
+            "description": "Directe toegang tot de Manager via het lokale netwerk.",
+            "data": {
+              "host": "Host/IP",
+              "username": "Gebruikersnaam",
+              "password": "Wachtwoord"
+            }
+          },
+          "kiwigrid_connection": {
+            "name": "KiwiGrid Online (SOLARWATT-portaal)",
+            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten.",
+            "data": {
+              "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
+              "kiwigrid_hems_password": "Wachtwoord"
+            }
+          }
         }
       }
     }
@@ -92,20 +131,34 @@
         "sections": {
           "device_selection": {
             "name": "Apparaten in- of uitschakelen"
+          },
+          "local_connection": {
+            "name": "Lokale SOLARWATT Manager",
+            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken.",
+            "data": {
+              "host": "Host/IP",
+              "username": "Gebruikersnaam",
+              "password": "Wachtwoord"
+            }
+          },
+          "kiwigrid_connection": {
+            "name": "KiwiGrid Online (SOLARWATT-portaal)",
+            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch.",
+            "data": {
+              "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
+              "kiwigrid_hems_password": "Wachtwoord",
+              "kiwigrid_hems_scan_interval": "HEMS-interval voor apparaten en Stats (seconden)"
+            }
+          },
+          "general_settings": {
+            "name": "Update- en sensorinstellingen",
+            "description": "Het snelle update-interval geldt voor lokale apparaten, SOLARWATT Flow en KiwiGrid Flow. Het HEMS-interval geldt voor overige online apparaten en statistieken.",
+            "data": {
+              "scan_interval": "Update-interval (seconden)",
+              "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
+              "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen"
+            }
           }
-        },
-        "data": {
-          "host": "Lokale SOLARWATT Manager IP/Host",
-          "username": "Lokale SOLARWATT Manager gebruikersnaam",
-          "password": "Lokale SOLARWATT Manager wachtwoord",
-          "scan_interval": "Update-interval: lokale apparaten en KiwiGrid Flow (seconden)",
-          "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
-          "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen",
-          "disable_duplicate_item_entities": "Dubbele item-entiteiten uitschakelen en het UID-gebaseerde kanaalitem prefereren",
-          "kiwigrid_hems_enabled": "KiwiGrid HEMS inschakelen (SOLARWATT Manager-portaal)",
-          "kiwigrid_hems_username": "KiwiGrid (SOLARWATT Manager-portaal) gebruikersnaam of e-mailadres",
-          "kiwigrid_hems_password": "KiwiGrid (SOLARWATT Manager-portaal) wachtwoord",
-          "kiwigrid_hems_scan_interval": "KiwiGrid HEMS-interval: KiwiGrid-apparaten en Stats (seconden)"
         }
       }
     }

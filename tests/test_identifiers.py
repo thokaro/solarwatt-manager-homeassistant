@@ -98,8 +98,8 @@ def test_manager_fallback_survives_host_change_until_location_is_available():
 
 def test_cloud_installation_id_is_stable_and_hides_username():
     options = {
-        "kiwigrid_hems_enabled": True,
         "kiwigrid_hems_username": "Owner@Example.com",
+        "kiwigrid_hems_password": "secret",
     }
     case_variant = {
         **options,
@@ -111,6 +111,23 @@ def test_cloud_installation_id_is_stable_and_hides_username():
     assert installation_id == const.derive_installation_id({"host": None}, case_variant)
     assert installation_id.startswith("hems:")
     assert "owner@example.com" not in installation_id
+
+
+def test_untouched_local_defaults_do_not_enable_local_access_for_cloud_only_setup():
+    entry_data = {
+        "host": const.DEFAULT_LOCAL_HOST,
+        "username": const.DEFAULT_LOCAL_USERNAME,
+        "password": "",
+    }
+    options = {
+        "kiwigrid_hems_username": "owner@example.com",
+        "kiwigrid_hems_password": "secret",
+    }
+
+    assert const.is_unused_default_local_connection(entry_data, options)
+
+    entry_data["password"] = "local-secret"
+    assert not const.is_unused_default_local_connection(entry_data, options)
 
 
 def test_device_registry_anchor_and_configuration_host_are_independent():

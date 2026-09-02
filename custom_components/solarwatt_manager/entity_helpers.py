@@ -13,7 +13,6 @@ from .const import (
     SOLARWATTConfigEntry,
     build_thing_device_identifier,
     build_thing_device_info,
-    get_disable_duplicate_item_entities,
     get_device_registry_anchor,
     get_preferred_parent_thing_uid,
     get_selected_thing_uids,
@@ -98,23 +97,6 @@ def iter_item_sensor_names(
         yield item_name
 
 
-def iter_selected_item_sensor_names(
-    items: Mapping[str, Any] | None,
-    item_to_thing_uid: Mapping[str, str] | None = None,
-    selected_thing_uids: set[str] | None = None,
-    duplicate_item_targets: Mapping[str, str] | None = None,
-    disable_duplicate_item_entities: bool = False,
-) -> Iterator[str]:
-    """Yield coordinator item names that should be exposed as sensors."""
-    for item_name in iter_item_sensor_names(items, item_to_thing_uid, selected_thing_uids):
-        if (
-            disable_duplicate_item_entities
-            and item_name in (duplicate_item_targets or {})
-        ):
-            continue
-        yield item_name
-
-
 def is_stats_total_source_item_name(item_name: str) -> bool:
     """Return True for year-based KiwiGrid energy stats with derived totals."""
     name = str(item_name or "").strip().lower()
@@ -161,17 +143,13 @@ def _selected_entity_unique_ids(
     item_to_thing_uid: Mapping[str, str] | None,
     selected_thing_uids: set[str],
     things: Mapping[str, Any] | None,
-    duplicate_item_targets: Mapping[str, str] | None = None,
-    disable_duplicate_item_entities: bool = False,
 ) -> set[str]:
     """Return the expected active entity unique IDs for the selected devices."""
     selected_item_names = set(
-        iter_selected_item_sensor_names(
+        iter_item_sensor_names(
             items,
             item_to_thing_uid,
             selected_thing_uids,
-            duplicate_item_targets,
-            disable_duplicate_item_entities,
         )
     )
     expected_unique_ids = {
@@ -373,13 +351,11 @@ def sync_selected_thing_entities(
     items: Mapping[str, Any] | None,
     item_to_thing_uid: Mapping[str, str] | None,
     things: Mapping[str, Any] | None,
-    duplicate_item_targets: Mapping[str, str] | None = None,
     options: Mapping[str, Any] | None = None,
 ) -> None:
     """Enable selected devices and disable deselected ones in the entity registry."""
     resolved_options = options if options is not None else entry.options
     selected_thing_uids = get_selected_thing_uids(resolved_options)
-    disable_duplicate_item_entities = get_disable_duplicate_item_entities(resolved_options)
     if selected_thing_uids is None:
         selected_thing_uids = set((things or {}).keys())
         expected_unique_ids = _selected_entity_unique_ids(
@@ -388,8 +364,6 @@ def sync_selected_thing_entities(
             item_to_thing_uid,
             selected_thing_uids,
             things,
-            duplicate_item_targets,
-            disable_duplicate_item_entities,
         )
         _apply_expected_entity_selection(hass, entry, expected_unique_ids)
         _sync_thing_device_assignments(hass, entry, things, None)
@@ -401,8 +375,6 @@ def sync_selected_thing_entities(
         item_to_thing_uid,
         selected_thing_uids,
         things,
-        duplicate_item_targets,
-        disable_duplicate_item_entities,
     )
     _apply_expected_entity_selection(hass, entry, expected_unique_ids)
     _sync_thing_device_assignments(hass, entry, things, selected_thing_uids)

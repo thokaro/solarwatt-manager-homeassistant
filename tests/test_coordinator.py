@@ -48,15 +48,16 @@ def _load_coordinator_module():
         category: str | None
 
     constants = {
-        "CONF_KIWIGRID_HEMS_ENABLED": "kiwigrid_hems_enabled",
-        "CONF_KIWIGRID_HEMS_PASSWORD": "kiwigrid_hems_password",
         "CONF_KIWIGRID_HEMS_SCAN_INTERVAL": "kiwigrid_hems_scan_interval",
-        "CONF_KIWIGRID_HEMS_USERNAME": "kiwigrid_hems_username",
         "CONF_SCAN_INTERVAL": "scan_interval",
-        "DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL": 60,
+        "DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL": 120,
         "DEFAULT_SCAN_INTERVAL": 15,
         "MAX_SCAN_INTERVAL": 3600,
         "MIN_SCAN_INTERVAL": 10,
+        "get_kiwigrid_hems_credentials": lambda options: (
+            str(options.get("kiwigrid_hems_username") or "").strip(),
+            str(options.get("kiwigrid_hems_password") or "").strip(),
+        ),
     }
 
     module = load_component_module_with_stubs(
@@ -124,9 +125,8 @@ class FakeEntry:
     def __init__(self, *, hems_enabled: bool):
         self.options = {
             "scan_interval": 15,
-            "kiwigrid_hems_enabled": hems_enabled,
-            "kiwigrid_hems_username": "cloud-user",
-            "kiwigrid_hems_password": "cloud-password",
+            "kiwigrid_hems_username": "cloud-user" if hems_enabled else "",
+            "kiwigrid_hems_password": "cloud-password" if hems_enabled else "",
             "kiwigrid_hems_scan_interval": 60,
         }
         self.reauth_calls = 0
@@ -143,11 +143,12 @@ class FakeClient:
         self.local_result: Any = [_item("local_power", "100 W")]
         self.hems_result: Any = [_item("hems_stats", "2 kWh")]
         self.flow_result: Any = [_item("hems_flow", "50 W")]
+        self.hems_partial_errors: tuple[str, ...] = ()
         self.local_calls = 0
         self.hems_calls = 0
         self.flow_calls = 0
 
-    async def async_get_items(self):
+    async def async_get_energy_overview_items(self):
         self.local_calls += 1
         return _result_or_raise(self.local_result)
 
@@ -192,6 +193,17 @@ def test_local_failure_keeps_hems_source_available():
     assert coordinator.hems_last_error is None
 
 
+def test_hems_credentials_enable_cloud_polling_without_legacy_checkbox():
+    coordinator, entry, client = _coordinator(local_enabled=False)
+    entry.options["kiwigrid_hems_enabled"] = False
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert set(result) == {"hems_stats", "hems_flow"}
+    assert client.hems_calls == 1
+    assert client.flow_calls == 1
+
+
 def test_cached_local_data_survives_later_failure():
     coordinator, _, client = _coordinator()
     first_result = asyncio.run(coordinator._async_update_data())
@@ -213,6 +225,34 @@ def test_partial_auth_failure_starts_reauth_without_hiding_cloud_data():
 
     assert set(result) == {"hems_stats", "hems_flow"}
     assert entry.reauth_calls == 1
+
+
+def test_hems_endpoint_partial_failure_keeps_source_available(caplog):
+    coordinator, _, client = _coordinator(local_enabled=False)
+    client.hems_partial_errors = (
+        "analytics_finance_year: Timeout while requesting GET /v11/analytics/finance year",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = asyncio.run(coordinator._async_update_data())
+
+    assert set(result) == {"hems_stats", "hems_flow"}
+    assert coordinator.hems_last_error is None
+    assert coordinator.hems_partial_errors == client.hems_partial_errors
+    assert not any("became unavailable" in message for message in caplog.messages)
+
+
+def test_one_hems_subsource_failure_keeps_source_available():
+    coordinator, _, client = _coordinator(local_enabled=False)
+    client.hems_result = SolarwattError("stats unavailable")
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert set(result) == {"hems_flow"}
+    assert coordinator.hems_last_error is None
+    assert coordinator.hems_partial_errors == (
+        "Unable to fetch KiwiGrid HEMS data: stats unavailable",
+    )
 
 
 def test_single_source_auth_failure_raises_config_entry_auth_failed():

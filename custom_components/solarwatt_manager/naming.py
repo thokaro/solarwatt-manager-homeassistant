@@ -36,8 +36,6 @@ SPECIAL_DISPLAY_NAMES: dict[str, str] = {
     "gridPower": "Grid Power",
     "batteryPower": "Battery Power",
     "selfConsumedPower": "Self Consumed Power",
-    "batteryChargePower": "Battery Charge Power",
-    "batteryDischargePower": "Battery Discharge Power",
     "householdFromBatteryPower": "Household From Battery Power",
     "householdFromGridPower": "Household From Grid Power",
     "householdFromPvPower": "Household From PV Power",

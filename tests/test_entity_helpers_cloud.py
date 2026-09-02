@@ -60,7 +60,6 @@ entity_helpers = load_component_module_with_stubs(
                 f"{anchor}:{uid}",
             ),
             build_thing_device_info=lambda *args: {},
-            get_disable_duplicate_item_entities=lambda options: False,
             get_device_registry_anchor=lambda entry: (
                 entry.data.get("host") or entry.entry_id
             ),

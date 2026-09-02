@@ -16,6 +16,10 @@ from .services import async_register_services
 from .stats_total import StatsTotalStore
 
 PLATFORMS: list[str] = ["sensor", "button", "select", "switch"]
+_REMOVED_OPTION_KEYS = {
+    "disable_duplicate_item_entities",
+    "kiwigrid_hems_enabled",
+}
 
 
 async def async_migrate_entry(
@@ -26,8 +30,14 @@ async def async_migrate_entry(
     if entry.version > CONFIG_ENTRY_VERSION:
         return False
     if entry.version < CONFIG_ENTRY_VERSION:
+        options = {
+            key: value
+            for key, value in entry.options.items()
+            if key not in _REMOVED_OPTION_KEYS
+        }
         hass.config_entries.async_update_entry(
             entry,
+            options=options,
             version=CONFIG_ENTRY_VERSION,
         )
     return True
@@ -54,7 +64,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) ->
             coordinator.data,
             coordinator.item_to_thing_uid,
             coordinator.things,
-            coordinator.duplicate_item_targets,
         )
         ensure_parent_devices_registered(hass, entry, coordinator.things)
 

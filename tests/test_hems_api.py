@@ -4,13 +4,12 @@ from .module_loader import load_component_module
 
 hems_api = load_component_module("hems_api")
 energy_overview_to_items = hems_api.energy_overview_to_items
-energy_overview_to_legacy_items = hems_api.energy_overview_to_legacy_items
+hems_configurator_to_things = hems_api.hems_configurator_to_things
 is_energy_overview_thing = hems_api.is_energy_overview_thing
 is_hems_thing = hems_api.is_hems_thing
 item_names_to_thing_uids = hems_api.item_names_to_thing_uids
 KIWIGRID_FLOW_THING_UID = hems_api.KIWIGRID_FLOW_THING_UID
 kiwigrid_flow_thing = hems_api.kiwigrid_flow_thing
-things_to_openhab_things = hems_api.things_to_openhab_things
 
 
 def test_energy_overview_to_items_builds_power_items():
@@ -35,8 +34,6 @@ def test_energy_overview_to_items_builds_power_items():
         "gridPower",
         "batteryPower",
         "selfConsumedPower",
-        "batteryChargePower",
-        "batteryDischargePower",
         "householdFromBatteryPower",
         "householdFromGridPower",
         "householdFromPvPower",
@@ -53,9 +50,21 @@ def test_energy_overview_to_items_builds_power_items():
         "229 W",
         "0 W",
         "0 W",
-        "0 W",
-        "0 W",
         "229 W",
+    ]
+    assert [item["label"] for item in items] == [
+        "PV Out",
+        "Grid Out",
+        "Grid In",
+        "Consumption In",
+        "Battery In",
+        "Battery Out",
+        "Grid Balance",
+        "Battery Balance",
+        "Consumption Direct Consumption",
+        "Consumption From Battery",
+        "Consumption From Grid",
+        "Consumption From PV",
     ]
     assert all(item["type"] == "Number:Power" for item in items)
 
@@ -84,7 +93,7 @@ def test_energy_overview_to_items_builds_battery_soc_item():
     assert items == [
         {
             "name": "batterySoc",
-            "label": "batterySoc",
+            "label": "Battery SoC",
             "state": "54.4 %",
             "type": "Number:Dimensionless",
             "editable": False,
@@ -94,41 +103,8 @@ def test_energy_overview_to_items_builds_battery_soc_item():
     ]
 
 
-def test_energy_overview_to_legacy_items_builds_existing_power_names():
-    items = energy_overview_to_legacy_items(
-        {
-            "production": 730,
-            "feedIn": 501,
-            "feedOut": 0,
-            "householdConsumption": 229,
-            "storagePowerIn": 0,
-            "storagePowerOut": 0,
-        },
-        [
-            {
-                "id": "kiwigrid-location:standard:location-id",
-                "thingType": {"id": "kiwigrid-location:standard"},
-            },
-            {
-                "id": "foxesshybrid:battery:serial",
-                "thingType": {
-                    "id": "foxesshybrid:battery",
-                    "category": {"type": "STORAGES"},
-                },
-            },
-        ],
-    )
-
-    states = {item["name"]: item["state"] for item in items}
-    assert states["kiwigrid_location_standard_location_id_harmonized_power_produced"] == "730 W"
-    assert states["kiwigrid_location_standard_location_id_harmonized_power_out"] == "501 W"
-    assert states["kiwigrid_location_standard_location_id_harmonized_power_consumed"] == "229 W"
-    assert states["foxesshybrid_battery_serial_harmonized_power_in"] == "0 W"
-    assert states["foxesshybrid_battery_serial_harmonized_power_out"] == "0 W"
-
-
-def test_things_to_openhab_things_preserves_diagnostics_metadata():
-    things = things_to_openhab_things(
+def test_hems_configurator_to_things_preserves_diagnostics_metadata():
+    things = hems_configurator_to_things(
         [
             {
                 "id": "foxesshybrid:battery:123",
@@ -150,14 +126,14 @@ def test_things_to_openhab_things_preserves_diagnostics_metadata():
         {
             "UID": "energy-overview:standard:energy-overview",
             "uid": "energy-overview:standard:energy-overview",
-            "label": "Energy Overview",
+            "label": "SOLARWATT Flow",
             "thingTypeUID": "energy-overview:standard",
             "thingTypeUid": "energy-overview:standard",
             "statusInfo": {"status": "ONLINE", "statusDetail": "NONE"},
             "properties": {
                 "solarwatt.hemsConfigurator": "true",
                 "solarwatt.energyOverview": "true",
-                "thingTypeTitle": "Energy Overview",
+                "thingTypeTitle": "SOLARWATT Flow",
                 "thingTypeCategory": "ENERGY_OVERVIEW",
                 "generatedLabel": "energymanager.local",
                 "model": "energymanager.local",
@@ -187,7 +163,7 @@ def test_things_to_openhab_things_preserves_diagnostics_metadata():
     assert is_hems_thing(things[1])
 
 
-def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
+def test_item_names_to_thing_uids_maps_generated_hems_items():
     item_to_thing_uid = item_names_to_thing_uids(
         [
             "production",
@@ -195,16 +171,12 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
             "hems_flow_batteryPower",
             "hems_plug_15922327_c7d9_4fb9_ba65_9073bb627993_state_device",
             "hems_smart_heater_700ff539_7ae2_4802_83f8_afa1949ec7d0_temperature",
-            "kiwigrid_location_standard_location_id_harmonized_power_consumed",
-            "foxesshybrid_battery_serial_harmonized_power_out",
             "unknown_prefix_power",
         ],
         [
             {"UID": "energy-overview:standard:energy-overview"},
             {"UID": "15922327-c7d9-4fb9-ba65-9073bb627993"},
             {"UID": "700ff539-7ae2-4802-83f8-afa1949ec7d0"},
-            {"UID": "kiwigrid-location:standard:location-id"},
-            {"UID": "foxesshybrid:battery:serial"},
         ],
     )
 
@@ -217,12 +189,6 @@ def test_item_names_to_thing_uids_maps_legacy_hems_items_by_prefix():
         ),
         "hems_smart_heater_700ff539_7ae2_4802_83f8_afa1949ec7d0_temperature": (
             "700ff539-7ae2-4802-83f8-afa1949ec7d0"
-        ),
-        "kiwigrid_location_standard_location_id_harmonized_power_consumed": (
-            "kiwigrid-location:standard:location-id"
-        ),
-        "foxesshybrid_battery_serial_harmonized_power_out": (
-            "foxesshybrid:battery:serial"
         ),
     }
 

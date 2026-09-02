@@ -20,7 +20,6 @@ from .const import (
     build_device_info,
     build_thing_device_identifier,
     build_thing_device_info,
-    get_disable_duplicate_item_entities,
     get_device_registry_anchor,
     get_registry_device_name,
     get_selected_thing_uids,
@@ -91,7 +90,6 @@ def _collect_new_entities(
 ) -> list[SensorEntity]:
     """Build newly discovered item and thing sensors that are not added yet."""
     entities: list[SensorEntity] = []
-    disable_duplicate_item_entities = get_disable_duplicate_item_entities(options)
     for item_name in iter_item_sensor_names(
         coordinator.data,
         coordinator.item_to_thing_uid,
@@ -101,10 +99,6 @@ def _collect_new_entities(
             continue
 
         added_item_names.add(item_name)
-        enabled_default = not (
-            disable_duplicate_item_entities
-            and item_name in coordinator.duplicate_item_targets
-        )
         entity = SOLARWATTItemSensor(
             coordinator,
             entry.entry_id,
@@ -112,7 +106,6 @@ def _collect_new_entities(
             device_name=entry.title,
             energy_delta_kwh=energy_delta_kwh,
             power_unavailable_threshold=power_unavailable_threshold,
-            enabled_default=enabled_default,
             selected_thing_uids=selected_thing_uids,
         )
         entities.append(entity)
@@ -170,7 +163,6 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         device_name: str = "SOLARWATT Manager",
         energy_delta_kwh: float = DEFAULT_ENERGY_DELTA_KWH,
         power_unavailable_threshold: int = DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
-        enabled_default: bool = True,
         selected_thing_uids: set[str] | None = None,
     ):
         super().__init__(coordinator)
@@ -187,7 +179,6 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         self._is_power = False
 
         self._attr_unique_id = build_item_sensor_unique_id(entry_id, item_name)
-        self._attr_entity_registry_enabled_default = enabled_default
 
         # Resolve the owning HA device once so naming and registry mapping stay aligned.
         things = self.coordinator.things

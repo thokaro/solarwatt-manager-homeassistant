@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from types import SimpleNamespace
+
+import pytest
 
 from .module_loader import load_component_module_with_stubs, make_module
 
@@ -31,6 +32,8 @@ class FakeKiwiGridHEMSClient:
         self.calls: dict[str, int] = {}
         self.active_requests = 0
         self.max_active_requests = 0
+        self.fail_all = False
+        self.persistent_battery_failure = False
         self.instances.append(self)
 
     async def async_ensure_authenticated(self):
@@ -50,7 +53,13 @@ class FakeKiwiGridHEMSClient:
             )
             try:
                 await asyncio.sleep(0)
-                if name == "async_get_battery" and call_count == 2:
+                if self.fail_all:
+                    raise FakeKiwiGridHEMSConnectionError(
+                        f"{name} temporarily unavailable"
+                    )
+                if name == "async_get_battery" and (
+                    call_count == 2 or self.persistent_battery_failure
+                ):
                     raise FakeKiwiGridHEMSConnectionError(
                         "battery temporarily unavailable"
                     )
@@ -104,9 +113,8 @@ client_module = load_component_module_with_stubs(
             ENERGY_OVERVIEW_PATH="/energy-overview",
             THINGS_PATH="/things",
             energy_overview_to_items=lambda payload: [],
-            energy_overview_to_legacy_items=lambda payload, things: [],
+            hems_configurator_to_things=lambda payload: [],
             kiwigrid_flow_thing=lambda: {},
-            things_to_openhab_things=lambda payload: [],
         ),
     },
 )
@@ -116,9 +124,6 @@ def _client():
     client = object.__new__(client_module.SOLARWATTClient)
     client._session = object()
     client.host = "manager.local"
-    client._local_items_source = None
-    client._local_things_source = None
-    client._hems_configurator_things_cache = None
     client._hems_client = None
     client._hems_client_credentials = None
     client._hems_payload_cache = {}
@@ -127,31 +132,57 @@ def _client():
     return client
 
 
-def _client_response_error(status: int):
-    return client_module.ClientResponseError(
-        SimpleNamespace(real_url="http://manager.local/test"),
-        (),
-        status=status,
-        message="Not Found",
-        headers={},
-    )
+def test_hems_poll_retries_one_transient_endpoint_sequentially():
+    FakeKiwiGridHEMSClient.instances.clear()
+    captured_payloads.clear()
+    client = _client()
+
+    asyncio.run(client.async_get_hems_items(username="user", password="password"))
+    asyncio.run(client.async_get_hems_items(username="user", password="password"))
+
+    hems = FakeKiwiGridHEMSClient.instances[0]
+    assert len(FakeKiwiGridHEMSClient.instances) == 1
+    assert 1 < hems.max_active_requests <= 4
+    assert hems.calls["async_get_battery"] == 3
+    assert hems.calls["async_get_analytics_consumption_year"] == 2
+    assert captured_payloads[-1]["batteries"] == [
+        {"endpoint": "async_get_battery", "call": 3}
+    ]
+    assert client.hems_partial_errors == ()
 
 
-def test_hems_poll_reuses_client_and_last_successful_endpoint_payload():
+def test_hems_poll_reuses_cache_after_sequential_retry_fails():
     FakeKiwiGridHEMSClient.instances.clear()
     captured_payloads.clear()
     client = _client()
 
     asyncio.run(client.async_get_hems_items(username="user", password="password"))
     first_battery_payload = captured_payloads[-1]["batteries"]
+    hems = FakeKiwiGridHEMSClient.instances[0]
+    hems.persistent_battery_failure = True
+
     asyncio.run(client.async_get_hems_items(username="user", password="password"))
 
-    assert len(FakeKiwiGridHEMSClient.instances) == 1
-    assert 1 < FakeKiwiGridHEMSClient.instances[0].max_active_requests <= 4
+    assert hems.calls["async_get_battery"] == 3
     assert captured_payloads[-1]["batteries"] == first_battery_payload
     assert client.hems_partial_errors == (
         "batteries: battery temporarily unavailable",
     )
+
+
+def test_hems_poll_skips_retries_and_fails_when_all_endpoints_are_unavailable():
+    FakeKiwiGridHEMSClient.instances.clear()
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    hems.fail_all = True
+
+    with pytest.raises(
+        client_module.SolarwattConnectionError,
+        match="All requested KiwiGrid HEMS endpoints failed",
+    ):
+        asyncio.run(client.async_get_hems_items(username="user", password="password"))
+
+    assert hems.calls["async_get_battery"] == 1
 
 
 def test_flow_poll_reuses_cached_device_metadata():
@@ -196,67 +227,9 @@ def test_initial_thing_discovery_can_reuse_poll_payloads():
     assert hems.calls == endpoint_calls_before
 
 
-def test_local_items_endpoint_fallback_is_cached():
+def test_energy_overview_returns_only_canonical_items(monkeypatch):
     client = _client()
-    rest_calls = 0
-    overview_calls = 0
-
-    async def _get_json(path, *, where):
-        nonlocal rest_calls
-        assert path == "/rest/items"
-        rest_calls += 1
-        raise _client_response_error(404)
-
-    async def _get_energy_overview_items():
-        nonlocal overview_calls
-        overview_calls += 1
-        return [{"name": "production"}]
-
-    client._async_get_json_endpoint = _get_json
-    client.async_get_energy_overview_items = _get_energy_overview_items
-
-    assert asyncio.run(client.async_get_items()) == [{"name": "production"}]
-    assert asyncio.run(client.async_get_items()) == [{"name": "production"}]
-
-    assert rest_calls == 1
-    assert overview_calls == 2
-    assert client._local_items_source == client_module.LOCAL_ITEMS_SOURCE_ENERGY_OVERVIEW
-
-
-def test_local_things_endpoint_fallback_is_cached():
-    client = _client()
-    configurator_calls = 0
-    rest_calls = 0
-
-    async def _get_hems_configurator_things():
-        nonlocal configurator_calls
-        configurator_calls += 1
-        raise client_module.SolarwattProtocolError("endpoint not found")
-
-    async def _get_json(path, *, where):
-        nonlocal rest_calls
-        assert path == "/rest/things"
-        rest_calls += 1
-        return [{"UID": "legacy-thing"}]
-
-    client.async_get_hems_configurator_things = _get_hems_configurator_things
-    client._async_get_json_endpoint = _get_json
-
-    expected = [{"UID": "legacy-thing"}]
-    assert asyncio.run(client.async_get_things()) == expected
-    assert asyncio.run(client.async_get_things()) == expected
-
-    assert configurator_calls == 1
-    assert rest_calls == 2
-    assert client._local_things_source == client_module.LOCAL_THINGS_SOURCE_REST
-
-
-def test_energy_overview_aliases_reuse_cached_things(monkeypatch):
-    client = _client()
-    cached_things = [{"UID": "cached-thing"}]
-    client._hems_configurator_things_cache = cached_things
     requested_paths = []
-    alias_inputs = []
 
     async def _get_json(path, *, where):
         requested_paths.append(path)
@@ -267,21 +240,24 @@ def test_energy_overview_aliases_reuse_cached_things(monkeypatch):
         "energy_overview_to_items",
         lambda payload: [{"name": "production"}],
     )
-
-    def _legacy_items(payload, things):
-        alias_inputs.append(things)
-        return [{"name": "legacy_production"}]
-
-    monkeypatch.setattr(
-        client_module,
-        "energy_overview_to_legacy_items",
-        _legacy_items,
-    )
     client._async_get_json_endpoint = _get_json
 
     assert asyncio.run(client.async_get_energy_overview_items()) == [
-        {"name": "production"},
-        {"name": "legacy_production"},
+        {"name": "production"}
     ]
     assert requested_paths == [client_module.ENERGY_OVERVIEW_PATH]
-    assert alias_inputs == [cached_things]
+
+
+def test_local_things_use_only_hems_configurator_endpoint():
+    client = _client()
+    calls = 0
+
+    async def _get_hems_configurator_things():
+        nonlocal calls
+        calls += 1
+        return [{"UID": "current-thing"}]
+
+    client.async_get_hems_configurator_things = _get_hems_configurator_things
+
+    assert asyncio.run(client.async_get_things()) == [{"UID": "current-thing"}]
+    assert calls == 1

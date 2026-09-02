@@ -75,6 +75,7 @@ def test_hems_status_payload_exposes_partial_update_state():
         {
             "hems_last_success": 0.0,
             "hems_last_error": "HEMS endpoint unavailable",
+            "hems_partial_errors": ("analytics year timeout",),
             "hems_cache_age_seconds": 75,
         },
     )()
@@ -82,5 +83,6 @@ def test_hems_status_payload_exposes_partial_update_state():
     assert diagnostics._hems_status_payload(coordinator) == {
         "last_success": "1970-01-01T00:00:00+00:00",
         "last_error": "HEMS endpoint unavailable",
+        "partial_errors": ["analytics year timeout"],
         "cache_age_seconds": 75,
     }

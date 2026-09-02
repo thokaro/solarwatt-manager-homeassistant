@@ -36,3 +36,28 @@ def test_translations_keep_same_key_structure_as_english():
         translated = json.loads(path.read_text(encoding="utf-8"))
 
         assert _flatten_keys(translated) == expected_keys, path.name
+
+
+def test_connection_forms_separate_local_online_and_general_sections():
+    expected_connection_sections = {"local_connection", "kiwigrid_connection"}
+
+    for path in sorted(TRANSLATIONS_DIR.glob("*.json")):
+        translated = json.loads(path.read_text(encoding="utf-8"))
+        config_steps = translated["config"]["step"]
+        options_sections = translated["options"]["step"]["init"]["sections"]
+
+        assert set(config_steps["user"]["sections"]) == {
+            *expected_connection_sections,
+            "general_settings",
+        }
+        assert set(config_steps["reauth_confirm"]["sections"]) == (
+            expected_connection_sections
+        )
+        assert set(config_steps["reconfigure"]["sections"]) == (
+            expected_connection_sections
+        )
+        assert set(options_sections) == {
+            "device_selection",
+            *expected_connection_sections,
+            "general_settings",
+        }

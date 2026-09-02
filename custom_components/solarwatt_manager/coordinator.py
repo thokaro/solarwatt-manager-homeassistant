@@ -12,21 +12,18 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .client import SOLARWATTClient, SolarwattAuthError, SolarwattError
 from .const import (
-    CONF_KIWIGRID_HEMS_ENABLED,
-    CONF_KIWIGRID_HEMS_PASSWORD,
     CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
-    CONF_KIWIGRID_HEMS_USERNAME,
     CONF_SCAN_INTERVAL,
     DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
+    get_kiwigrid_hems_credentials,
 )
 from .entity_helpers import detach_entityless_thing_devices, ensure_parent_devices_registered
 from .hems_api import item_names_to_thing_uids
 from .state_parser import SOLARWATTItem, parse_state
 from .thing_matching import (
-    canonicalize_thing_key as _canonicalize_item_reference,
     merge_thing_records as _merge_thing_records,
     resolve_thing_uid as _resolve_thing_uid,
 )
@@ -43,7 +40,6 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.things: dict[str, dict[str, Any]] = {}
         self.item_to_thing_uid: dict[str, str] = {}
         self.item_to_channel_metadata: dict[str, dict[str, str]] = {}
-        self.duplicate_item_targets: dict[str, str] = {}
         self._discovery_callbacks: set[Callable[[Mapping[str, Any] | None], None]] = set()
         self._local_items_cache: list[dict[str, Any]] = []
         self.local_last_error: str | None = None
@@ -56,6 +52,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self._hems_last_poll: float | None = None
         self.hems_last_success: float | None = None
         self.hems_last_error: str | None = None
+        self._hems_items_partial_errors: tuple[str, ...] = ()
+        self.hems_partial_errors: tuple[str, ...] = ()
 
         scan = _validated_scan_interval(
             entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
@@ -153,7 +151,9 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         """Update the local source and return its latest usable snapshot."""
         errors: list[SolarwattError] = []
         try:
-            self._local_items_cache = list(await self.client.async_get_items())
+            self._local_items_cache = list(
+                await self.client.async_get_energy_overview_items()
+            )
         except SolarwattAuthError as err:
             errors.append(err)
             self._set_local_error(str(err))
@@ -203,14 +203,22 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             for error in (hems_items_error, energy_flow_error)
             if error is not None
         ]
-        if errors:
+        source_available = hems_items_error is None or energy_flow_error is None
+        if not source_available:
+            self._set_hems_partial_errors(())
             self._set_hems_error("; ".join(str(error) for error in errors))
         else:
+            self._set_hems_partial_errors(
+                (
+                    *self._hems_items_partial_errors,
+                    *(str(error) for error in errors),
+                )
+            )
             self.hems_last_success = time.time()
             self._set_hems_error(None)
         return (
             [*hems_items, *energy_flow_items],
-            hems_items_error is None or energy_flow_error is None,
+            source_available,
             errors,
         )
 
@@ -225,6 +233,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self._hems_last_poll = None
         self.hems_last_success = None
         self.hems_last_error = None
+        self._hems_items_partial_errors = ()
+        self.hems_partial_errors = ()
 
     def _handle_source_errors(
         self,
@@ -274,25 +284,22 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             partial_errors = tuple(
                 getattr(self.client, "hems_partial_errors", ()) or ()
             )
-            self._hems_items_error = (
-                SolarwattError(
-                    "Some KiwiGrid HEMS endpoints are unavailable: "
-                    + "; ".join(partial_errors)
-                )
-                if partial_errors
-                else None
-            )
+            self._hems_items_partial_errors = partial_errors
+            self._hems_items_error = None
             if hems_items:
                 self.logger.debug("Fetched %s KiwiGrid HEMS items", len(hems_items))
             else:
                 self.logger.debug("KiwiGrid HEMS is enabled but returned no items")
         except SolarwattAuthError as err:
+            self._hems_items_partial_errors = ()
             self._hems_items_error = err
         except SolarwattError as err:
+            self._hems_items_partial_errors = ()
             self._hems_items_error = SolarwattError(
                 f"Unable to fetch KiwiGrid HEMS data: {err}"
             )
         except Exception as err:
+            self._hems_items_partial_errors = ()
             self._hems_items_error = SolarwattError(
                 f"Unexpected error fetching KiwiGrid HEMS data: {err}"
             )
@@ -464,8 +471,6 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         out: dict[str, dict[str, Any]] = {}
         item_to_thing_uid: dict[str, str] = {}
         item_to_channel_metadata: dict[str, dict[str, str]] = {}
-        duplicate_item_targets: dict[str, str] = {}
-        kept_item_names: set[str] = set()
         for idx, thing in enumerate(things or []):
             raw_uid = str(thing.get("UID") or thing.get("uid") or f"unknown_{idx}").strip()
             uid = _resolve_thing_uid(out, thing, raw_uid)
@@ -482,9 +487,6 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                 linked_items = channel.get("linkedItems")
                 if not isinstance(linked_items, list):
                     continue
-                kept_item_name = _find_kept_item_name(channel, linked_items)
-                if kept_item_name:
-                    kept_item_names.add(kept_item_name)
                 channel_metadata = _channel_item_metadata(channel)
                 for linked_item in linked_items:
                     if not linked_item:
@@ -492,8 +494,6 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                     item_name = str(linked_item)
                     if item_name not in item_to_thing_uid:
                         item_to_thing_uid[item_name] = uid
-                    if kept_item_name and item_name != kept_item_name:
-                        duplicate_item_targets.setdefault(item_name, kept_item_name)
                     _merge_channel_item_metadata(
                         item_to_channel_metadata,
                         item_name,
@@ -508,21 +508,12 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.things = out
         self.item_to_thing_uid = item_to_thing_uid
         self.item_to_channel_metadata = item_to_channel_metadata
-        self.duplicate_item_targets = {
-            item_name: target
-            for item_name, target in duplicate_item_targets.items()
-            if item_name not in kept_item_names
-        }
-
         self.async_update_listeners()
 
     def _hems_credentials(self) -> tuple[bool, str, str]:
-        """Return enabled flag and normalized KiwiGrid HEMS credentials."""
-        return (
-            bool(self.entry.options.get(CONF_KIWIGRID_HEMS_ENABLED, False)),
-            str(self.entry.options.get(CONF_KIWIGRID_HEMS_USERNAME, "") or "").strip(),
-            str(self.entry.options.get(CONF_KIWIGRID_HEMS_PASSWORD, "") or "").strip(),
-        )
+        """Return inferred enabled state and normalized KiwiGrid HEMS credentials."""
+        username, password = get_kiwigrid_hems_credentials(self.entry.options)
+        return bool(username and password), username, password
 
     def _local_configured(self) -> bool:
         """Return True when the local SOLARWATT Manager connection is configured."""
@@ -555,6 +546,19 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             self.logger.debug("KiwiGrid HEMS remains unavailable: %s", error)
         elif error is None and previous_error is not None:
             self.logger.info("KiwiGrid HEMS is available again")
+
+    def _set_hems_partial_errors(self, errors: tuple[str, ...]) -> None:
+        """Track endpoint failures without marking the HEMS source unavailable."""
+        previous_errors = self.hems_partial_errors
+        self.hems_partial_errors = errors
+        if errors and errors != previous_errors:
+            self.logger.debug(
+                "Some KiwiGrid HEMS endpoints are temporarily unavailable; cached "
+                "values remain in use: %s",
+                "; ".join(errors),
+            )
+        elif not errors and previous_errors:
+            self.logger.debug("All KiwiGrid HEMS endpoints are available again")
 
     def _start_reauth(self) -> None:
         """Start reauthentication while cached source data stays usable."""
@@ -612,45 +616,6 @@ def _validated_scan_interval(value: Any, *, default: int) -> int:
     if not isinstance(value, int) or value < MIN_SCAN_INTERVAL:
         return default
     return min(value, MAX_SCAN_INTERVAL)
-def _find_kept_item_name(
-    channel: dict[str, Any],
-    linked_items: list[Any],
-) -> str | None:
-    """Return the UID-derived linked item that should represent one channel."""
-    item_names = [
-        str(linked_item).strip()
-        for linked_item in linked_items
-        if str(linked_item).strip()
-    ]
-    if not item_names:
-        return None
-
-    canonical_items = {
-        _canonicalize_item_reference(item_name): item_name
-        for item_name in item_names
-    }
-
-    for candidate in (channel.get("uid"), channel.get("UID")):
-        canonical_candidate = _canonicalize_item_reference(candidate)
-        if canonical_candidate and canonical_candidate in canonical_items:
-            return canonical_items[canonical_candidate]
-
-    canonical_channel_id = _canonicalize_item_reference(channel.get("id"))
-    if canonical_channel_id:
-        suffix_matches = [
-            item_name
-            for item_name in item_names
-            if (
-                canonical_item_name := _canonicalize_item_reference(item_name)
-            ) == canonical_channel_id
-            or canonical_item_name.endswith(f"_{canonical_channel_id}")
-        ]
-        if len(suffix_matches) == 1:
-            return suffix_matches[0]
-
-    return None
-
-
 def _channel_item_metadata(channel: dict[str, Any]) -> dict[str, str]:
     """Extract item-relevant metadata from a thing channel."""
     properties = channel.get("properties")

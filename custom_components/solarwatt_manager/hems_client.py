@@ -1147,6 +1147,7 @@ def energy_flow_endpoint_to_items(
     if not isinstance(payload, Mapping):
         return []
 
+    battery_balance = _nested_number(payload, "battery", "balance")
     items: list[dict[str, Any] | None] = [
         _kiwigrid_flow_power_item("consumption_in", _nested_number(payload, "consumption", "in")),
         _kiwigrid_flow_power_item(
@@ -1170,8 +1171,9 @@ def energy_flow_endpoint_to_items(
         _kiwigrid_flow_percentage_item("battery_soc", _nested_number(payload, "battery", "soc")),
         _kiwigrid_flow_power_item(
             "battery_balance",
-            _nested_number(payload, "battery", "balance"),
+            battery_balance,
         ),
+        _kiwigrid_flow_evcc_battery_item(battery_balance),
         _kiwigrid_flow_power_item("ev_in", _nested_number(payload, "ev", "in")),
         _kiwigrid_flow_power_item("ev_out", _nested_number(payload, "ev", "out")),
         _kiwigrid_flow_power_item("ev_balance", _nested_number(payload, "ev", "balance")),
@@ -1255,6 +1257,16 @@ def _kiwigrid_flow_power_item(name: str, value: Any) -> dict[str, Any]:
     item["name"] = f"hems_flow_{name}"
     item["label"] = name.replace("_", " ").title()
     item["category"] = "kiwigrid_flow"
+    return item
+
+
+def _kiwigrid_flow_evcc_battery_item(value: float | None) -> dict[str, Any]:
+    """Return battery balance with the sign convention expected by EVCC."""
+    item = _kiwigrid_flow_power_item(
+        "battery_balance_evcc",
+        -value if value is not None else None,
+    )
+    item["label"] = "Battery Balance EVCC"
     return item
 
 
