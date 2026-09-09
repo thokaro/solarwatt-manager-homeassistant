@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import Any, TypeVar
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -18,6 +18,11 @@ from .const import (
     get_selected_thing_uids,
 )
 from .naming import clean_item_key
+from .registry import (
+    device_has_config_entry,
+    get_device_by_identifier,
+    remove_device_config_entry,
+)
 
 _ThingEntityT = TypeVar("_ThingEntityT")
 
@@ -51,6 +56,13 @@ def build_thing_evstation_optimization_select_unique_id(entry_id: str, thing_uid
 def build_thing_optimization_switch_unique_id(entry_id: str, thing_uid: str) -> str:
     """Return the stable unique_id for a KiwiGrid HEMS switch."""
     return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_optimization_switch"
+
+
+def get_hems_device_id(thing: Mapping[str, Any], fallback_uid: str) -> str:
+    """Return the HEMS identifier used by device controls."""
+    properties = thing.get("properties")
+    props = properties if isinstance(properties, Mapping) else {}
+    return str(props.get("identifier") or fallback_uid or "").strip()
 
 
 def is_hems_switchable_thing(thing: Mapping[str, Any]) -> bool:
@@ -127,6 +139,43 @@ def collect_new_thing_entities(
         added_thing_uids.add(thing_uid)
         entities.append(entity_factory(thing_uid, thing))
     return entities
+
+
+def setup_hems_control_entities(
+    entry: SOLARWATTConfigEntry,
+    async_add_entities: Callable[[list[_ThingEntityT]], None],
+    is_supported: Callable[[Mapping[str, Any]], bool],
+    entity_factory: Callable[
+        [str, dict[str, Any], str, set[str] | None], _ThingEntityT
+    ],
+) -> None:
+    """Discover selected HEMS controls and unregister discovery when unloaded."""
+    coordinator = entry.runtime_data
+    added_thing_uids: set[str] = set()
+
+    @callback
+    def _async_discover_new_entities(options: Mapping[str, Any] | None = None) -> None:
+        selected_thing_uids = get_selected_thing_uids(
+            options if options is not None else entry.options
+        )
+        entities: list[_ThingEntityT] = []
+        for thing_uid, thing in (coordinator.things or {}).items():
+            if selected_thing_uids is not None and thing_uid not in selected_thing_uids:
+                continue
+            if thing_uid in added_thing_uids or not is_supported(thing):
+                continue
+            hems_device_id = get_hems_device_id(thing, thing_uid)
+            if not hems_device_id:
+                continue
+            added_thing_uids.add(thing_uid)
+            entities.append(
+                entity_factory(thing_uid, thing, hems_device_id, selected_thing_uids)
+            )
+        if entities:
+            async_add_entities(entities)
+
+    _async_discover_new_entities()
+    entry.async_on_unload(coordinator.register_discovery_callback(_async_discover_new_entities))
 
 
 def _thing_entity_unique_ids(entry_id: str, thing_uid: str) -> tuple[str, str]:
@@ -245,7 +294,7 @@ def ensure_parent_devices_registered(
     entry: SOLARWATTConfigEntry,
     things: Mapping[str, Any] | None,
 ) -> None:
-    """Pre-register visible parent devices so child entities can safely reference `via_device`."""
+    """Pre-register visible parents so child entities can reference their registry ID."""
     device_anchor = get_device_registry_anchor(entry)
     configuration_host = str(entry.data.get(CONF_HOST) or "").strip().lower()
 
@@ -276,6 +325,7 @@ def ensure_parent_devices_registered(
             things_by_uid,
             selected_thing_uids,
             configuration_host,
+            config_entry_id=entry.entry_id,
         )
         dev_reg.async_get_or_create(
             config_entry_id=entry.entry_id,
@@ -290,7 +340,7 @@ def ensure_parent_devices_registered(
 def detach_entityless_thing_devices(
     hass: HomeAssistant,
     entry: SOLARWATTConfigEntry,
-    things: Mapping[str, Any] | None,
+    things: Iterable[str] | None,
 ) -> None:
     """Detach this config entry from thing devices that have no managed entities."""
     device_anchor = get_device_registry_anchor(entry)
@@ -303,15 +353,15 @@ def detach_entityless_thing_devices(
         if registry_entry.platform == DOMAIN and registry_entry.device_id
     }
 
-    for thing_uid in (things or {}).keys():
-        device = dev_reg.async_get_device(
-            identifiers={build_thing_device_identifier(device_anchor, thing_uid)}
+    for thing_uid in things or ():
+        device = get_device_by_identifier(
+            dev_reg, build_thing_device_identifier(device_anchor, thing_uid), entry.entry_id
         )
-        if not device or entry.entry_id not in device.config_entries:
+        if not device or not device_has_config_entry(device, entry.entry_id):
             continue
         if device.id in managed_device_ids:
             continue
-        dev_reg.async_update_device(device_id=device.id, remove_config_entry_id=entry.entry_id)
+        remove_device_config_entry(dev_reg, device, entry.entry_id)
 
 
 def _sync_thing_device_assignments(
@@ -325,23 +375,20 @@ def _sync_thing_device_assignments(
 
     dev_reg = dr.async_get(hass)
     for thing_uid in (things or {}).keys():
-        device = dev_reg.async_get_device(
-            identifiers={build_thing_device_identifier(device_anchor, thing_uid)}
+        device = get_device_by_identifier(
+            dev_reg, build_thing_device_identifier(device_anchor, thing_uid), entry.entry_id
         )
         if not device:
             continue
         is_selected = selected_thing_uids is None or thing_uid in selected_thing_uids
-        has_entry = entry.entry_id in device.config_entries
+        has_entry = device_has_config_entry(device, entry.entry_id)
         if is_selected and not has_entry:
             dev_reg.async_update_device(
                 device_id=device.id,
                 add_config_entry_id=entry.entry_id,
             )
         elif not is_selected and has_entry:
-            dev_reg.async_update_device(
-                device_id=device.id,
-                remove_config_entry_id=entry.entry_id,
-            )
+            remove_device_config_entry(dev_reg, device, entry.entry_id)
 
 
 # Public orchestration.

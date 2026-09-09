@@ -28,6 +28,39 @@ def make_module(name: str, **attributes: Any) -> ModuleType:
     return module
 
 
+class _ConfigEntryStub:
+    @classmethod
+    def __class_getitem__(cls, item: Any) -> type:
+        return cls
+
+
+def make_homeassistant_stubs() -> dict[str, ModuleType]:
+    """Build shared HA imports; registry instances come from the test's hass object."""
+    dr = make_module(
+        "homeassistant.helpers.device_registry", DeviceInfo=dict,
+        async_get=lambda hass: hass.devices,
+    )
+    er = make_module(
+        "homeassistant.helpers.entity_registry",
+        async_get=lambda hass: hass.entities,
+        async_entries_for_config_entry=lambda registry, entry_id: registry.entries,
+    )
+    return {
+        "homeassistant": make_module("homeassistant"),
+        "homeassistant.config_entries": make_module(
+            "homeassistant.config_entries", ConfigEntry=_ConfigEntryStub
+        ),
+        "homeassistant.core": make_module(
+            "homeassistant.core", HomeAssistant=object, callback=lambda func: func
+        ),
+        "homeassistant.helpers": make_module(
+            "homeassistant.helpers", device_registry=dr, entity_registry=er
+        ),
+        "homeassistant.helpers.device_registry": dr,
+        "homeassistant.helpers.entity_registry": er,
+    }
+
+
 def load_component_module_with_stubs(
     module_name: str,
     *,

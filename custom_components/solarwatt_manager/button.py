@@ -74,6 +74,7 @@ class SOLARWATTDiagnosticsRefreshButton(CoordinatorEntity, ButtonEntity):
             self.coordinator.things,
             selected_thing_uids,
             str(self.coordinator.client.host or ""),
+            config_entry_id=entry_id,
         )
 
     async def async_press(self) -> None:

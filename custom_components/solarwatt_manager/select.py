@@ -13,11 +13,11 @@ from .const import (
     SOLARWATTConfigEntry,
     build_thing_device_info,
     get_device_registry_anchor,
-    get_selected_thing_uids,
 )
 from .entity_helpers import (
     build_thing_evstation_optimization_select_unique_id,
     is_hems_optimizable_thing,
+    setup_hems_control_entities,
 )
 
 OPTION_NOT_OPTIMIZED = "not_optimized"
@@ -35,60 +35,19 @@ _MODE_TO_OPTION = {mode: option for option, mode in _OPTION_TO_MODE.items()}
 async def async_setup_entry(
     hass: HomeAssistant, entry: SOLARWATTConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator = entry.runtime_data
-    added_thing_uids: set[str] = set()
-
-    @callback
-    def _async_discover_new_entities(options: Mapping[str, Any] | None = None) -> None:
-        selected_thing_uids = get_selected_thing_uids(
-            options if options is not None else entry.options
-        )
-        new_entities = _collect_hems_optimization_selects(
-            coordinator,
+    setup_hems_control_entities(
+        entry,
+        async_add_entities,
+        is_hems_optimizable_thing,
+        lambda thing_uid, thing, hems_device_id, selected_thing_uids: SOLARWATTHEMSOptimizationSelect(
+            entry.runtime_data,
             entry.entry_id,
+            thing_uid,
+            thing,
+            hems_device_id,
             selected_thing_uids,
-            added_thing_uids,
-        )
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _async_discover_new_entities()
-    entry.async_on_unload(coordinator.register_discovery_callback(_async_discover_new_entities))
-
-
-def _collect_hems_optimization_selects(
-    coordinator,
-    entry_id: str,
-    selected_thing_uids: set[str] | None,
-    added_thing_uids: set[str],
-) -> list[SelectEntity]:
-    entities: list[SelectEntity] = []
-    for thing_uid, thing in (coordinator.things or {}).items():
-        if selected_thing_uids is not None and thing_uid not in selected_thing_uids:
-            continue
-        if thing_uid in added_thing_uids or not is_hems_optimizable_thing(thing):
-            continue
-        hems_device_id = _hems_device_id(thing, thing_uid)
-        if not hems_device_id:
-            continue
-        added_thing_uids.add(thing_uid)
-        entities.append(
-            SOLARWATTHEMSOptimizationSelect(
-                coordinator,
-                entry_id,
-                thing_uid,
-                thing,
-                hems_device_id,
-                selected_thing_uids,
-            )
-        )
-    return entities
-
-
-def _hems_device_id(thing: Mapping[str, Any], fallback_uid: str) -> str:
-    properties = thing.get("properties")
-    props = properties if isinstance(properties, Mapping) else {}
-    return str(props.get("identifier") or fallback_uid or "").strip()
+        ),
+    )
 
 
 def _current_option_from_thing(thing: Mapping[str, Any]) -> str | None:
@@ -142,6 +101,7 @@ class SOLARWATTHEMSOptimizationSelect(CoordinatorEntity, SelectEntity):
             self.coordinator.things,
             selected_thing_uids,
             str(self.coordinator.client.host or ""),
+            config_entry_id=entry_id,
         )
 
     @property

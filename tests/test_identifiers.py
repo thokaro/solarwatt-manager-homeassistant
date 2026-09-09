@@ -2,48 +2,16 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from .module_loader import load_component_module_with_stubs, make_module
+from .module_loader import load_component_module_with_stubs, make_homeassistant_stubs
 
 
 PACKAGE_NAME = "solarwatt_manager_identifiers_test"
 
 
-class FakeConfigEntry:
-    @classmethod
-    def __class_getitem__(cls, item):
-        return cls
-
-
-class FakeDeviceInfo(dict):
-    pass
-
-
-dr = make_module(
-    "homeassistant.helpers.device_registry",
-    DeviceEntry=object,
-    DeviceInfo=FakeDeviceInfo,
-    async_get=lambda hass: None,
-)
-
 const = load_component_module_with_stubs(
     "const",
     package_name=PACKAGE_NAME,
-    stubs={
-        "homeassistant": make_module("homeassistant"),
-        "homeassistant.config_entries": make_module(
-            "homeassistant.config_entries",
-            ConfigEntry=FakeConfigEntry,
-        ),
-        "homeassistant.core": make_module(
-            "homeassistant.core",
-            HomeAssistant=object,
-        ),
-        "homeassistant.helpers": make_module(
-            "homeassistant.helpers",
-            device_registry=dr,
-        ),
-        "homeassistant.helpers.device_registry": dr,
-    },
+    stubs=make_homeassistant_stubs(),
 )
 
 

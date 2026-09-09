@@ -42,6 +42,7 @@ entity_helpers = load_component_module_with_stubs(
         "homeassistant.core": make_module(
             "homeassistant.core",
             HomeAssistant=object,
+            callback=lambda func: func,
         ),
         "homeassistant.helpers": make_module(
             "homeassistant.helpers",

@@ -477,6 +477,11 @@ Please report bugs and feature requests via GitHub Issues:
 
 Include logs and (if possible) diagnostics to help troubleshooting.
 
+Diagnostic exports anonymize device, entity, and item identifiers and redact credentials,
+personal labels, location data, error messages, and text sensor values. Numeric readings,
+units, device status, and counters remain available. These changes affect only the export;
+live entities and their identifiers remain unchanged.
+
 ---
 
 ## 📄 License

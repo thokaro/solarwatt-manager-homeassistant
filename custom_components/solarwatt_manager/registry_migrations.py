@@ -17,6 +17,11 @@ from .const import (
     derive_installation_id,
     get_device_registry_anchor,
 )
+from .registry import (
+    device_has_config_entry,
+    get_device_by_identifier,
+    remove_device_config_entry,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,13 +127,13 @@ def _migrate_device_identifier(
     new_identifier: tuple[str, str],
 ) -> int:
     """Replace one device identifier and merge an already-created target device."""
-    old_device = dev_reg.async_get_device(identifiers={old_identifier})
-    if old_device is None:
+    old_device = get_device_by_identifier(dev_reg, old_identifier, entry.entry_id)
+    if old_device is None or not device_has_config_entry(old_device, entry.entry_id):
         return 0
 
-    target_device = dev_reg.async_get_device(identifiers={new_identifier})
+    target_device = get_device_by_identifier(dev_reg, new_identifier, entry.entry_id)
     if target_device is not None and target_device.id != old_device.id:
-        if entry.entry_id not in target_device.config_entries:
+        if not device_has_config_entry(target_device, entry.entry_id):
             dev_reg.async_update_device(
                 device_id=target_device.id,
                 add_config_entry_id=entry.entry_id,
@@ -139,11 +144,7 @@ def _migrate_device_identifier(
                     registry_entry.entity_id,
                     device_id=target_device.id,
                 )
-        if entry.entry_id in old_device.config_entries:
-            dev_reg.async_update_device(
-                device_id=old_device.id,
-                remove_config_entry_id=entry.entry_id,
-            )
+        remove_device_config_entry(dev_reg, old_device, entry.entry_id)
         return 1
 
     identifiers = set(old_device.identifiers)

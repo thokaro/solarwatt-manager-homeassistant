@@ -5,15 +5,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import (
-    DOMAIN,
-    SOLARWATTConfigEntry,
-    build_thing_device_identifier,
-    get_device_registry_anchor,
-)
+from .const import DOMAIN, SOLARWATTConfigEntry
+from .entity_helpers import detach_entityless_thing_devices
 from .hems_api import is_hems_thing
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,36 +54,4 @@ def cleanup_empty_channel_thing_diagnostics(
             entry.entry_id,
         )
 
-    _remove_orphaned_thing_devices(hass, entry, empty_channel_thing_uids)
-
-
-def _remove_orphaned_thing_devices(
-    hass: HomeAssistant,
-    entry: SOLARWATTConfigEntry,
-    thing_uids: set[str],
-) -> None:
-    """Detach the config entry from empty-channel thing devices if they no longer have entities."""
-    device_anchor = get_device_registry_anchor(entry)
-    if not thing_uids:
-        return
-
-    dev_reg = dr.async_get(hass)
-    ent_reg = er.async_get(hass)
-    registry_entries = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
-
-    for thing_uid in thing_uids:
-        device = dev_reg.async_get_device(
-            identifiers={build_thing_device_identifier(device_anchor, thing_uid)}
-        )
-        if not device or entry.entry_id not in device.config_entries:
-            continue
-        if any(
-            registry_entry.device_id == device.id
-            for registry_entry in registry_entries
-            if registry_entry.platform == DOMAIN
-        ):
-            continue
-        dev_reg.async_update_device(
-            device_id=device.id,
-            remove_config_entry_id=entry.entry_id,
-        )
+    detach_entityless_thing_devices(hass, entry, empty_channel_thing_uids)

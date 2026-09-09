@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -15,27 +17,68 @@ from .const import (
     SOLARWATTConfigEntry,
     get_device_registry_anchor,
 )
+from .registry import get_device_by_identifier
 
 
-def _redact(obj: Any) -> Any:
-    """Redact secrets from diagnostics output."""
-    if isinstance(obj, dict):
+_PRIVATE_TEXT = re.compile(
+    r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"
+    r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"|(?<![0-9a-f])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])"
+    r"|(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)"
+    r"|(?<![0-9a-f:])(?:[0-9a-f]{0,4}:){2,}[0-9a-f:.]*(?:%[\w.-]+)?"
+    r"|https?://[^\s]+",
+    re.IGNORECASE,
+)
+
+
+def _redact(obj: Any, *, key: str = "") -> Any:
+    """Redact private fields, free text, and identifying dictionary keys."""
+    normalized_key = re.sub(r"[^a-z0-9]", "", key.lower())
+    if normalized_key in {
+        "id", "uid", "uuid", "mac", "ip", "ipv4", "ipv6", "lat", "lon", "lng",
+        "user", "login", "account", "credentials", "auth", "position", "geo",
+        "entryid", "deviceid", "bridgeuid", "uniqueid", "installationid",
+        "enabledthings", "name", "label", "title", "generatedlabel",
+        "lasterror", "partialerrors", "lastexception", "statusdetail",
+    } or any(
+        part in normalized_key
+        for part in (
+            "username", "password", "token", "cookie", "authorization", "session",
+            "secret", "apikey", "identifier", "serial", "host", "address", "email",
+            "location", "latitude", "longitude", "coordinates", "gps",
+            "description", "comment", "message", "note",
+        )
+    ) or (
+        normalized_key.endswith(("uid", "deviceid", "entryid", "userid", "name", "label", "title"))
+        and normalized_key != "thingtypeuid"
+    ):
+        return None if obj is None else "REDACTED"
+    if normalized_key in {"rawstate", "parsedvalue"} and isinstance(obj, str):
+        # String sensor values may themselves be names, credentials, or locations.
+        return obj if re.fullmatch(r"[-+]?\d+(?:\.\d+)?(?:\s*[WkVAhHz%°C]+)?", obj) else "REDACTED"
+    if isinstance(obj, Mapping):
         out: dict[str, Any] = {}
-        for k, v in obj.items():
-            lk = str(k).lower()
-            normalized_key = lk.replace("_", "").replace("-", "")
-            if normalized_key in {"serial", "serialnumber"}:
+        prefix = {
+            "things_compact": "thing",
+            "data_items_compact": "item",
+            "energy_sensors_last_write": "entity",
+        }.get(key)
+        for index, (k, v) in enumerate(obj.items(), 1):
+            field = str(k)
+            if re.sub(r"[^a-z0-9]", "", field.lower()) in {"serial", "serialnumber"}:
                 continue
-            if normalized_key in {"host", "installationid", "username"} or any(
-                s in lk
-                for s in ("password", "token", "cookie", "authorization", "session")
-            ):
-                out[k] = "REDACTED"
-            else:
-                out[k] = _redact(v)
+            output_key = f"{prefix}_{index}" if prefix else field
+            if _PRIVATE_TEXT.search(output_key):
+                output_key = f"field_{index}"
+            if field in {"raw_state", "parsed_value"} and not str(obj.get("type") or "").startswith("Number"):
+                out[output_key] = None if v is None else "REDACTED"
+                continue
+            out[output_key] = _redact(v, key="" if prefix in {"thing", "entity"} else field)
         return out
-    if isinstance(obj, list):
+    if isinstance(obj, (list, tuple, set)):
         return [_redact(v) for v in obj]
+    if isinstance(obj, str):
+        return _PRIVATE_TEXT.sub("REDACTED", obj)
     return obj
 
 
@@ -74,7 +117,7 @@ def _problem_item_issue(item_name: str, payload: dict[str, Any]) -> str | None:
     if value is None:
         return "value is NULL"
     if not isinstance(value, (int, float)):
-        return f"non-numeric value: {value!r}"
+        return "non-numeric value"
     unit = payload.get("unit")
     if unit in (None, "", "N") and any(token in item_name for token in ("power", "work", "energy")):
         return "missing unit"
@@ -132,7 +175,7 @@ def _collect_item_diagnostics(items: dict[str, Any]) -> tuple[dict[str, Any], di
         if not payload.get("label"):
             missing_label_count += 1
         if issue := _problem_item_issue(clean_name, payload):
-            problem_items.append({"name": clean_name, "issue": issue})
+            problem_items.append({"item": f"item_{len(item_payloads)}", "issue": issue})
 
     return (
         item_payloads,
@@ -177,7 +220,7 @@ async def async_get_config_entry_diagnostics(
     ent_reg = er.async_get(hass)
 
     device_anchor = get_device_registry_anchor(entry)
-    dev = dev_reg.async_get_device(identifiers={(DOMAIN, device_anchor)})
+    dev = get_device_by_identifier(dev_reg, (DOMAIN, device_anchor), entry.entry_id)
     device = (
         {
             "name": dev.name,
@@ -225,8 +268,8 @@ async def async_get_config_entry_diagnostics(
             "entry_id": entry.entry_id,
             "title": entry.title,
             "domain": entry.domain,
-            "data": _redact(dict(entry.data)),
-            "options": _redact(dict(entry.options)),
+            "data": dict(entry.data),
+            "options": dict(entry.options),
         },
         "device": device,
         "coordinator": {
@@ -236,25 +279,21 @@ async def async_get_config_entry_diagnostics(
             "numeric_items": item_stats["numeric_items"],
             "last_exception": repr(getattr(coordinator, "last_exception", None)) if getattr(coordinator, "last_exception", None) else None,
         },
-        "kiwigrid_hems": _redact(_hems_status_payload(coordinator)),
+        "kiwigrid_hems": _hems_status_payload(coordinator),
         "energy_settings": {
             "energy_delta_kwh": energy_delta_kwh,
-            "energy_sensors_last_write": _redact(energy_sensor_writes),
+            "energy_sensors_last_write": energy_sensor_writes,
         },
-        "data_stats": _redact({key: value for key, value in item_stats.items() if key != "numeric_items"}),
-        "data_items_compact": _redact(item_payloads),
-        "problem_items": _redact(
-            {
-                "problem_items_top_20": problem_items[:20],
-                "problem_items_total": len(problem_items),
-            }
-        ),
-        "things": _redact(
-            {
-                "things_count": len(things_compact),
-                "things_compact": things_compact,
-            }
-        ),
+        "data_stats": {key: value for key, value in item_stats.items() if key != "numeric_items"},
+        "data_items_compact": item_payloads,
+        "problem_items": {
+            "problem_items_top_20": problem_items[:20],
+            "problem_items_total": len(problem_items),
+        },
+        "things": {
+            "things_count": len(things_compact),
+            "things_compact": things_compact,
+        },
     }
 
-    return data
+    return _redact(data)

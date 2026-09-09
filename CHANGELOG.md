@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026.9.1
+
+### Fixes
+- Anonymized the complete diagnostics export, including Portal usernames, device/entity/item keys, network and location fields, user labels, error messages, and string sensor values. Numeric readings and structural diagnostics remain available; live entities and cached data are unchanged.
+- Replaced deprecated Home Assistant device-registry lookups and parent links with config-entry-scoped lookups and `via_device_id`. Updated device selection, cleanup, diagnostics, and identifier migration to the new registry API while retaining compatibility with older supported Home Assistant versions. Existing identifiers and entity unique IDs remain unchanged; no config-entry migration is required.
+
+### Changes
+- Shared select/switch discovery, including device selection, duplicate prevention, and callback cleanup, with platform tests preserving capability differences, late discovery, stable IDs, and command targets.
+- Reused the existing entityless-device cleanup for empty-channel devices and shared HEMS identifier resolution between select and switch entities, preserving device selection and identifier behavior.
+- Reused common Home Assistant test stubs across platform, registry, and identifier tests.
+
 ## 2026.9.0
 
 ### Breaking Changes

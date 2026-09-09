@@ -194,6 +194,7 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
                 things,
                 selected_thing_uids,
                 configuration_host,
+                config_entry_id=entry_id,
             )
             if isinstance(thing, dict)
             else build_device_info(
@@ -237,7 +238,9 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         return DOMAIN, self._device_anchor
 
     def _build_device_name(self) -> str:
-        registry_device_name = get_registry_device_name(self.hass, self._device_identifier())
+        registry_device_name = get_registry_device_name(
+            self.hass, self._device_identifier(), self.coordinator.entry.entry_id
+        )
         if registry_device_name:
             return registry_device_name
 
@@ -522,6 +525,7 @@ class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):
             self.coordinator.things,
             selected_thing_uids,
             str(self.coordinator.client.host or ""),
+            config_entry_id=entry_id,
         )
 
     def _thing(self) -> dict | None:
