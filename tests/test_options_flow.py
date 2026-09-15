@@ -161,3 +161,41 @@ def test_poll_intervals_are_saved_from_their_connection_sections(step, monkeypat
     assert saved["kiwigrid_profile_cache_interval"] == 3600
     assert saved["energy_delta_kwh"] == 0.02
     assert not config_flow._validate_options_data(saved)
+
+
+@pytest.mark.parametrize("step", ["user", "reauth_confirm", "reconfigure", "init"])
+@pytest.mark.parametrize("invalid_input", [False, True])
+def test_connection_forms_supply_url_placeholders(step, invalid_input, monkeypatch):
+    import asyncio
+
+    entry = SimpleNamespace(
+        data={"host": "manager.local", "username": "installer", "password": "secret"},
+        options={"scan_interval": 15, "kiwigrid_hems_scan_interval": 30},
+    )
+    if step == "init":
+        flow = config_flow.SOLARWATTItemsOptionsFlow(entry)
+        monkeypatch.setattr(flow, "_available_things", lambda values: [])
+    else:
+        flow = config_flow.SOLARWATTItemsConfigFlow()
+    monkeypatch.setattr(flow, "async_show_form", lambda **kwargs: kwargs, raising=False)
+    user_input = {"general_settings": {"energy_delta_kwh": -1}} if invalid_input else None
+
+    if step == "user":
+        result = asyncio.run(flow.async_step_user(user_input))
+    elif step == "init":
+        result = asyncio.run(flow.async_step_init(user_input))
+    else:
+        if invalid_input:
+            async def invalid_connection(*args):
+                return entry.data, entry.data, entry.options, {"base": "cannot_connect"}
+            monkeypatch.setattr(flow, "_async_process_connection_input", invalid_connection)
+        result = asyncio.run(flow._async_step_connection_update(
+            entry, user_input, step_id=step, reauth=step == "reauth_confirm",
+        ))
+
+    assert result["description_placeholders"] == {
+        "local_url": "http://energymanager.local/",
+        "portal_url": "https://new.energymanager.com/",
+    }
+    if invalid_input:
+        assert result["errors"]

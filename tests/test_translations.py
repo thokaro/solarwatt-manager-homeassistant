@@ -77,9 +77,13 @@ def test_connection_forms_separate_local_online_and_general_sections():
 
 def test_connection_descriptions_use_plain_text_urls() -> None:
     """Section descriptions display plain text, so Markdown links stay visible."""
-    expected_urls = {
-        "local_connection": "http://energymanager.local/",
-        "kiwigrid_connection": "https://new.energymanager.com/",
+    placeholders = {
+        "local_url": "http://energymanager.local/",
+        "portal_url": "https://new.energymanager.com/",
+    }
+    expected_placeholders = {
+        "local_connection": "local_url",
+        "kiwigrid_connection": "portal_url",
     }
 
     for path in sorted(TRANSLATIONS_DIR.glob("*.json")):
@@ -91,9 +95,11 @@ def test_connection_descriptions_use_plain_text_urls() -> None:
             translated["options"]["step"]["init"],
         )
         for form in forms:
-            for section, url in expected_urls.items():
+            for section, placeholder in expected_placeholders.items():
                 description = form["sections"][section]["description"]
-                assert url in description, (path.name, section)
+                assert "{" + placeholder + "}" in description, (path.name, section)
+                assert "http://" not in description and "https://" not in description
+                assert placeholders[placeholder] in description.format(**placeholders)
                 assert not re.search(r"\[[^\]]*\]\([^)]*\)", description), (
                     path.name,
                     section,

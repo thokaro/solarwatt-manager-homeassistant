@@ -29,7 +29,7 @@
         "sections": {
           "local_connection": {
             "name": "Lokale SOLARWATT Manager",
-            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken. Gebruik het wachtwoord voor de lokale webinterface op http://energymanager.local/. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam. Het update-interval bepaalt hoe vaak lokale apparaten en SOLARWATT Flow worden uitgelezen.",
+            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken. Gebruik het wachtwoord voor de lokale webinterface op {local_url}. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam. Het update-interval bepaalt hoe vaak lokale apparaten en SOLARWATT Flow worden uitgelezen.",
             "data": {
               "host": "Host/IP",
               "username": "Gebruikersnaam",
@@ -39,7 +39,7 @@
           },
           "kiwigrid_connection": {
             "name": "KiwiGrid Online (SOLARWATT Manager portal)",
-            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op https://new.energymanager.com/.",
+            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op {portal_url}.",
             "data": {
               "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
               "kiwigrid_hems_password": "Wachtwoord",
@@ -69,7 +69,7 @@
         "sections": {
           "local_connection": {
             "name": "Lokale SOLARWATT Manager",
-            "description": "Directe toegang tot de Manager via het lokale netwerk. Gebruik het wachtwoord voor de lokale webinterface op http://energymanager.local/. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam.",
+            "description": "Directe toegang tot de Manager via het lokale netwerk. Gebruik het wachtwoord voor de lokale webinterface op {local_url}. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam.",
             "data": {
               "host": "Host/IP",
               "username": "Gebruikersnaam",
@@ -78,7 +78,7 @@
           },
           "kiwigrid_connection": {
             "name": "KiwiGrid Online (SOLARWATT Manager portal)",
-            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op https://new.energymanager.com/.",
+            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op {portal_url}.",
             "data": {
               "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
               "kiwigrid_hems_password": "Wachtwoord"
@@ -92,7 +92,7 @@
         "sections": {
           "local_connection": {
             "name": "Lokale SOLARWATT Manager",
-            "description": "Directe toegang tot de Manager via het lokale netwerk. Gebruik het wachtwoord voor de lokale webinterface op http://energymanager.local/. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam.",
+            "description": "Directe toegang tot de Manager via het lokale netwerk. Gebruik het wachtwoord voor de lokale webinterface op {local_url}. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam.",
             "data": {
               "host": "Host/IP",
               "username": "Gebruikersnaam",
@@ -101,7 +101,7 @@
           },
           "kiwigrid_connection": {
             "name": "KiwiGrid Online (SOLARWATT Manager portal)",
-            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op https://new.energymanager.com/.",
+            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op {portal_url}.",
             "data": {
               "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
               "kiwigrid_hems_password": "Wachtwoord"
@@ -137,7 +137,7 @@
           },
           "local_connection": {
             "name": "Lokale SOLARWATT Manager",
-            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken. Gebruik het wachtwoord voor de lokale webinterface op http://energymanager.local/. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam. Het update-interval bepaalt hoe vaak lokale apparaten en SOLARWATT Flow worden uitgelezen.",
+            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken. Gebruik het wachtwoord voor de lokale webinterface op {local_url}. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam. Het update-interval bepaalt hoe vaak lokale apparaten en SOLARWATT Flow worden uitgelezen.",
             "data": {
               "host": "Host/IP",
               "username": "Gebruikersnaam",
@@ -147,7 +147,7 @@
           },
           "kiwigrid_connection": {
             "name": "KiwiGrid Online (SOLARWATT Manager portal)",
-            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op https://new.energymanager.com/.",
+            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op {portal_url}.",
             "data": {
               "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
               "kiwigrid_hems_password": "Wachtwoord",

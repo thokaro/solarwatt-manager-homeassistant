@@ -81,6 +81,14 @@ _KNOWN_CLIENT_ERRORS: tuple[tuple[type[Exception], str, str], ...] = (
 )
 
 
+def _connection_description_placeholders() -> dict[str, str]:
+    """Supply login URLs without embedding them in translated descriptions."""
+    return {
+        "local_url": f"http://{DEFAULT_LOCAL_HOST}/",
+        "portal_url": "https://new.energymanager.com/",
+    }
+
+
 async def _async_with_client(
     hass,
     *,
@@ -808,6 +816,7 @@ class SOLARWATTItemsConfigFlow(  # type: ignore[call-arg]
         return self.async_show_form(
             step_id="user",
             data_schema=self._build_user_schema(user_input),
+            description_placeholders=_connection_description_placeholders(),
             errors=errors,
         )
 
@@ -875,6 +884,7 @@ class SOLARWATTItemsConfigFlow(  # type: ignore[call-arg]
 
         return self.async_show_form(
             step_id=step_id,
+            description_placeholders=_connection_description_placeholders(),
             data_schema=self._build_connection_schema(
                 values,
                 reauth=reauth,
@@ -1162,12 +1172,14 @@ class SOLARWATTItemsOptionsFlow(config_entries.OptionsFlow):
             return self.async_show_form(
                 step_id="init",
                 data_schema=self._build_options_schema(user_input),
+                description_placeholders=_connection_description_placeholders(),
                 errors=errors,
             )
 
         return self.async_show_form(
             step_id="init",
             data_schema=self._build_options_schema(),
+            description_placeholders=_connection_description_placeholders(),
         )
 
     def _build_options_schema(
