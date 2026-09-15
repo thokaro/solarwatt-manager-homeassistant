@@ -5,7 +5,11 @@ import logging
 
 import pytest
 
-from .module_loader import load_component_module_with_stubs, make_module
+from .module_loader import (
+    load_component_module,
+    load_component_module_with_stubs,
+    make_module,
+)
 
 
 class FakeKiwiGridHEMSError(Exception):
@@ -63,6 +67,12 @@ class FakeKiwiGridHEMSClient:
                     raise FakeKiwiGridHEMSConnectionError(
                         "battery temporarily unavailable"
                     )
+                if name.startswith("async_get_analytics_finance"):
+                    return {
+                        "timeseries": [
+                            {"id": "cost", "aggregated": float(call_count)},
+                        ]
+                    }
                 return [{"endpoint": name, "call": call_count}]
             finally:
                 self.active_requests -= 1
@@ -83,6 +93,8 @@ def _hems_device_names_by_id(**payloads):
     captured_name_payloads.append(payloads)
     return {}
 
+
+hems_client = load_component_module("hems_client")
 
 PACKAGE_NAME = "solarwatt_manager_client_polling_test"
 client_module = load_component_module_with_stubs(
@@ -107,6 +119,9 @@ client_module = load_component_module_with_stubs(
             hems_device_names_by_id=_hems_device_names_by_id,
             hems_payloads_to_items=_hems_payloads_to_items,
             hems_payloads_to_things=lambda **payloads: [],
+            is_analytics_payload=hems_client.is_analytics_payload,
+            merge_analytics_aggregates=hems_client.merge_analytics_aggregates,
+            summary_anchor_time_window=hems_client.summary_anchor_time_window,
         ),
         f"{PACKAGE_NAME}.hems_api": make_module(
             f"{PACKAGE_NAME}.hems_api",
@@ -127,6 +142,7 @@ def _client():
     client._hems_client = None
     client._hems_client_credentials = None
     client._hems_payload_cache = {}
+    client._hems_summary_anchors = {}
     client.hems_partial_errors = ()
     client._log = logging.getLogger(__name__)
     return client

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable, Mapping
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import unescape
 import json
 import logging
+from math import isfinite
 import re
 from secrets import token_urlsafe
 from typing import Any
@@ -2074,6 +2075,110 @@ def _work_summary_time_window(
     if period == "month":
         return _month_to_date_time_window(from_time=from_time, to_time=to_time)
     return _year_to_date_time_window(from_time=from_time, to_time=to_time)
+
+
+def summary_anchor_time_window(
+    period: str,
+    *,
+    now: datetime | None = None,
+) -> tuple[datetime, datetime] | None:
+    """Return the completed days of a month-to-date or year-to-date range.
+
+    Returns None on the first day of the period, where today is the whole range.
+    """
+    current = now or datetime.now().astimezone()
+    today_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = (
+        today_start.replace(day=1)
+        if period == "month"
+        else today_start.replace(month=1, day=1)
+    )
+    if start >= today_start:
+        return None
+    return start, today_start - timedelta(seconds=1)
+
+
+def merge_analytics_aggregates(
+    anchor: Mapping[str, Any] | None,
+    increment: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Extend completed-day aggregates by today's values.
+
+    Only valid for series whose aggregate is the sum of its values, which the
+    finance series are. Ratio series such as independence must not be combined
+    this way.
+    """
+    anchor_series = _analytics_series(anchor)
+    increment_series = _analytics_series(increment)
+    if not anchor_series:
+        return dict(increment) if isinstance(increment, Mapping) else None
+    if not increment_series:
+        return dict(anchor) if isinstance(anchor, Mapping) else None
+
+    pending = {
+        key: series
+        for series in increment_series
+        if (key := _analytics_series_key(series))
+    }
+    merged_series = [
+        _series_with_added_aggregate(
+            series,
+            pending.pop(_analytics_series_key(series), None),
+        )
+        for series in anchor_series
+    ]
+    merged_series.extend(dict(series) for series in pending.values())
+
+    merged = dict(anchor) if isinstance(anchor, Mapping) else {}
+    merged["timeseries"] = merged_series
+    return merged
+
+
+def _finite_number(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric if isfinite(numeric) else None
+
+
+def is_analytics_payload(payload: Any) -> bool:
+    """Return whether a payload has the shape of an analytics response."""
+    return isinstance(payload, Mapping) and isinstance(
+        payload.get("timeseries"),
+        list,
+    )
+
+
+def _analytics_series(payload: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
+    timeseries = payload.get("timeseries") if isinstance(payload, Mapping) else None
+    if not isinstance(timeseries, list):
+        return []
+    return [series for series in timeseries if isinstance(series, Mapping)]
+
+
+def _analytics_series_key(series: Mapping[str, Any]) -> str:
+    for key in ("id", "name", "guid"):
+        if value := str(series.get(key) or "").strip():
+            return value
+    return ""
+
+
+def _series_with_added_aggregate(
+    series: Mapping[str, Any],
+    addend: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    merged = dict(series)
+    base = _finite_number(series.get("aggregated"))
+    extra = _finite_number(addend.get("aggregated")) if addend is not None else None
+    if base is None:
+        if extra is not None:
+            merged["aggregated"] = extra
+    elif extra is not None:
+        merged["aggregated"] = base + extra
+    return merged
 
 
 def _format_analytics_time(value: datetime) -> str:

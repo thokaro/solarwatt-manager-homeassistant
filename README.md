@@ -145,6 +145,10 @@ sequence after the bounded parallel first pass. Endpoints that still fail keep t
 latest successful cached payload and are reported as partial diagnostics without
 marking the complete HEMS source unavailable. Month and year analytics remain part of
 every configured HEMS poll so derived Total sensors keep the same update frequency.
+Finance month and year totals read their completed days once per day and add today's
+aggregate on top, which keeps their values live without asking the portal to price
+every week of the year again on every poll. A later correction to an already completed
+day therefore becomes visible with the next daily refresh rather than the next poll.
 
 The integration identifies a local installation by the Manager's detected location UID
 and a cloud-only installation by an anonymized account identifier. Changing the local
@@ -165,6 +169,7 @@ sensor therefore does not automatically use the faster update interval.
 | `KiwiGrid Flow`, including live consumer values | Update interval |
 | KiwiGrid batteries, PV plants, EV chargers, plugs, smart heaters, meters, inverters, and other physical HEMS devices | KiwiGrid HEMS poll interval |
 | `KiwiGrid Stats`, including today, month, and year values | KiwiGrid HEMS poll interval |
+| `KiwiGrid Stats` finance month and year totals | Completed days once per day, today's value on every KiwiGrid HEMS poll |
 
 For example, with a 15-second update interval and a 120-second HEMS interval, local
 production power and `KiwiGrid Flow` power are refreshed every 15 seconds, while a
