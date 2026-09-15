@@ -286,6 +286,61 @@ def test_failed_today_payload_keeps_the_previous_total(at_time):
     assert _aggregate(payloads["analytics_finance_month"]) == 10.0 + TODAY_COST
 
 
+@pytest.mark.parametrize("moment", [MID_PERIOD, FIRST_OF_MONTH, FIRST_OF_YEAR])
+def test_malformed_today_keeps_cached_totals_and_recovers(at_time, moment):
+    at_time(moment)
+    client = _client()
+    previous = _poll(client)
+
+    hems = FakeHEMSClient.instances[0]
+    hems.malformed.add("async_get_analytics_finance")
+    payloads = _poll(client)
+
+    for key in ("analytics_finance", *client_module.HEMS_SUMMARY_ANCHORS):
+        assert payloads[key] == previous[key]
+        assert client._hems_payload_cache[key] == previous[key]
+    assert len(client.hems_partial_errors) == 1
+    assert "analytics_finance:" in client.hems_partial_errors[0]
+    assert "malformed" in client.hems_partial_errors[0]
+
+    hems.malformed.clear()
+    hems.today_cost = 4.0
+    recovered = _poll(client)
+
+    for key in client_module.HEMS_SUMMARY_ANCHORS:
+        assert _aggregate(recovered[key]) == _aggregate(previous[key]) + 2.5
+    assert not client.hems_partial_errors
+
+
+def test_malformed_today_on_first_poll_does_not_publish_partial_totals(at_time):
+    at_time(MID_PERIOD)
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    hems.malformed.add("async_get_analytics_finance")
+
+    payloads = _poll(client)
+
+    for key in ("analytics_finance", *client_module.HEMS_SUMMARY_ANCHORS):
+        assert not payloads[key]
+        assert key not in client._hems_payload_cache
+    assert len(client.hems_partial_errors) == 1
+    assert "analytics_finance:" in client.hems_partial_errors[0]
+
+
+def test_empty_today_is_valid_and_reports_completed_days(at_time):
+    at_time(MID_PERIOD)
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    hems.empty.add("async_get_analytics_finance")
+
+    payloads = _poll(client)
+
+    assert payloads["analytics_finance"] == {"timeseries": []}
+    assert _aggregate(payloads["analytics_finance_month"]) == 10.0
+    assert _aggregate(payloads["analytics_finance_year"]) == 100.0
+    assert not client.hems_partial_errors
+
+
 def test_anchor_without_today_is_never_published_on_its_own(at_time):
     at_time(MID_PERIOD)
     client = _client()

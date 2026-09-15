@@ -752,6 +752,17 @@ class SOLARWATTClient:
 
         resolved_keys: set[str] = set()
         for key, payload, error in results:
+            if (
+                error is None
+                and any(
+                    key == anchor.increment_key
+                    for anchor in HEMS_SUMMARY_ANCHORS.values()
+                )
+                and not is_analytics_payload(payload)
+            ):
+                error = KiwiGridHEMSProtocolError(
+                    "Summary increment returned a malformed analytics payload"
+                )
             if error is None:
                 payloads[key] = payload
                 if key not in HEMS_SUMMARY_ANCHORS:

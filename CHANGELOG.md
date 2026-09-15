@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixes
+- Preserve the last valid finance day, month, and year values and report a partial error when today's finance response is malformed. Valid empty time series remain supported.
+
 ### Changes
 - Reduced the portal load of the finance month and year totals by requesting their completed days once per day and adding today's aggregate on top. Sensor values keep the same update frequency and no configuration changes are required, but a later correction to an already completed day now appears with the next daily refresh instead of the next poll.
 
