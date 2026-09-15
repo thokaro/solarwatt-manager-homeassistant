@@ -18,6 +18,9 @@ from .const import (
     CONF_INSTALLATION_ID,
     CONF_KIWIGRID_HEMS_PASSWORD,
     CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
+    CONF_KIWIGRID_FLOW_SCAN_INTERVAL,
+    CONF_KIWIGRID_STATS_SCAN_INTERVAL,
+    CONF_KIWIGRID_PROFILE_CACHE_INTERVAL,
     CONF_KIWIGRID_HEMS_USERNAME,
     CONF_PASSWORD,
     CONF_POWER_UNAVAILABLE_THRESHOLD,
@@ -26,6 +29,7 @@ from .const import (
     CONFIG_ENTRY_VERSION,
     DEFAULT_ENERGY_DELTA_KWH,
     DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
+    DEFAULT_KIWIGRID_PROFILE_CACHE_INTERVAL,
     DEFAULT_LOCAL_HOST,
     DEFAULT_LOCAL_USERNAME,
     DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
@@ -287,6 +291,32 @@ _OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
         "invalid": _is_invalid_scan_interval,
     },
     {
+        "key": CONF_KIWIGRID_FLOW_SCAN_INTERVAL,
+        "default": DEFAULT_SCAN_INTERVAL,
+        "fallback_key": CONF_SCAN_INTERVAL,
+        "normalize": _normalize_int,
+        "coerce": vol.Coerce(int),
+        "error": "invalid_scan_interval",
+        "invalid": _is_invalid_scan_interval,
+    },
+    {
+        "key": CONF_KIWIGRID_STATS_SCAN_INTERVAL,
+        "default": DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
+        "fallback_key": CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
+        "normalize": _normalize_int,
+        "coerce": vol.Coerce(int),
+        "error": "invalid_scan_interval",
+        "invalid": _is_invalid_scan_interval,
+    },
+    {
+        "key": CONF_KIWIGRID_PROFILE_CACHE_INTERVAL,
+        "default": DEFAULT_KIWIGRID_PROFILE_CACHE_INTERVAL,
+        "normalize": _normalize_int,
+        "coerce": vol.Coerce(int),
+        "error": "invalid_scan_interval",
+        "invalid": _is_invalid_scan_interval,
+    },
+    {
         "key": CONF_ENERGY_DELTA_KWH,
         "default": DEFAULT_ENERGY_DELTA_KWH,
         "normalize": _normalize_float,
@@ -307,13 +337,15 @@ _KIWIGRID_OPTION_KEYS = {
     CONF_KIWIGRID_HEMS_USERNAME,
     CONF_KIWIGRID_HEMS_PASSWORD,
     CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
+    CONF_KIWIGRID_FLOW_SCAN_INTERVAL,
+    CONF_KIWIGRID_STATS_SCAN_INTERVAL,
+    CONF_KIWIGRID_PROFILE_CACHE_INTERVAL,
 }
 _KIWIGRID_CREDENTIAL_KEYS = {
     CONF_KIWIGRID_HEMS_USERNAME,
     CONF_KIWIGRID_HEMS_PASSWORD,
 }
 _GENERAL_OPTION_KEYS = {
-    CONF_SCAN_INTERVAL,
     CONF_ENERGY_DELTA_KWH,
     CONF_POWER_UNAVAILABLE_THRESHOLD,
 }
@@ -344,8 +376,11 @@ def _build_connection_sections(
     """Build visually separated local, online, and settings form sections."""
     schema: dict[Any, Any] = {}
     if include_local:
+        local_fields = _build_local_connection_fields(values)
+        if include_settings:
+            local_fields.update(_build_option_schema_fields(values, {CONF_SCAN_INTERVAL}))
         schema[vol.Required(_LOCAL_CONNECTION_SECTION)] = section(
-            vol.Schema(_build_local_connection_fields(values)),
+            vol.Schema(local_fields),
             {"collapsed": False},
         )
     if include_kiwigrid:
@@ -376,7 +411,9 @@ def _build_option_schema_fields(
     return {
         vol.Optional(
             field["key"],
-            default=values.get(field["key"], field["default"]),
+            default=values.get(
+                field["key"], values.get(field.get("fallback_key", field["key"]), field["default"])
+            ),
         ): field["coerce"]
         for field in _OPTION_FIELD_SPECS
         if keys is None or field["key"] in keys
@@ -394,7 +431,13 @@ def _normalize_options_input(
         field["key"]: field["normalize"](
             values.get(
                 field["key"],
-                current.get(field["key"], field["default"]),
+                current.get(
+                    field["key"],
+                    current.get(
+                        field.get("fallback_key", field["key"]),
+                        values.get(field.get("fallback_key", field["key"]), field["default"]),
+                    ),
+                ),
             ),
             default=field["default"],
         )

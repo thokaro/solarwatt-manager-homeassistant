@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -61,3 +62,50 @@ def test_connection_forms_separate_local_online_and_general_sections():
             *expected_connection_sections,
             "general_settings",
         }
+        for sections in (config_steps["user"]["sections"], options_sections):
+            assert "scan_interval" in sections["local_connection"]["data"]
+            assert set(sections["general_settings"]["data"]) == {
+                "energy_delta_kwh", "power_unavailable_threshold",
+            }
+            assert {
+                "kiwigrid_hems_scan_interval",
+                "kiwigrid_flow_scan_interval",
+                "kiwigrid_stats_scan_interval",
+                "kiwigrid_profile_cache_interval",
+            } <= sections["kiwigrid_connection"]["data"].keys()
+
+
+def test_connection_descriptions_use_plain_text_urls() -> None:
+    """Section descriptions display plain text, so Markdown links stay visible."""
+    expected_urls = {
+        "local_connection": "http://energymanager.local/",
+        "kiwigrid_connection": "https://new.energymanager.com/",
+    }
+
+    for path in sorted(TRANSLATIONS_DIR.glob("*.json")):
+        translated = json.loads(path.read_text(encoding="utf-8"))
+        forms = (
+            translated["config"]["step"]["user"],
+            translated["config"]["step"]["reauth_confirm"],
+            translated["config"]["step"]["reconfigure"],
+            translated["options"]["step"]["init"],
+        )
+        for form in forms:
+            for section, url in expected_urls.items():
+                description = form["sections"][section]["description"]
+                assert url in description, (path.name, section)
+                assert not re.search(r"\[[^\]]*\]\([^)]*\)", description), (
+                    path.name,
+                    section,
+                )
+
+
+def test_section_descriptions_do_not_rely_on_line_breaks() -> None:
+    """Section descriptions collapse whitespace in the frontend."""
+    for path in sorted(TRANSLATIONS_DIR.glob("*.json")):
+        translated = json.loads(path.read_text(encoding="utf-8"))
+        for flow in ("config", "options"):
+            for step in translated[flow]["step"].values():
+                for name, section in step.get("sections", {}).items():
+                    description = section.get("description", "")
+                    assert "\n" not in description, (path.name, name)

@@ -49,8 +49,12 @@ def _load_coordinator_module():
 
     constants = {
         "CONF_KIWIGRID_HEMS_SCAN_INTERVAL": "kiwigrid_hems_scan_interval",
+        "CONF_KIWIGRID_FLOW_SCAN_INTERVAL": "kiwigrid_flow_scan_interval",
+        "CONF_KIWIGRID_STATS_SCAN_INTERVAL": "kiwigrid_stats_scan_interval",
+        "CONF_KIWIGRID_PROFILE_CACHE_INTERVAL": "kiwigrid_profile_cache_interval",
         "CONF_SCAN_INTERVAL": "scan_interval",
         "DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL": 120,
+        "DEFAULT_KIWIGRID_PROFILE_CACHE_INTERVAL": 3600,
         "DEFAULT_SCAN_INTERVAL": 15,
         "MAX_SCAN_INTERVAL": 3600,
         "MIN_SCAN_INTERVAL": 10,
@@ -147,6 +151,7 @@ class FakeClient:
         self.local_calls = 0
         self.hems_calls = 0
         self.flow_calls = 0
+        self.hems_requests: list[dict[str, Any]] = []
 
     async def async_get_energy_overview_items(self):
         self.local_calls += 1
@@ -154,6 +159,7 @@ class FakeClient:
 
     async def async_get_hems_items(self, **kwargs):
         self.hems_calls += 1
+        self.hems_requests.append(kwargs)
         return _result_or_raise(self.hems_result)
 
     async def async_get_hems_energy_flow_items(self, **kwargs):
@@ -204,11 +210,13 @@ def test_hems_credentials_enable_cloud_polling_without_legacy_checkbox():
     assert client.flow_calls == 1
 
 
-def test_cached_local_data_survives_later_failure():
+def test_cached_local_data_survives_later_failure(monkeypatch):
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: 0.0)
     coordinator, _, client = _coordinator()
     first_result = asyncio.run(coordinator._async_update_data())
     client.local_result = SolarwattError("local unavailable")
     client.flow_result = [_item("hems_flow", "60 W")]
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: 15.0)
 
     second_result = asyncio.run(coordinator._async_update_data())
 
@@ -282,3 +290,123 @@ def test_hems_failures_are_retried_only_after_backoff(caplog):
         "KiwiGrid HEMS became unavailable: Unable to fetch KiwiGrid HEMS data: "
         "stats unavailable; Unable to fetch KiwiGrid HEMS energy flow: flow unavailable"
     ) == 1
+
+
+def test_separate_cloud_intervals_keep_local_updates_fast(monkeypatch):
+    now = 0.0
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: now)
+    entry = FakeEntry(hems_enabled=True)
+    entry.options.update({
+        "kiwigrid_hems_scan_interval": 120,
+        "kiwigrid_flow_scan_interval": 30,
+        "kiwigrid_stats_scan_interval": 300,
+        "kiwigrid_profile_cache_interval": 1800,
+    })
+    client = FakeClient()
+    coordinator = coordinator_module.SOLARWATTCoordinator(object(), entry, client)
+
+    for tick in range(0, 301, 15):
+        now = float(tick)
+        result = asyncio.run(coordinator._async_update_data())
+        assert set(result) == {"local_power", "hems_stats", "hems_flow"}
+
+    assert client.local_calls == 21
+    assert client.flow_calls == 11
+    assert [(request["refresh_devices"], request["refresh_statistics"])
+            for request in client.hems_requests] == [
+        (True, True), (True, False), (True, False), (False, True),
+    ]
+    assert all(request["profile_cache_interval"] == 1800 for request in client.hems_requests)
+
+
+def test_cloud_can_poll_faster_than_local_devices(monkeypatch):
+    now = 0.0
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: now)
+    entry = FakeEntry(hems_enabled=True)
+    entry.options.update({
+        "scan_interval": 60,
+        "kiwigrid_hems_scan_interval": 120,
+        "kiwigrid_flow_scan_interval": 15,
+        "kiwigrid_stats_scan_interval": 30,
+    })
+    client = FakeClient()
+    coordinator = coordinator_module.SOLARWATTCoordinator(object(), entry, client)
+
+    for tick in (0, 15, 30):
+        now = float(tick)
+        asyncio.run(coordinator._async_update_data())
+
+    assert coordinator.update_interval.total_seconds() == 15
+    assert client.local_calls == 1
+    assert client.flow_calls == 3
+    assert [(request["refresh_devices"], request["refresh_statistics"])
+            for request in client.hems_requests] == [(True, True), (False, True)]
+
+
+def test_legacy_options_keep_custom_flow_and_statistics_intervals(monkeypatch):
+    now = 0.0
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: now)
+    entry = FakeEntry(hems_enabled=True)
+    entry.options.update({"scan_interval": 30, "kiwigrid_hems_scan_interval": 90})
+    client = FakeClient()
+    coordinator = coordinator_module.SOLARWATTCoordinator(object(), entry, client)
+
+    for tick in (0, 30, 60, 90):
+        now = float(tick)
+        asyncio.run(coordinator._async_update_data())
+
+    assert client.local_calls == 4
+    assert client.flow_calls == 4
+    assert client.hems_calls == 2
+    assert all(request["refresh_statistics"] for request in client.hems_requests)
+    assert all(request["profile_cache_interval"] == 3600 for request in client.hems_requests)
+
+
+def test_flow_failure_respects_backoff_and_invalidation(monkeypatch):
+    now = 0.0
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: now)
+    entry = FakeEntry(hems_enabled=True)
+    entry.options.update({
+        "kiwigrid_flow_scan_interval": 30,
+        "kiwigrid_stats_scan_interval": 300,
+    })
+    client = FakeClient()
+    coordinator = coordinator_module.SOLARWATTCoordinator(object(), entry, client)
+    asyncio.run(coordinator._async_update_data())
+    client.flow_result = SolarwattError("flow unavailable")
+
+    for tick in (30, 45, 60, 75):
+        now = float(tick)
+        asyncio.run(coordinator._async_update_data())
+    assert client.flow_calls == 2
+
+    now = 90.0
+    asyncio.run(coordinator._async_update_data())
+    assert client.flow_calls == 3
+    coordinator.invalidate_hems_cache()
+    client.flow_result = [_item("hems_flow", "70 W")]
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert result["hems_flow"].raw["state"] == "70 W"
+    assert client.flow_calls == 4
+    assert client.hems_requests[-1]["refresh_devices"]
+    assert client.hems_requests[-1]["refresh_statistics"]
+
+
+def test_failed_statistics_do_not_retry_on_device_only_polls(monkeypatch):
+    now = 0.0
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: now)
+    entry = FakeEntry(hems_enabled=True)
+    entry.options["kiwigrid_stats_scan_interval"] = 300
+    client = FakeClient()
+    coordinator = coordinator_module.SOLARWATTCoordinator(object(), entry, client)
+    client.hems_result = SolarwattError("endpoints unavailable")
+
+    for tick in (0, 15, 60, 120, 300):
+        now = float(tick)
+        asyncio.run(coordinator._async_update_data())
+
+    assert [(request["refresh_devices"], request["refresh_statistics"])
+            for request in client.hems_requests] == [
+        (True, True), (True, False), (True, False), (True, True),
+    ]

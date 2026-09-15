@@ -32,13 +32,17 @@ CONF_ENABLED_THINGS = "enabled_things"
 CONF_KIWIGRID_HEMS_USERNAME = "kiwigrid_hems_username"
 CONF_KIWIGRID_HEMS_PASSWORD = "kiwigrid_hems_password"
 CONF_KIWIGRID_HEMS_SCAN_INTERVAL = "kiwigrid_hems_scan_interval"
+CONF_KIWIGRID_FLOW_SCAN_INTERVAL = "kiwigrid_flow_scan_interval"
+CONF_KIWIGRID_STATS_SCAN_INTERVAL = "kiwigrid_stats_scan_interval"
+CONF_KIWIGRID_PROFILE_CACHE_INTERVAL = "kiwigrid_profile_cache_interval"
 
 DEFAULT_LOCAL_HOST = "energymanager.local"
 DEFAULT_LOCAL_USERNAME = "installer"
 DEFAULT_SCAN_INTERVAL = 15  # Sekunden
 MIN_SCAN_INTERVAL = 10  # Minimaler Scan-Interval in Sekunden
 MAX_SCAN_INTERVAL = 3600  # Maximaler Scan-Interval in Sekunden (1 Stunde)
-DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL = 120  # Sekunden
+DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL = 30  # Sekunden
+DEFAULT_KIWIGRID_PROFILE_CACHE_INTERVAL = 3600
 
 DEFAULT_ENERGY_DELTA_KWH = 0.01
 MIN_ENERGY_DELTA_KWH = 0.0

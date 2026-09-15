@@ -110,6 +110,8 @@ class SOLARWATTClient:
         self._hems_client_credentials: tuple[str, str] | None = None
         self._hems_payload_cache: dict[str, Any] = {}
         self._hems_summary_anchors: dict[str, tuple[date, Any]] = {}
+        self._hems_profile_updated_at: float | None = None
+        self._hems_endpoint_errors: dict[str, str] = {}
         self.hems_partial_errors: tuple[str, ...] = ()
         self._log = logging.getLogger(__name__)
 
@@ -196,6 +198,8 @@ class SOLARWATTClient:
         self._hems_client_credentials = credentials
         self._hems_payload_cache.clear()
         self._hems_summary_anchors.clear()
+        self._hems_profile_updated_at = None
+        self._hems_endpoint_errors.clear()
         self.hems_partial_errors = ()
         return self._hems_client
 
@@ -471,6 +475,9 @@ class SOLARWATTClient:
         username: str = "",
         password: str = "",
         include_energy_flow: bool = False,
+        refresh_devices: bool = True,
+        refresh_statistics: bool = True,
+        profile_cache_interval: int = 0,
     ) -> list[dict[str, Any]]:
         """Fetch supported KiwiGrid HEMS data and convert it to item records."""
         hems = self._get_hems_client(username, password)
@@ -507,6 +514,9 @@ class SOLARWATTClient:
             hems,
             collect_errors=True,
             include_energy_flow=include_energy_flow,
+            refresh_devices=refresh_devices,
+            refresh_statistics=refresh_statistics,
+            profile_cache_interval=profile_cache_interval,
         )
         self.hems_partial_errors = tuple(errors)
         if errors and successful_requests == 0:
@@ -535,6 +545,7 @@ class SOLARWATTClient:
         try:
             payload = await hems.async_get_energy_flow()
             self._hems_payload_cache["energy_flow"] = payload
+            self._hems_endpoint_errors.pop("energy_flow", None)
         except KiwiGridHEMSAuthError as err:
             raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
         except (KiwiGridHEMSProtocolError, KiwiGridHEMSConnectionError) as err:
@@ -545,6 +556,7 @@ class SOLARWATTClient:
         try:
             consumers = await hems.async_get_home_consumption_consumers()
             self._hems_payload_cache["home_consumption_consumers"] = consumers
+            self._hems_endpoint_errors.pop("home_consumption_consumers", None)
         except KiwiGridHEMSAuthError as err:
             raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
         except KiwiGridHEMSError as err:
@@ -645,6 +657,7 @@ class SOLARWATTClient:
         password: str = "",
         include_energy_flow: bool = False,
         use_cached: bool = False,
+        profile_cache_interval: int = 0,
     ) -> list[dict[str, Any]]:
         """Fetch supported KiwiGrid HEMS data and convert it to thing records."""
         hems = self._get_hems_client(username, password)
@@ -658,6 +671,7 @@ class SOLARWATTClient:
                 hems,
                 collect_errors=False,
                 include_energy_flow=include_energy_flow,
+                profile_cache_interval=profile_cache_interval,
             )
 
         things = hems_payloads_to_things(**payloads)
@@ -677,12 +691,24 @@ class SOLARWATTClient:
         *,
         collect_errors: bool,
         include_energy_flow: bool = False,
+        refresh_devices: bool = True,
+        refresh_statistics: bool = True,
+        profile_cache_interval: int = 0,
     ) -> tuple[dict[str, Any], list[str], int]:
         """Fetch all supported KiwiGrid HEMS endpoint payloads."""
-        payloads: dict[str, Any] = {}
-        errors: list[str] = []
+        payloads: dict[str, Any] = {
+            key: payload
+            for key, payload in self._hems_payload_cache.items()
+            if include_energy_flow
+            or key not in {"energy_flow", "home_consumption_consumers"}
+        }
         successful_requests = 0
         semaphore = asyncio.Semaphore(4)
+        profile_cached = (
+            self._hems_profile_updated_at is not None
+            and time.monotonic() - self._hems_profile_updated_at < profile_cache_interval
+            and "user_profile" in self._hems_payload_cache
+        )
         poll_now = datetime.now().astimezone()
         anchor_windows = {
             key: summary_anchor_time_window(anchor.period, now=poll_now)
@@ -724,6 +750,18 @@ class SOLARWATTClient:
             ),
             anchor_windows,
         )
+        scheduled_getters: list[tuple[str, HEMSEndpointGetter]] = []
+        for key, getter in endpoint_getters:
+            match key:
+                case "user_profile":
+                    due = not profile_cached
+                case "energy_flow" | "home_consumption_consumers":
+                    due = include_energy_flow
+                case _:
+                    due = refresh_statistics if key.startswith("analytics_") else refresh_devices
+            if due:
+                scheduled_getters.append((key, getter))
+        endpoint_getters = tuple(scheduled_getters)
         getters_by_key = dict(endpoint_getters)
         results = list(await asyncio.gather(
             *(
@@ -768,6 +806,9 @@ class SOLARWATTClient:
                 if key not in HEMS_SUMMARY_ANCHORS:
                     self._hems_payload_cache[key] = payload
                 resolved_keys.add(key)
+                self._hems_endpoint_errors.pop(key, None)
+                if key == "user_profile":
+                    self._hems_profile_updated_at = time.monotonic()
                 successful_requests += 1
                 continue
             if isinstance(error, KiwiGridHEMSAuthError):
@@ -779,13 +820,13 @@ class SOLARWATTClient:
                 key,
                 error,
             )
-            if collect_errors:
-                errors.append(f"{key}: {error}")
+            self._hems_endpoint_errors[key] = f"{key}: {error}"
             payloads[key] = self._hems_payload_cache.get(key, [])
 
         # An anchor served from cache proves nothing about the portal being up.
         successful_requests -= len(cached_anchors & resolved_keys)
         self._apply_summary_anchors(payloads, resolved_keys, poll_now)
+        errors = list(self._hems_endpoint_errors.values()) if collect_errors else []
         return payloads, errors, successful_requests
 
     def _with_summary_anchor_getters(

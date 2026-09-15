@@ -13,8 +13,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .client import SOLARWATTClient, SolarwattAuthError, SolarwattError
 from .const import (
     CONF_KIWIGRID_HEMS_SCAN_INTERVAL,
+    CONF_KIWIGRID_FLOW_SCAN_INTERVAL,
+    CONF_KIWIGRID_STATS_SCAN_INTERVAL,
+    CONF_KIWIGRID_PROFILE_CACHE_INTERVAL,
     CONF_SCAN_INTERVAL,
     DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
+    DEFAULT_KIWIGRID_PROFILE_CACHE_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
@@ -42,12 +46,16 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.item_to_channel_metadata: dict[str, dict[str, str]] = {}
         self._discovery_callbacks: set[Callable[[Mapping[str, Any] | None], None]] = set()
         self._local_items_cache: list[dict[str, Any]] = []
+        self._local_last_attempt: float | None = None
+        self._local_items_error: SolarwattError | None = None
         self.local_last_error: str | None = None
         self._hems_items_cache: list[dict[str, Any]] = []
         self._hems_energy_flow_cache: list[dict[str, Any]] = []
         self._hems_items_error: SolarwattError | None = None
         self._hems_energy_flow_error: SolarwattError | None = None
         self._hems_last_attempt: float | None = None
+        self._hems_stats_last_attempt: float | None = None
+        self._hems_energy_flow_last_attempt: float | None = None
         self._hems_energy_flow_retry_at: float | None = None
         self._hems_last_poll: float | None = None
         self.hems_last_success: float | None = None
@@ -63,11 +71,35 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             entry.options.get(CONF_KIWIGRID_HEMS_SCAN_INTERVAL, DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL),
             default=DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
         )
+        self._local_scan_interval = scan
+        self._hems_flow_scan_interval = _validated_scan_interval(
+            entry.options.get(CONF_KIWIGRID_FLOW_SCAN_INTERVAL, scan),
+            default=scan,
+        )
+        self._hems_stats_scan_interval = _validated_scan_interval(
+            entry.options.get(CONF_KIWIGRID_STATS_SCAN_INTERVAL, self._hems_scan_interval),
+            default=self._hems_scan_interval,
+        )
+        self._hems_profile_cache_interval = _validated_scan_interval(
+            entry.options.get(
+                CONF_KIWIGRID_PROFILE_CACHE_INTERVAL,
+                DEFAULT_KIWIGRID_PROFILE_CACHE_INTERVAL,
+            ),
+            default=DEFAULT_KIWIGRID_PROFILE_CACHE_INTERVAL,
+        )
+        poll_interval = scan
+        if all(get_kiwigrid_hems_credentials(entry.options)):
+            poll_interval = min(
+                scan,
+                self._hems_flow_scan_interval,
+                self._hems_scan_interval,
+                self._hems_stats_scan_interval,
+            )
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
             name="solarwatt_items",
-            update_interval=timedelta(seconds=int(scan)),
+            update_interval=timedelta(seconds=int(poll_interval)),
         )
 
     def register_discovery_callback(
@@ -92,6 +124,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
 
     async def async_refresh_discovery_data(self) -> None:
         """Refresh items/things and run one-shot entity discovery."""
+        self._local_last_attempt = None
         await self.async_refresh()
         await self.async_refresh_things()
         ensure_parent_devices_registered(self.hass, self.entry, self.things)
@@ -149,7 +182,15 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self,
     ) -> tuple[list[dict[str, Any]], bool, list[SolarwattError]]:
         """Update the local source and return its latest usable snapshot."""
+        now = time.monotonic()
         errors: list[SolarwattError] = []
+        if (
+            self._local_last_attempt is not None
+            and now - self._local_last_attempt < self._local_scan_interval
+        ):
+            errors = [self._local_items_error] if self._local_items_error else []
+            return list(self._local_items_cache), not errors, errors
+        self._local_last_attempt = now
         try:
             self._local_items_cache = list(
                 await self.client.async_get_energy_overview_items()
@@ -172,6 +213,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             )
         else:
             self._set_local_error(None)
+        self._local_items_error = errors[0] if errors else None
         return list(self._local_items_cache), not errors, errors
 
     async def _async_update_hems_items(
@@ -229,6 +271,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self._hems_items_error = None
         self._hems_energy_flow_error = None
         self._hems_last_attempt = None
+        self._hems_stats_last_attempt = None
+        self._hems_energy_flow_last_attempt = None
         self._hems_energy_flow_retry_at = None
         self._hems_last_poll = None
         self.hems_last_success = None
@@ -263,21 +307,32 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         include_energy_flow: bool = False,
     ) -> tuple[list[dict[str, Any]], SolarwattError | None]:
         now = time.monotonic()
-        if (
-            self._hems_last_attempt is not None
-            and now - self._hems_last_attempt < self._hems_scan_interval
-        ):
+        refresh_devices = (
+            self._hems_last_attempt is None
+            or now - self._hems_last_attempt >= self._hems_scan_interval
+        )
+        refresh_statistics = (
+            self._hems_stats_last_attempt is None
+            or now - self._hems_stats_last_attempt >= self._hems_stats_scan_interval
+        )
+        if not (refresh_devices or refresh_statistics):
             return (
                 _without_kiwigrid_flow_items(self._hems_items_cache),
                 self._hems_items_error,
             )
 
-        self._hems_last_attempt = now
+        if refresh_devices:
+            self._hems_last_attempt = now
+        if refresh_statistics:
+            self._hems_stats_last_attempt = now
         try:
             hems_items = await self.client.async_get_hems_items(
                 username=username,
                 password=password,
                 include_energy_flow=include_energy_flow,
+                refresh_devices=refresh_devices,
+                refresh_statistics=refresh_statistics,
+                profile_cache_interval=self._hems_profile_cache_interval,
             )
             self._hems_items_cache = _without_kiwigrid_flow_items(hems_items or [])
             self._hems_last_poll = now
@@ -325,6 +380,13 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         ):
             return list(self._hems_energy_flow_cache), self._hems_energy_flow_error
 
+        if (
+            self._hems_energy_flow_last_attempt is not None
+            and now - self._hems_energy_flow_last_attempt < self._hems_flow_scan_interval
+        ):
+            return list(self._hems_energy_flow_cache), self._hems_energy_flow_error
+
+        self._hems_energy_flow_last_attempt = now
         try:
             energy_flow_items = await self.client.async_get_hems_energy_flow_items(
                 username=username,
@@ -446,6 +508,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                     password=hems_password,
                     include_energy_flow=True,
                     use_cached=prefer_hems_cache,
+                    profile_cache_interval=self._hems_profile_cache_interval,
                 )
                 if hems_things:
                     self.logger.debug("Fetched %s KiwiGrid HEMS devices", len(hems_things))
@@ -522,6 +585,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     def invalidate_hems_cache(self) -> None:
         """Force the next refresh to fetch KiwiGrid HEMS data immediately."""
         self._hems_last_attempt = None
+        self._hems_stats_last_attempt = None
+        self._hems_energy_flow_last_attempt = None
         self._hems_energy_flow_retry_at = None
         self._hems_last_poll = None
 

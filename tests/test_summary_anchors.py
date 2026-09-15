@@ -167,6 +167,8 @@ def _client():
     client._hems_client_credentials = None
     client._hems_payload_cache = {}
     client._hems_summary_anchors = {}
+    client._hems_profile_updated_at = None
+    client._hems_endpoint_errors = {}
     client.hems_partial_errors = ()
     client._log = logging.getLogger(__name__)
     return client

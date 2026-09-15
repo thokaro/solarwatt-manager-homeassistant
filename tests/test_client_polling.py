@@ -143,6 +143,8 @@ def _client():
     client._hems_client_credentials = None
     client._hems_payload_cache = {}
     client._hems_summary_anchors = {}
+    client._hems_profile_updated_at = None
+    client._hems_endpoint_errors = {}
     client.hems_partial_errors = ()
     client._log = logging.getLogger(__name__)
     return client
@@ -277,3 +279,161 @@ def test_local_things_use_only_hems_configurator_endpoint():
 
     assert asyncio.run(client.async_get_things()) == [{"UID": "current-thing"}]
     assert calls == 1
+
+
+def test_device_only_poll_reuses_all_statistics_payloads(monkeypatch):
+    client = _client()
+    kwargs = {"username": "user", "password": "password", "profile_cache_interval": 3600}
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    hems = client._hems_client
+    previous = captured_payloads[-1]
+    before = dict(hems.calls)
+
+    asyncio.run(client.async_get_hems_items(**kwargs, refresh_statistics=False))
+
+    for name, calls in before.items():
+        if name.startswith("async_get_analytics") or name == "async_get_user_profile":
+            assert hems.calls[name] == calls
+    for key, payload in previous.items():
+        if key.startswith("analytics_"):
+            assert captured_payloads[-1][key] is payload
+    assert hems.calls["async_get_devices"] == before["async_get_devices"] + 1
+
+
+def test_statistics_only_poll_reuses_device_payloads():
+    client = _client()
+    kwargs = {"username": "user", "password": "password", "profile_cache_interval": 3600}
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    hems = client._hems_client
+    previous = captured_payloads[-1]
+    before = dict(hems.calls)
+
+    asyncio.run(client.async_get_hems_items(**kwargs, refresh_devices=False))
+
+    assert hems.calls["async_get_devices"] == before["async_get_devices"]
+    assert hems.calls["async_get_battery"] == before["async_get_battery"]
+    assert hems.calls["async_get_user_profile"] == 1
+    assert hems.calls["async_get_analytics_consumption_year"] == 2
+    assert captured_payloads[-1]["devices"] is previous["devices"]
+    assert captured_payloads[-1]["batteries"] is previous["batteries"]
+
+
+def test_profile_cache_expires_at_configured_duration(monkeypatch):
+    now = 0.0
+    monkeypatch.setattr(client_module.time, "monotonic", lambda: now)
+    client = _client()
+    kwargs = {"username": "user", "password": "password", "profile_cache_interval": 600}
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    hems = client._hems_client
+    profile = captured_payloads[-1]["user_profile"]
+
+    now = 599.0
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    assert hems.calls["async_get_user_profile"] == 1
+    assert captured_payloads[-1]["user_profile"] is profile
+
+    now = 600.0
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    assert hems.calls["async_get_user_profile"] == 2
+    assert captured_payloads[-1]["user_profile"] != profile
+
+
+def test_expired_profile_failure_keeps_cache_and_retries_later(monkeypatch):
+    now = 0.0
+    monkeypatch.setattr(client_module.time, "monotonic", lambda: now)
+    client = _client()
+    kwargs = {"username": "user", "password": "password", "profile_cache_interval": 600}
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    hems = client._hems_client
+    profile = captured_payloads[-1]["user_profile"]
+    original_getter = hems.async_get_user_profile
+
+    async def failed_profile():
+        raise FakeKiwiGridHEMSConnectionError("profile unavailable")
+
+    monkeypatch.setattr(hems, "async_get_user_profile", failed_profile)
+    now = 600.0
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    assert captured_payloads[-1]["user_profile"] is profile
+    assert client._hems_profile_updated_at == 0.0
+    assert "user_profile: profile unavailable" in client.hems_partial_errors
+
+    monkeypatch.setattr(hems, "async_get_user_profile", original_getter)
+    now = 720.0
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    assert client._hems_profile_updated_at == 720.0
+    assert not client.hems_partial_errors
+    assert captured_payloads[-1]["user_profile"] != profile
+
+
+def test_cached_profile_does_not_mask_portal_outage():
+    client = _client()
+    kwargs = {"username": "user", "password": "password", "profile_cache_interval": 3600}
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    hems = client._hems_client
+    hems.fail_all = True
+
+    with pytest.raises(client_module.SolarwattConnectionError):
+        asyncio.run(client.async_get_hems_items(**kwargs))
+    assert hems.calls["async_get_user_profile"] == 1
+
+
+def test_credentials_change_clears_profile_cache_and_endpoint_errors():
+    client = _client()
+    asyncio.run(client.async_get_hems_items(
+        username="first", password="password", profile_cache_interval=3600,
+    ))
+    old_hems = client._hems_client
+    client._hems_endpoint_errors["devices"] = "devices: unavailable"
+
+    asyncio.run(client.async_get_hems_items(
+        username="second", password="password", profile_cache_interval=3600,
+    ))
+
+    assert client._hems_client is not old_hems
+    assert client._hems_client.calls["async_get_user_profile"] == 1
+    assert not client.hems_partial_errors
+
+
+def test_unpolled_statistics_keep_partial_errors_until_recovery(monkeypatch):
+    client = _client()
+    kwargs = {"username": "user", "password": "password", "profile_cache_interval": 3600}
+    hems = client._get_hems_client("user", "password")
+    original_getter = hems.async_get_analytics_finance
+
+    async def malformed_finance():
+        return {"unexpected": True}
+
+    monkeypatch.setattr(hems, "async_get_analytics_finance", malformed_finance)
+    asyncio.run(client.async_get_hems_items(**kwargs))
+    errors = client.hems_partial_errors
+    assert any("analytics_finance:" in error for error in errors)
+
+    asyncio.run(client.async_get_hems_items(**kwargs, refresh_statistics=False))
+    assert client.hems_partial_errors == errors
+
+    monkeypatch.setattr(hems, "async_get_analytics_finance", original_getter)
+    asyncio.run(client.async_get_hems_items(**kwargs, refresh_devices=False))
+    assert not client.hems_partial_errors
+    assert captured_payloads[-1]["analytics_finance_year"]
+
+
+def test_flow_recovery_clears_errors_from_discovery(monkeypatch):
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    original_getter = hems.async_get_energy_flow
+
+    async def failed_flow():
+        raise FakeKiwiGridHEMSConnectionError("flow unavailable")
+
+    monkeypatch.setattr(hems, "async_get_energy_flow", failed_flow)
+    asyncio.run(client.async_get_hems_items(
+        username="user", password="password", include_energy_flow=True,
+    ))
+    assert "energy_flow: flow unavailable" in client.hems_partial_errors
+
+    monkeypatch.setattr(hems, "async_get_energy_flow", original_getter)
+    asyncio.run(client.async_get_hems_energy_flow_items(username="user", password="password"))
+    asyncio.run(client.async_get_hems_items(username="user", password="password"))
+
+    assert not client.hems_partial_errors

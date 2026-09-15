@@ -1,12 +1,32 @@
 # Changelog
 
-## Unreleased
+## 2026.9.2
 
-### Fixes
+### ✨ Features
+
+- Added separate configurable KiwiGrid Flow and Stats intervals so local values and cloud devices can remain responsive while cloud Flow and analytics are polled less often. Existing installations retain their previous intervals until the new options are changed; entity identifiers and config-entry versions are unchanged.
+- Cache the complete KiwiGrid user profile for a configurable duration, defaulting to one hour. Refresh failures retain the previous profile, while integration reloads and credential changes clear the cache. Changes to profile preferences such as currency appear after cache expiry and the next device/statistics poll.
+
+### 🐛 Fixes
+
 - Preserve the last valid finance day, month, and year values and report a partial error when today's finance response is malformed. Valid empty time series remain supported.
+- Clarified local Manager and SOLARWATT Manager portal credentials in all five translations, including the relevant login URLs and the local default username. Connection descriptions use plain text without relying on Markdown links or line breaks.
 
-### Changes
-- Reduced the portal load of the finance month and year totals by requesting their completed days once per day and adding today's aggregate on top. Sensor values keep the same update frequency and no configuration changes are required, but a later correction to an already completed day now appears with the next daily refresh instead of the next poll.
+### 🛠️ Changes
+
+- Grouped polling intervals with their respective local and KiwiGrid Online connection settings. The general section is now named Sensor settings and contains only sensor thresholds, with updated descriptions in all five languages.
+- Reduced the portal load of the finance month and year totals by requesting their completed days once per day and adding today's aggregate on each statistics poll. This optimization is limited to additive finance totals; ratio series such as independence continue to use server-calculated values. A later correction to an already completed day becomes visible with the next daily refresh.
+- Set the default HEMS device interval to 30 seconds for new or not explicitly configured entries. Saved intervals remain unchanged. Without an explicit Stats interval, statistics follow the HEMS device interval; set Stats to 300 seconds to reduce regular analytics requests.
+
+### ⬆️ Upgrade notes
+
+- No config-entry migration is required. Entity unique IDs and existing sensor names remain unchanged.
+- After updating and restarting Home Assistant, adjust the separate intervals in the integration options. For example: local 15 seconds, Flow 30 seconds, devices 30 seconds, Stats 300 seconds, and profile cache 3600 seconds.
+- The profile cache is enabled by default. Profile preferences such as currency can take up to the cache duration plus one device/statistics poll to update; live energy and finance values continue to follow their own polling intervals.
+
+### 🙏 Thanks
+
+- Thanks to Alexander (@twonky4) for the finance optimization and insights into the Kiwigrid API's server-side workload in [PR #17](https://github.com/thokaro/solarwatt-manager-homeassistant/pull/17).
 
 ## 2026.9.1
 

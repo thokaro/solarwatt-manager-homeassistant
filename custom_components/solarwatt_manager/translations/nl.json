@@ -11,7 +11,7 @@
       "invalid_input": "Ongeldige invoer.",
       "invalid_auth": "Ongeldige gebruikersnaam of wachtwoord.",
       "invalid_local_auth": "Ongeldige gebruikersnaam of wachtwoord voor de lokale SOLARWATT Manager.",
-      "invalid_hems_auth": "Ongeldige gebruikersnaam of wachtwoord voor KiwiGrid HEMS (SOLARWATT Manager-portaal).",
+      "invalid_hems_auth": "Ongeldige gebruikersnaam of wachtwoord voor KiwiGrid HEMS (SOLARWATT Manager portal).",
       "not_solarwatt": "Host lijkt geen SOLARWATT Manager te zijn.",
       "cannot_connect": "Kan geen verbinding maken met de SOLARWATT Manager.",
       "connection_failed": "Verbinding met SOLARWATT Manager mislukt.",
@@ -25,31 +25,34 @@
     "step": {
       "user": {
         "title": "Verbind SOLARWATT",
-        "description": "Configureer de lokale Manager, KiwiGrid-portaaltoegang of beide gegevensbronnen. Minstens één bron is vereist.",
+        "description": "Configureer de lokale Manager, toegang tot het SOLARWATT Manager portal of beide gegevensbronnen. Minstens één bron is vereist.",
         "sections": {
           "local_connection": {
             "name": "Lokale SOLARWATT Manager",
-            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken.",
+            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken. Gebruik het wachtwoord voor de lokale webinterface op http://energymanager.local/. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam. Het update-interval bepaalt hoe vaak lokale apparaten en SOLARWATT Flow worden uitgelezen.",
             "data": {
               "host": "Host/IP",
               "username": "Gebruikersnaam",
-              "password": "Wachtwoord"
+              "password": "Wachtwoord",
+              "scan_interval": "Update-interval (seconden)"
             }
           },
           "kiwigrid_connection": {
-            "name": "KiwiGrid Online (SOLARWATT-portaal)",
-            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch.",
+            "name": "KiwiGrid Online (SOLARWATT Manager portal)",
+            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op https://new.energymanager.com/.",
             "data": {
               "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
               "kiwigrid_hems_password": "Wachtwoord",
-              "kiwigrid_hems_scan_interval": "HEMS-interval voor apparaten en Stats (seconden)"
+              "kiwigrid_hems_scan_interval": "Interval voor HEMS-apparaten (seconden)",
+              "kiwigrid_flow_scan_interval": "KiwiGrid Flow-interval (seconden)",
+              "kiwigrid_stats_scan_interval": "KiwiGrid Stats-interval (seconden)",
+              "kiwigrid_profile_cache_interval": "Cacheduur van het gebruikersprofiel (seconden)"
             }
           },
           "general_settings": {
-            "name": "Update- en sensorinstellingen",
-            "description": "Het snelle update-interval geldt voor lokale apparaten, SOLARWATT Flow en KiwiGrid Flow. Het HEMS-interval geldt voor overige online apparaten en statistieken.",
+            "name": "Sensorinstellingen",
+            "description": "Drempelwaarden voor energieveranderingen en de verwerking van tijdelijk ontbrekende vermogenswaarden.",
             "data": {
-              "scan_interval": "Update-interval (seconden)",
               "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
               "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen"
             }
@@ -66,7 +69,7 @@
         "sections": {
           "local_connection": {
             "name": "Lokale SOLARWATT Manager",
-            "description": "Directe toegang tot de Manager via het lokale netwerk.",
+            "description": "Directe toegang tot de Manager via het lokale netwerk. Gebruik het wachtwoord voor de lokale webinterface op http://energymanager.local/. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam.",
             "data": {
               "host": "Host/IP",
               "username": "Gebruikersnaam",
@@ -74,8 +77,8 @@
             }
           },
           "kiwigrid_connection": {
-            "name": "KiwiGrid Online (SOLARWATT-portaal)",
-            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten.",
+            "name": "KiwiGrid Online (SOLARWATT Manager portal)",
+            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op https://new.energymanager.com/.",
             "data": {
               "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
               "kiwigrid_hems_password": "Wachtwoord"
@@ -89,7 +92,7 @@
         "sections": {
           "local_connection": {
             "name": "Lokale SOLARWATT Manager",
-            "description": "Directe toegang tot de Manager via het lokale netwerk.",
+            "description": "Directe toegang tot de Manager via het lokale netwerk. Gebruik het wachtwoord voor de lokale webinterface op http://energymanager.local/. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam.",
             "data": {
               "host": "Host/IP",
               "username": "Gebruikersnaam",
@@ -97,8 +100,8 @@
             }
           },
           "kiwigrid_connection": {
-            "name": "KiwiGrid Online (SOLARWATT-portaal)",
-            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten.",
+            "name": "KiwiGrid Online (SOLARWATT Manager portal)",
+            "description": "Online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op https://new.energymanager.com/.",
             "data": {
               "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
               "kiwigrid_hems_password": "Wachtwoord"
@@ -118,7 +121,7 @@
       "invalid_power_unavailable_threshold": "De power-unavailable-drempel moet 0 of hoger zijn.",
       "invalid_input": "Ongeldige invoer.",
       "invalid_local_auth": "Ongeldige gebruikersnaam of wachtwoord voor de lokale SOLARWATT Manager.",
-      "invalid_hems_auth": "Ongeldige gebruikersnaam of wachtwoord voor KiwiGrid HEMS (SOLARWATT Manager-portaal).",
+      "invalid_hems_auth": "Ongeldige gebruikersnaam of wachtwoord voor KiwiGrid HEMS (SOLARWATT Manager portal).",
       "not_solarwatt": "Host lijkt geen SOLARWATT Manager te zijn.",
       "cannot_connect": "Kan geen verbinding maken met de SOLARWATT Manager.",
       "connection_failed": "Verbinding met SOLARWATT Manager mislukt.",
@@ -134,27 +137,30 @@
           },
           "local_connection": {
             "name": "Lokale SOLARWATT Manager",
-            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken.",
+            "description": "Directe toegang via het lokale netwerk. Levert SOLARWATT Flow en lokale apparaten zonder het portaal te gebruiken. Gebruik het wachtwoord voor de lokale webinterface op http://energymanager.local/. Je kunt de vooraf ingevulde standaardgebruikersnaam installer meestal ongewijzigd laten. De lokale webinterface vraagt bij het inloggen niet om een gebruikersnaam. Het update-interval bepaalt hoe vaak lokale apparaten en SOLARWATT Flow worden uitgelezen.",
             "data": {
               "host": "Host/IP",
               "username": "Gebruikersnaam",
-              "password": "Wachtwoord"
+              "password": "Wachtwoord",
+              "scan_interval": "Update-interval (seconden)"
             }
           },
           "kiwigrid_connection": {
-            "name": "KiwiGrid Online (SOLARWATT-portaal)",
-            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch.",
+            "name": "KiwiGrid Online (SOLARWATT Manager portal)",
+            "description": "Optionele online toegang tot KiwiGrid Flow, KiwiGrid Stats en ondersteunde portaalapparaten. Volledige inloggegevens activeren deze bron automatisch. Gebruik de gebruikersnaam of het e-mailadres en het wachtwoord van je account in het SOLARWATT Manager portal op https://new.energymanager.com/.",
             "data": {
               "kiwigrid_hems_username": "Gebruikersnaam of e-mailadres",
               "kiwigrid_hems_password": "Wachtwoord",
-              "kiwigrid_hems_scan_interval": "HEMS-interval voor apparaten en Stats (seconden)"
+              "kiwigrid_hems_scan_interval": "Interval voor HEMS-apparaten (seconden)",
+              "kiwigrid_flow_scan_interval": "KiwiGrid Flow-interval (seconden)",
+              "kiwigrid_stats_scan_interval": "KiwiGrid Stats-interval (seconden)",
+              "kiwigrid_profile_cache_interval": "Cacheduur van het gebruikersprofiel (seconden)"
             }
           },
           "general_settings": {
-            "name": "Update- en sensorinstellingen",
-            "description": "Het snelle update-interval geldt voor lokale apparaten, SOLARWATT Flow en KiwiGrid Flow. Het HEMS-interval geldt voor overige online apparaten en statistieken.",
+            "name": "Sensorinstellingen",
+            "description": "Drempelwaarden voor energieveranderingen en de verwerking van tijdelijk ontbrekende vermogenswaarden.",
             "data": {
-              "scan_interval": "Update-interval (seconden)",
               "energy_delta_kwh": "Drempel voor energieverandering (kWh). Alleen schrijven bij >= waarde; 0 = schrijven bij elke update",
               "power_unavailable_threshold": "Power-unavailable-drempel (polls). Laat de laatste waarde staan tot de N-de unavailable; 0 = uitschakelen"
             }

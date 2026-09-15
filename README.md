@@ -27,7 +27,8 @@ Note for users with **vision** components: If you need write/control functions s
   * `select` entity for optimization mode (`Not optimized`, `PV optimized`, `Departure time`)
   * `switch` entity for supported plug/EV station switching
 * Energy Dashboard ready (correct `device_class` & `state_class`)
-* Separate HEMS poll interval, defaulting to 120 seconds
+* Separate polling intervals for local values, cloud Flow, devices, and statistics; HEMS devices default to 30 seconds
+* Configurable user profile cache, defaulting to one hour
 * Automatic normalization of units and item names, including Wh → kWh conversion, removal of installation-specific IDs, collapsed duplicate fragments and preserved abbreviations such as BMS/SoC/SoH
 * Device-based entity structure: entities are assigned to their SOLARWATT devices, while Home Assistant manages their `entity_id`s from integration-provided naming suggestions and the user's naming preference
 * Human-friendly display names (Title Case; BMS/SoC/SoH preserved)
@@ -127,24 +128,37 @@ remain non-directional positive values.
 
 You can adjust these in the integration options:
 
-* **Update interval (seconds)** – polling interval for local Manager devices and live `KiwiGrid Flow` data
+The local update interval is in **Local SOLARWATT Manager**. Cloud device, Flow,
+Stats, and profile cache intervals are in **KiwiGrid Online**. **Sensor settings**
+contains the energy-change and power-unavailable thresholds.
+
+* **Update interval (seconds)** – polling interval for local Manager devices and `SOLARWATT Flow`
 * **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
 * **Power unavailable threshold (polls)** – applies to power sensors only. If SOLARWATT briefly returns `unavailable`, the last valid power value is kept until the configured consecutive poll limit is reached. Example: `3` means the 1st and 2nd `unavailable` poll keep the previous value, and the sensor only switches to `unavailable` on the 3rd poll. Set to `0` to disable this debounce completely.
 * **KiwiGrid HEMS credentials** – when both the username/email and password are entered, the integration signs in automatically and activates the detected HEMS devices, `KiwiGrid Flow`, and `KiwiGrid Stats`.
-* **KiwiGrid HEMS poll interval (seconds)** – separate polling interval for physical KiwiGrid devices and `KiwiGrid Stats`. The default is `120` seconds so HEMS analytics and metadata are not requested as frequently as local Manager values.
+* **HEMS device interval (seconds)** – polling interval for physical KiwiGrid devices. The default is `30` seconds.
+* **KiwiGrid Flow interval (seconds)** – separate polling interval for live cloud energy-flow and consumer values. When not yet configured, it follows the existing update interval.
+* **KiwiGrid Stats interval (seconds)** – separate polling interval for all cloud analytics, including today, month, year, and derived Total values. When not yet configured, it follows the existing HEMS interval (`30` seconds for new entries). Set it to `300` seconds, for example, to reduce analytics requests.
+* **User profile cache duration (seconds)** – reuse the complete profile response, including the currency preference, for `3600` seconds by default. After expiry, the next device or statistics poll refreshes the profile. Failed refreshes retain the last valid profile and are retried on a later poll. Reloading the integration or changing credentials clears the cache.
 * **Device selection** – choose which detected SOLARWATT devices should be created in Home Assistant
+
+All interval options accept `10` to `3600` seconds. Existing installations keep their
+previous Flow and Stats cadence until these options are changed; no migration is
+required. The profile cache is enabled by default. Profile changes can therefore take
+up to the cache duration plus one device/statistics poll to appear.
 
 Connection settings can also be changed with Home Assistant's **Reconfigure** action.
 Changed credentials are validated before they are saved. If either the local Manager or
 KiwiGrid HEMS rejects its credentials during an update, Home Assistant opens a
 reauthentication flow. In combined installations, the other working source remains
 available and the integration keeps the last valid snapshot of the failed source.
-Failed HEMS requests are retried no more often than the configured HEMS poll interval.
+Failed device and statistics polls are retried at their respective intervals.
+Failed Flow polls wait at least the HEMS device interval and the Flow interval.
 Within a HEMS poll, up to four isolated connection failures are retried once in
 sequence after the bounded parallel first pass. Endpoints that still fail keep their
 latest successful cached payload and are reported as partial diagnostics without
 marking the complete HEMS source unavailable. Month and year analytics remain part of
-every configured HEMS poll so derived Total sensors keep the same update frequency.
+every statistics poll so derived Total sensors follow the Stats interval.
 Finance month and year totals read their completed days once per day and add today's
 aggregate on top, which keeps their values live without asking the portal to price
 every week of the year again on every poll. A later correction to an already completed
@@ -166,16 +180,21 @@ sensor therefore does not automatically use the faster update interval.
 | --- | --- |
 | All local SOLARWATT Manager devices and items | Update interval |
 | Local `SOLARWATT Flow` | Update interval |
-| `KiwiGrid Flow`, including live consumer values | Update interval |
-| KiwiGrid batteries, PV plants, EV chargers, plugs, smart heaters, meters, inverters, and other physical HEMS devices | KiwiGrid HEMS poll interval |
-| `KiwiGrid Stats`, including today, month, and year values | KiwiGrid HEMS poll interval |
-| `KiwiGrid Stats` finance month and year totals | Completed days once per day, today's value on every KiwiGrid HEMS poll |
+| `KiwiGrid Flow`, including live consumer values | KiwiGrid Flow interval |
+| KiwiGrid batteries, PV plants, EV chargers, plugs, smart heaters, meters, inverters, and other physical HEMS devices | HEMS device interval |
+| `KiwiGrid Stats`, including today, month, year, and derived Total values | KiwiGrid Stats interval |
+| `KiwiGrid Stats` finance month and year totals | Completed days once per day when statistics are polled; today's value on every Stats poll |
 
-For example, with a 15-second update interval and a 120-second HEMS interval, local
-production power and `KiwiGrid Flow` power are refreshed every 15 seconds, while a
-KiwiGrid battery power sensor and `KiwiGrid Stats` power sensor are refreshed every
-120 seconds. All entities read the shared coordinator snapshot; individual entities do
-not perform their own HTTP requests or have their own poll interval.
+For example, set the local update interval to `15`, Flow to `30`, HEMS devices to
+`30`, Stats to `300`, and the profile cache to `3600` seconds. Local power remains
+fast, cloud Flow requests are halved compared with a 15-second interval, and regular
+statistics requests fall by about 60% compared with a 120-second interval.
+
+The shared coordinator checks due groups at the shortest active polling interval.
+An interval that is not a multiple of that timer is served on the next coordinator
+update; network delays can also extend the effective interval. Groups that are not
+due reuse their complete cached payloads. All entities read the shared snapshot;
+individual entities do not perform HTTP requests.
 
 ---
 

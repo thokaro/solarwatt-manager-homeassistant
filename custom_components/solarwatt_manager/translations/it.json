@@ -11,7 +11,7 @@
       "invalid_input": "Input non valido.",
       "invalid_auth": "Nome utente o password non validi.",
       "invalid_local_auth": "Nome utente o password non validi per il SOLARWATT Manager locale.",
-      "invalid_hems_auth": "Nome utente o password non validi per KiwiGrid HEMS (portale SOLARWATT Manager).",
+      "invalid_hems_auth": "Nome utente o password non validi per KiwiGrid HEMS (SOLARWATT Manager portal).",
       "not_solarwatt": "L'host non sembra essere un SOLARWATT Manager.",
       "cannot_connect": "Impossibile connettersi al SOLARWATT Manager.",
       "connection_failed": "Connessione al SOLARWATT Manager non riuscita.",
@@ -25,31 +25,34 @@
     "step": {
       "user": {
         "title": "Connetti SOLARWATT",
-        "description": "Configura il Manager locale, l'accesso al portale KiwiGrid o entrambe le sorgenti dati. È richiesta almeno una sorgente.",
+        "description": "Configura il Manager locale, l'accesso al SOLARWATT Manager portal o entrambe le sorgenti dati. È richiesta almeno una sorgente.",
         "sections": {
           "local_connection": {
             "name": "SOLARWATT Manager locale",
-            "description": "Accesso diretto nella rete locale. Fornisce SOLARWATT Flow e i dispositivi locali senza passare dal portale.",
+            "description": "Accesso diretto nella rete locale. Fornisce SOLARWATT Flow e i dispositivi locali senza passare dal portale. Usa la password dell'interfaccia web locale all'indirizzo http://energymanager.local/. Di solito puoi lasciare invariato il nome utente predefinito installer già inserito. L'interfaccia web locale non richiede un nome utente per l'accesso. L’intervallo di aggiornamento regola le letture dei dispositivi locali e di SOLARWATT Flow.",
             "data": {
               "host": "Host/IP",
               "username": "Nome utente",
-              "password": "Password"
+              "password": "Password",
+              "scan_interval": "Intervallo di aggiornamento (secondi)"
             }
           },
           "kiwigrid_connection": {
-            "name": "KiwiGrid online (portale SOLARWATT)",
-            "description": "Accesso online opzionale a KiwiGrid Flow, KiwiGrid Stats e ai dispositivi del portale supportati. Credenziali complete attivano automaticamente questa sorgente.",
+            "name": "KiwiGrid online (SOLARWATT Manager portal)",
+            "description": "Accesso online opzionale a KiwiGrid Flow, KiwiGrid Stats e ai dispositivi del portale supportati. Credenziali complete attivano automaticamente questa sorgente. Usa il nome utente o l'indirizzo e-mail e la password del tuo account SOLARWATT Manager portal all'indirizzo https://new.energymanager.com/.",
             "data": {
               "kiwigrid_hems_username": "Nome utente o indirizzo e-mail",
               "kiwigrid_hems_password": "Password",
-              "kiwigrid_hems_scan_interval": "Intervallo HEMS per dispositivi e Stats (secondi)"
+              "kiwigrid_hems_scan_interval": "Intervallo dispositivi HEMS (secondi)",
+              "kiwigrid_flow_scan_interval": "Intervallo KiwiGrid Flow (secondi)",
+              "kiwigrid_stats_scan_interval": "Intervallo KiwiGrid Stats (secondi)",
+              "kiwigrid_profile_cache_interval": "Durata cache del profilo utente (secondi)"
             }
           },
           "general_settings": {
-            "name": "Impostazioni di aggiornamento e sensori",
-            "description": "L'intervallo rapido si applica ai dispositivi locali, a SOLARWATT Flow e a KiwiGrid Flow. L'intervallo HEMS si applica agli altri dispositivi online e alle statistiche.",
+            "name": "Impostazioni dei sensori",
+            "description": "Soglie per le variazioni di energia e gestione delle letture di potenza temporaneamente non disponibili.",
             "data": {
-              "scan_interval": "Intervallo di aggiornamento (secondi)",
               "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
               "power_unavailable_threshold": "Soglia unavailable potenza (poll). Mantieni l'ultimo valore fino all'N-esimo unavailable; 0 = disattiva"
             }
@@ -66,7 +69,7 @@
         "sections": {
           "local_connection": {
             "name": "SOLARWATT Manager locale",
-            "description": "Accesso diretto al Manager nella rete locale.",
+            "description": "Accesso diretto al Manager nella rete locale. Usa la password dell'interfaccia web locale all'indirizzo http://energymanager.local/. Di solito puoi lasciare invariato il nome utente predefinito installer già inserito. L'interfaccia web locale non richiede un nome utente per l'accesso.",
             "data": {
               "host": "Host/IP",
               "username": "Nome utente",
@@ -74,8 +77,8 @@
             }
           },
           "kiwigrid_connection": {
-            "name": "KiwiGrid online (portale SOLARWATT)",
-            "description": "Accesso online a KiwiGrid Flow, KiwiGrid Stats e ai dispositivi del portale supportati.",
+            "name": "KiwiGrid online (SOLARWATT Manager portal)",
+            "description": "Accesso online a KiwiGrid Flow, KiwiGrid Stats e ai dispositivi del portale supportati. Usa il nome utente o l'indirizzo e-mail e la password del tuo account SOLARWATT Manager portal all'indirizzo https://new.energymanager.com/.",
             "data": {
               "kiwigrid_hems_username": "Nome utente o indirizzo e-mail",
               "kiwigrid_hems_password": "Password"
@@ -89,7 +92,7 @@
         "sections": {
           "local_connection": {
             "name": "SOLARWATT Manager locale",
-            "description": "Accesso diretto al Manager nella rete locale.",
+            "description": "Accesso diretto al Manager nella rete locale. Usa la password dell'interfaccia web locale all'indirizzo http://energymanager.local/. Di solito puoi lasciare invariato il nome utente predefinito installer già inserito. L'interfaccia web locale non richiede un nome utente per l'accesso.",
             "data": {
               "host": "Host/IP",
               "username": "Nome utente",
@@ -97,8 +100,8 @@
             }
           },
           "kiwigrid_connection": {
-            "name": "KiwiGrid online (portale SOLARWATT)",
-            "description": "Accesso online a KiwiGrid Flow, KiwiGrid Stats e ai dispositivi del portale supportati.",
+            "name": "KiwiGrid online (SOLARWATT Manager portal)",
+            "description": "Accesso online a KiwiGrid Flow, KiwiGrid Stats e ai dispositivi del portale supportati. Usa il nome utente o l'indirizzo e-mail e la password del tuo account SOLARWATT Manager portal all'indirizzo https://new.energymanager.com/.",
             "data": {
               "kiwigrid_hems_username": "Nome utente o indirizzo e-mail",
               "kiwigrid_hems_password": "Password"
@@ -118,7 +121,7 @@
       "invalid_power_unavailable_threshold": "La soglia unavailable della potenza deve essere maggiore o uguale a 0.",
       "invalid_input": "Input non valido.",
       "invalid_local_auth": "Nome utente o password non validi per il SOLARWATT Manager locale.",
-      "invalid_hems_auth": "Nome utente o password non validi per KiwiGrid HEMS (portale SOLARWATT Manager).",
+      "invalid_hems_auth": "Nome utente o password non validi per KiwiGrid HEMS (SOLARWATT Manager portal).",
       "not_solarwatt": "L'host non sembra essere un SOLARWATT Manager.",
       "cannot_connect": "Impossibile connettersi al SOLARWATT Manager.",
       "connection_failed": "Connessione al SOLARWATT Manager non riuscita.",
@@ -134,27 +137,30 @@
           },
           "local_connection": {
             "name": "SOLARWATT Manager locale",
-            "description": "Accesso diretto nella rete locale. Fornisce SOLARWATT Flow e i dispositivi locali senza passare dal portale.",
+            "description": "Accesso diretto nella rete locale. Fornisce SOLARWATT Flow e i dispositivi locali senza passare dal portale. Usa la password dell'interfaccia web locale all'indirizzo http://energymanager.local/. Di solito puoi lasciare invariato il nome utente predefinito installer già inserito. L'interfaccia web locale non richiede un nome utente per l'accesso. L’intervallo di aggiornamento regola le letture dei dispositivi locali e di SOLARWATT Flow.",
             "data": {
               "host": "Host/IP",
               "username": "Nome utente",
-              "password": "Password"
+              "password": "Password",
+              "scan_interval": "Intervallo di aggiornamento (secondi)"
             }
           },
           "kiwigrid_connection": {
-            "name": "KiwiGrid online (portale SOLARWATT)",
-            "description": "Accesso online opzionale a KiwiGrid Flow, KiwiGrid Stats e ai dispositivi del portale supportati. Credenziali complete attivano automaticamente questa sorgente.",
+            "name": "KiwiGrid online (SOLARWATT Manager portal)",
+            "description": "Accesso online opzionale a KiwiGrid Flow, KiwiGrid Stats e ai dispositivi del portale supportati. Credenziali complete attivano automaticamente questa sorgente. Usa il nome utente o l'indirizzo e-mail e la password del tuo account SOLARWATT Manager portal all'indirizzo https://new.energymanager.com/.",
             "data": {
               "kiwigrid_hems_username": "Nome utente o indirizzo e-mail",
               "kiwigrid_hems_password": "Password",
-              "kiwigrid_hems_scan_interval": "Intervallo HEMS per dispositivi e Stats (secondi)"
+              "kiwigrid_hems_scan_interval": "Intervallo dispositivi HEMS (secondi)",
+              "kiwigrid_flow_scan_interval": "Intervallo KiwiGrid Flow (secondi)",
+              "kiwigrid_stats_scan_interval": "Intervallo KiwiGrid Stats (secondi)",
+              "kiwigrid_profile_cache_interval": "Durata cache del profilo utente (secondi)"
             }
           },
           "general_settings": {
-            "name": "Impostazioni di aggiornamento e sensori",
-            "description": "L'intervallo rapido si applica ai dispositivi locali, a SOLARWATT Flow e a KiwiGrid Flow. L'intervallo HEMS si applica agli altri dispositivi online e alle statistiche.",
+            "name": "Impostazioni dei sensori",
+            "description": "Soglie per le variazioni di energia e gestione delle letture di potenza temporaneamente non disponibili.",
             "data": {
-              "scan_interval": "Intervallo di aggiornamento (secondi)",
               "energy_delta_kwh": "Soglia variazione energia (kWh). Scrivi solo se >= valore; 0 = scrivi a ogni aggiornamento",
               "power_unavailable_threshold": "Soglia unavailable potenza (poll). Mantieni l'ultimo valore fino all'N-esimo unavailable; 0 = disattiva"
             }
