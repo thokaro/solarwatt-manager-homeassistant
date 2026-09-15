@@ -4,8 +4,8 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from datetime import datetime
-from typing import Any
+from datetime import date, datetime
+from typing import Any, NamedTuple
 
 from aiohttp import ClientError, ClientResponseError, ClientSession, CookieJar
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -21,6 +21,9 @@ from .hems_client import (
     hems_device_names_by_id,
     hems_payloads_to_items,
     hems_payloads_to_things,
+    is_analytics_payload,
+    merge_analytics_aggregates,
+    summary_anchor_time_window,
 )
 from .hems_api import (
     ENERGY_OVERVIEW_PATH,
@@ -51,9 +54,29 @@ class SolarwattProtocolError(SolarwattError):
     """Unexpected response format or protocol mismatch."""
 
 
+class SummaryAnchor(NamedTuple):
+    """How one summary payload is assembled from its two halves."""
+
+    period: str
+    increment_key: str
+    getter_name: str
+
+
 HEMSEndpointGetter = Callable[[], Awaitable[Any]]
 HEMS_STATS_HISTORY_REQUEST_TIMEOUT = 300
 HEMS_SEQUENTIAL_RETRY_LIMIT = 4
+HEMS_SUMMARY_ANCHORS: dict[str, SummaryAnchor] = {
+    "analytics_finance_month": SummaryAnchor(
+        "month",
+        "analytics_finance",
+        "async_get_analytics_finance_month",
+    ),
+    "analytics_finance_year": SummaryAnchor(
+        "year",
+        "analytics_finance",
+        "async_get_analytics_finance_year",
+    ),
+}
 HEMS_YEAR_ANALYTICS_GETTERS: dict[str, str] = {
     "analytics_consumption_year": "async_get_analytics_consumption_year",
     "analytics_production_year": "async_get_analytics_production_year",
@@ -86,6 +109,7 @@ class SOLARWATTClient:
         self._hems_client: KiwiGridHEMSClient | None = None
         self._hems_client_credentials: tuple[str, str] | None = None
         self._hems_payload_cache: dict[str, Any] = {}
+        self._hems_summary_anchors: dict[str, tuple[date, Any]] = {}
         self.hems_partial_errors: tuple[str, ...] = ()
         self._log = logging.getLogger(__name__)
 
@@ -171,6 +195,7 @@ class SOLARWATTClient:
         )
         self._hems_client_credentials = credentials
         self._hems_payload_cache.clear()
+        self._hems_summary_anchors.clear()
         self.hems_partial_errors = ()
         return self._hems_client
 
@@ -658,6 +683,16 @@ class SOLARWATTClient:
         errors: list[str] = []
         successful_requests = 0
         semaphore = asyncio.Semaphore(4)
+        poll_now = datetime.now().astimezone()
+        anchor_windows = {
+            key: summary_anchor_time_window(anchor.period, now=poll_now)
+            for key, anchor in HEMS_SUMMARY_ANCHORS.items()
+        }
+        cached_anchors = {
+            key
+            for key, window in anchor_windows.items()
+            if self._anchor_is_cached(key, window)
+        }
 
         if hems.enabled:
             try:
@@ -681,9 +716,13 @@ class SOLARWATTClient:
                 except KiwiGridHEMSError as err:
                     return key, None, err
 
-        endpoint_getters = self._hems_endpoint_getters(
+        endpoint_getters = self._with_summary_anchor_getters(
             hems,
-            include_energy_flow=include_energy_flow,
+            self._hems_endpoint_getters(
+                hems,
+                include_energy_flow=include_energy_flow,
+            ),
+            anchor_windows,
         )
         getters_by_key = dict(endpoint_getters)
         results = list(await asyncio.gather(
@@ -711,10 +750,24 @@ class SOLARWATTClient:
                 len(retry_candidates),
             )
 
+        resolved_keys: set[str] = set()
         for key, payload, error in results:
+            if (
+                error is None
+                and any(
+                    key == anchor.increment_key
+                    for anchor in HEMS_SUMMARY_ANCHORS.values()
+                )
+                and not is_analytics_payload(payload)
+            ):
+                error = KiwiGridHEMSProtocolError(
+                    "Summary increment returned a malformed analytics payload"
+                )
             if error is None:
                 payloads[key] = payload
-                self._hems_payload_cache[key] = payload
+                if key not in HEMS_SUMMARY_ANCHORS:
+                    self._hems_payload_cache[key] = payload
+                resolved_keys.add(key)
                 successful_requests += 1
                 continue
             if isinstance(error, KiwiGridHEMSAuthError):
@@ -730,7 +783,90 @@ class SOLARWATTClient:
                 errors.append(f"{key}: {error}")
             payloads[key] = self._hems_payload_cache.get(key, [])
 
+        # An anchor served from cache proves nothing about the portal being up.
+        successful_requests -= len(cached_anchors & resolved_keys)
+        self._apply_summary_anchors(payloads, resolved_keys, poll_now)
         return payloads, errors, successful_requests
+
+    def _with_summary_anchor_getters(
+        self,
+        hems: KiwiGridHEMSClient,
+        endpoint_getters: tuple[tuple[str, HEMSEndpointGetter], ...],
+        anchor_windows: dict[str, tuple[datetime, datetime] | None],
+    ) -> tuple[tuple[str, HEMSEndpointGetter], ...]:
+        """Replace month/year finance getters by completed-day getters.
+
+        Those two ranges make the portal price one ISO week per request, so a
+        year-to-date request prices every week since January. Their completed
+        days are final, so they are fetched once per day.
+        """
+        return tuple(
+            (key, self._summary_anchor_getter(hems, key, anchor, anchor_windows[key]))
+            if (anchor := HEMS_SUMMARY_ANCHORS.get(key))
+            else (key, getter)
+            for key, getter in endpoint_getters
+        )
+
+    def _anchor_is_cached(
+        self,
+        key: str,
+        window: tuple[datetime, datetime] | None,
+    ) -> bool:
+        """Return whether one anchor can be answered without a request."""
+        if window is None:
+            return True
+        anchor_day, _payload = self._hems_summary_anchors.get(key, (None, None))
+        return anchor_day == window[1].date()
+
+    def _summary_anchor_getter(
+        self,
+        hems: KiwiGridHEMSClient,
+        key: str,
+        anchor: SummaryAnchor,
+        window: tuple[datetime, datetime] | None,
+    ) -> HEMSEndpointGetter:
+        async def _fetch_anchor() -> Any:
+            if window is None:
+                return None
+            if self._anchor_is_cached(key, window):
+                return self._hems_summary_anchors[key][1]
+            payload = await getattr(hems, anchor.getter_name)(
+                from_time=window[0],
+                to_time=window[1],
+            )
+            if not is_analytics_payload(payload):
+                # Pinning this would report today alone until the day rolls over.
+                raise KiwiGridHEMSProtocolError(
+                    f"GET /v11/analytics/finance {anchor.period} "
+                    "returned a malformed payload"
+                )
+            self._hems_summary_anchors[key] = (window[1].date(), payload)
+            return payload
+
+        return _fetch_anchor
+
+    def _apply_summary_anchors(
+        self,
+        payloads: dict[str, Any],
+        resolved_keys: set[str],
+        poll_now: datetime,
+    ) -> None:
+        """Publish the summary totals as completed days plus today.
+
+        Both halves have to be fresh and to belong to the same day. If either
+        is missing, or the day rolled over while the poll was running, the
+        previous total is published again rather than one that lost a half.
+        """
+        same_day = datetime.now().astimezone().date() == poll_now.date()
+        for key, anchor in HEMS_SUMMARY_ANCHORS.items():
+            if same_day and resolved_keys.issuperset({key, anchor.increment_key}):
+                merged = merge_analytics_aggregates(
+                    payloads.get(key),
+                    payloads.get(anchor.increment_key),
+                )
+                if merged is not None:
+                    self._hems_payload_cache[key] = merged
+            payloads[key] = self._hems_payload_cache.get(key, [])
 
     @staticmethod
     def _hems_endpoint_getters(
