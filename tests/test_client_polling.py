@@ -67,7 +67,7 @@ class FakeKiwiGridHEMSClient:
                     raise FakeKiwiGridHEMSConnectionError(
                         "battery temporarily unavailable"
                     )
-                if name.startswith("async_get_analytics_finance"):
+                if name.startswith("async_get_analytics"):
                     return {
                         "timeseries": [
                             {"id": "cost", "aggregated": float(call_count)},
@@ -142,7 +142,7 @@ def _client():
     client._hems_client = None
     client._hems_client_credentials = None
     client._hems_payload_cache = {}
-    client._hems_summary_anchors = {}
+    client._hems_daily_analytics_cache = {}
     client._hems_profile_updated_at = None
     client._hems_endpoint_errors = {}
     client.hems_partial_errors = ()
@@ -162,7 +162,7 @@ def test_hems_poll_retries_one_transient_endpoint_sequentially():
     assert len(FakeKiwiGridHEMSClient.instances) == 1
     assert 1 < hems.max_active_requests <= 4
     assert hems.calls["async_get_battery"] == 3
-    assert hems.calls["async_get_analytics_consumption_year"] == 2
+    assert hems.calls["async_get_analytics_consumption_work_today"] == 2
     assert captured_payloads[-1]["batteries"] == [
         {"endpoint": "async_get_battery", "call": 3}
     ]
@@ -313,7 +313,7 @@ def test_statistics_only_poll_reuses_device_payloads():
     assert hems.calls["async_get_devices"] == before["async_get_devices"]
     assert hems.calls["async_get_battery"] == before["async_get_battery"]
     assert hems.calls["async_get_user_profile"] == 1
-    assert hems.calls["async_get_analytics_consumption_year"] == 2
+    assert hems.calls["async_get_analytics_consumption_work_today"] == 2
     assert captured_payloads[-1]["devices"] is previous["devices"]
     assert captured_payloads[-1]["batteries"] is previous["batteries"]
 

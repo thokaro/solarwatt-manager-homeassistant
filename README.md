@@ -157,12 +157,30 @@ Failed Flow polls wait at least the HEMS device interval and the Flow interval.
 Within a HEMS poll, up to four isolated connection failures are retried once in
 sequence after the bounded parallel first pass. Endpoints that still fail keep their
 latest successful cached payload and are reported as partial diagnostics without
-marking the complete HEMS source unavailable. Month and year analytics remain part of
-every statistics poll so derived Total sensors follow the Stats interval.
-Finance month and year totals read their completed days once per day and add today's
-aggregate on top, which keeps their values live without asking the portal to price
-every week of the year again on every poll. A later correction to an already completed
-day therefore becomes visible with the next daily refresh rather than the next poll.
+marking the complete HEMS source unavailable. Consumption, production, storage, and
+finance month and year totals read their completed days once per day and add today's
+aggregate on every Stats poll. Energy totals use matching `WORK` day series; production
+and storage each require one additional daily-range request per Stats poll. Derived
+Total sensors therefore continue to follow the Stats interval. A later correction to
+an already completed day becomes visible with the next daily refresh.
+Month and year independence ratios (autarky and self-consumption) are fetched directly
+from the portal on the first successful Stats poll of each calendar day and retain
+that snapshot for the rest of the day. Today's ratios still follow the Stats interval.
+Reloading the integration or changing credentials clears these daily caches.
+
+Compared with the finance-only daily cache, regular analytics requests decrease from
+14 to 8 per Stats poll, plus 10 daily summary requests instead of 2. For example:
+
+| Stats interval | Previous requests/day | New requests/day | Requests saved/day |
+| --- | ---: | ---: | ---: |
+| 30 seconds | 40,322 | 23,050 | 17,272 |
+| 60 seconds | 20,162 | 11,530 | 8,632 |
+| 300 seconds | 4,034 | 2,314 | 1,720 |
+
+These estimates cover analytics only, assume continuous operation with successful
+requests and no reloads, and apply away from month/year boundaries. On the first day
+of a period, its completed-day requests are skipped. Device, Flow, profile, and
+authentication requests are additional and unchanged.
 
 The integration identifies a local installation by the Manager's detected location UID
 and a cloud-only installation by an anonymized account identifier. Changing the local
@@ -183,7 +201,8 @@ sensor therefore does not automatically use the faster update interval.
 | `KiwiGrid Flow`, including live consumer values | KiwiGrid Flow interval |
 | KiwiGrid batteries, PV plants, EV chargers, plugs, smart heaters, meters, inverters, and other physical HEMS devices | HEMS device interval |
 | `KiwiGrid Stats`, including today, month, year, and derived Total values | KiwiGrid Stats interval |
-| `KiwiGrid Stats` finance month and year totals | Completed days once per day when statistics are polled; today's value on every Stats poll |
+| `KiwiGrid Stats` consumption, production, storage, and finance month/year totals | Completed days once per day when statistics are polled; today's value on every Stats poll |
+| `KiwiGrid Stats` independence month/year ratios | First successful Stats poll of each calendar day |
 
 For example, set the local update interval to `15`, Flow to `30`, HEMS devices to
 `30`, Stats to `300`, and the profile cache to `3600` seconds. Local power remains
@@ -228,6 +247,13 @@ For year-based KiwiGrid energy statistics, the integration also creates derived 
 sensors with `state_class: total_increasing`. These sensors keep a persistent rollover
 base, so when the portal year value resets at the start of a new year, the last value
 from the previous year is added to the new year value.
+They also persist the highest calculated total. If the portal corrects a year value
+downward, the Total sensor holds its previous value until the corrected calculation
+catches up. For example, calculated values of `1000 → 990 → 995 → 1002 kWh` are
+published as `1000 → 1000 → 1000 → 1002 kWh`. The corrected raw year value is still
+used for rollover, so the correction is not added back at New Year. This protection
+survives restarts and does not require additional requests. Explicit offset and
+calibration services can still change the displayed total, including lowering it.
 
 The offset can be calculated automatically from the KiwiGrid year history. The
 service reads completed previous years only and stores their sum as the offset. The
@@ -235,8 +261,10 @@ current year is not read for the offset because it already comes from the live y
 sensor. The Total sensor value is therefore:
 
 ```
-current year value + sum of completed previous years
+max(previous highest calculated total, rollover base + current year value) + calibration offset
 ```
+
+The history service supplies the calibration offset from completed previous years.
 
 `max_years` limits how many completed previous years are read. For example, in 2026
 `max_years: 3` reads at most 2025, 2024, and 2023, stopping earlier when no value is

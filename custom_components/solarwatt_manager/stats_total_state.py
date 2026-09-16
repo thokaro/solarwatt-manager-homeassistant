@@ -33,6 +33,9 @@ class StatsTotalState:
         previous = finite_float(source.get("last"))
         previous_year = finite_float(source.get("year"))
         base = finite_float(source.get("base")) or 0.0
+        high_water = finite_float(source.get("high_water"))
+        if high_water is None and previous is not None:
+            high_water = base + previous
 
         if (
             previous is not None
@@ -50,7 +53,14 @@ class StatsTotalState:
             source["last"] = current
             self.dirty = True
 
-        return base + current
+        # Keep the corrected raw value for rollover, but never publish a drop.
+        calculated = base + current
+        if high_water is not None:
+            calculated = max(calculated, high_water)
+        if source.get("high_water") != calculated:
+            source["high_water"] = calculated
+            self.dirty = True
+        return calculated
 
     def value_with_offset(
         self,
@@ -114,7 +124,7 @@ def float_records(value: Any) -> dict[str, dict[str, float]]:
         if not isinstance(record, dict):
             continue
         parsed: dict[str, float] = {}
-        for record_key in ("base", "last", "year"):
+        for record_key in ("base", "last", "year", "high_water"):
             if (record_value := finite_float(record.get(record_key))) is not None:
                 parsed[record_key] = record_value
         if parsed:

@@ -708,6 +708,21 @@ class KiwiGridHEMSClient:
             to_time=to_time,
         )
 
+    async def async_get_analytics_production_work_today(
+        self,
+        *,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Fetch today's work production for month/year summary increments."""
+        return await self._async_get_analytics_timeseries(
+            "analytics_production",
+            from_time=from_time,
+            to_time=to_time,
+            period="today",
+            period_id="work_today",
+        )
+
     async def async_get_analytics_production_year(
         self,
         *,
@@ -748,6 +763,21 @@ class KiwiGridHEMSClient:
             "analytics_storage",
             from_time=from_time,
             to_time=to_time,
+        )
+
+    async def async_get_analytics_storage_work_today(
+        self,
+        *,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Fetch today's work storage for month/year summary increments."""
+        return await self._async_get_analytics_timeseries(
+            "analytics_storage",
+            from_time=from_time,
+            to_time=to_time,
+            period="today",
+            period_id="work_today",
         )
 
     async def async_get_analytics_storage_year(
@@ -930,6 +960,8 @@ def hems_payloads_to_items(
     analytics_consumption: dict[str, Any] | None = None,
     analytics_production: dict[str, Any] | None = None,
     analytics_consumption_work_today: dict[str, Any] | None = None,
+    analytics_production_work_today: dict[str, Any] | None = None,
+    analytics_storage_work_today: dict[str, Any] | None = None,
     analytics_consumption_month: dict[str, Any] | None = None,
     analytics_production_month: dict[str, Any] | None = None,
     analytics_consumption_year: dict[str, Any] | None = None,
@@ -1581,6 +1613,8 @@ def hems_payloads_to_things(
     analytics_consumption: dict[str, Any] | None = None,
     analytics_production: dict[str, Any] | None = None,
     analytics_consumption_work_today: dict[str, Any] | None = None,
+    analytics_production_work_today: dict[str, Any] | None = None,
+    analytics_storage_work_today: dict[str, Any] | None = None,
     analytics_consumption_month: dict[str, Any] | None = None,
     analytics_production_month: dict[str, Any] | None = None,
     analytics_consumption_year: dict[str, Any] | None = None,
@@ -2104,9 +2138,8 @@ def merge_analytics_aggregates(
 ) -> dict[str, Any] | None:
     """Extend completed-day aggregates by today's values.
 
-    Only valid for series whose aggregate is the sum of its values, which the
-    finance series are. Ratio series such as independence must not be combined
-    this way.
+    Only valid for additive finance and WORK energy series. Ratio series such
+    as independence must not be combined this way.
     """
     anchor_series = _analytics_series(anchor)
     increment_series = _analytics_series(increment)

@@ -16,8 +16,9 @@ hems_client = load_component_module("hems_client")
 
 TODAY_COST = 1.5
 ANCHOR_COSTS = {
-    "async_get_analytics_finance_month": 10.0,
-    "async_get_analytics_finance_year": 100.0,
+    f"async_get_analytics_{kind}_{period}": value
+    for kind in ("finance", "consumption", "production", "storage")
+    for period, value in (("month", 10.0), ("year", 100.0))
 }
 MID_PERIOD = datetime(2026, 9, 15, 14, 5).astimezone()
 FIRST_OF_MONTH = datetime(2026, 9, 1, 8, 30).astimezone()
@@ -166,7 +167,7 @@ def _client():
     client._hems_client = None
     client._hems_client_credentials = None
     client._hems_payload_cache = {}
-    client._hems_summary_anchors = {}
+    client._hems_daily_analytics_cache = {}
     client._hems_profile_updated_at = None
     client._hems_endpoint_errors = {}
     client.hems_partial_errors = ()
@@ -261,6 +262,195 @@ def test_summary_anchor_is_refreshed_after_a_calendar_day(at_time):
     assert _aggregate(payloads["analytics_finance_year"]) == 100.0 + 2.5
 
 
+@pytest.mark.parametrize("kind", ["consumption", "production", "storage"])
+@pytest.mark.parametrize("moment", [MID_PERIOD, FIRST_OF_MONTH, FIRST_OF_YEAR])
+def test_energy_summaries_follow_today_and_refresh_completed_days(at_time, kind, moment):
+    at_time(moment)
+    client = _client()
+    _poll(client)
+    hems = client._hems_client
+    hems.today_cost = 4.0
+    payloads = _poll(client)
+
+    assert hems.calls[f"async_get_analytics_{kind}_work_today"] == 2
+    for period, base in (("month", 10.0), ("year", 100.0)):
+        key = f"analytics_{kind}_{period}"
+        first_day = moment.day == 1 and (period == "month" or moment.month == 1)
+        assert hems.calls.get(f"async_get_{key}", 0) == (0 if first_day else 1)
+        assert _aggregate(payloads[key]) == (0 if first_day else base) + 4.0
+
+    at_time(moment + timedelta(days=1))
+    payloads = _poll(client)
+    for period, base in (("month", 10.0), ("year", 100.0)):
+        key = f"analytics_{kind}_{period}"
+        assert _aggregate(payloads[key]) == base + 4.0
+        assert hems.ranges[f"async_get_{key}"][-1][1].date() == moment.date()
+
+
+@pytest.mark.parametrize("kind", ["consumption", "production", "storage"])
+@pytest.mark.parametrize("failure", ["failing", "malformed"])
+@pytest.mark.parametrize("endpoint", ["work_today", "month", "year"])
+def test_energy_summary_failure_keeps_previous_total_and_recovers(
+    at_time, kind, failure, endpoint,
+):
+    at_time(MID_PERIOD)
+    client = _client()
+    previous = _poll(client)
+    hems = client._hems_client
+    at_time(MID_PERIOD + timedelta(days=1))
+    hems.today_cost = 4.0
+    getattr(hems, failure).add(f"async_get_analytics_{kind}_{endpoint}")
+    payloads = _poll(client)
+    affected = ("month", "year") if endpoint == "work_today" else (endpoint,)
+    for period in affected:
+        key = f"analytics_{kind}_{period}"
+        assert payloads[key] == previous[key]
+    assert client.hems_partial_errors
+
+    getattr(hems, failure).clear()
+    payloads = _poll(client)
+    for period, base in (("month", 10.0), ("year", 100.0)):
+        assert _aggregate(payloads[f"analytics_{kind}_{period}"]) == base + 4.0
+    assert not client.hems_partial_errors
+
+
+def test_independence_summaries_are_daily_portal_values(at_time):
+    at_time(FIRST_OF_YEAR)
+    client = _client()
+    previous = _poll(client)
+    hems = client._hems_client
+    hems.today_cost = 40.0
+    payloads = _poll(client)
+    assert _aggregate(payloads["analytics_independence"]) == 40.0
+    for period in ("month", "year"):
+        key = f"analytics_independence_{period}"
+        assert payloads[key] == previous[key]
+        assert hems.calls[f"async_get_{key}"] == 1
+
+    at_time(FIRST_OF_YEAR + timedelta(days=1))
+    payloads = _poll(client)
+    for period in ("month", "year"):
+        key = f"analytics_independence_{period}"
+        assert _aggregate(payloads[key]) == 40.0
+        assert hems.calls[f"async_get_{key}"] == 2
+
+
+@pytest.mark.parametrize("failure", ["failing", "malformed"])
+def test_failed_daily_ratio_refresh_retains_cache_and_retries(at_time, failure):
+    at_time(MID_PERIOD)
+    client = _client()
+    previous = _poll(client)
+    hems = client._hems_client
+    at_time(MID_PERIOD + timedelta(days=1))
+    hems.today_cost = 40.0
+    getattr(hems, failure).add("async_get_analytics_independence_month")
+    payloads = _poll(client)
+    assert payloads["analytics_independence_month"] == previous["analytics_independence_month"]
+    assert client.hems_partial_errors
+
+    getattr(hems, failure).clear()
+    payloads = _poll(client)
+    assert _aggregate(payloads["analytics_independence_month"]) == 40.0
+    assert not client.hems_partial_errors
+
+
+def test_analytics_request_budget(at_time):
+    at_time(MID_PERIOD)
+    client = _client()
+    _poll(client)
+    hems = client._hems_client
+
+    def analytics_calls():
+        return sum(count for name, count in hems.calls.items() if name.startswith("async_get_analytics"))
+
+    assert analytics_calls() == 18
+    _poll(client)
+    assert analytics_calls() == 18 + 8
+    at_time(MID_PERIOD + timedelta(days=1))
+    _poll(client)
+    assert analytics_calls() == 18 + 8 + 18
+
+
+def test_daily_ratio_caches_remain_independent(at_time, monkeypatch):
+    at_time(MID_PERIOD)
+    month_getter = "async_get_analytics_independence_month"
+    year_getter = "async_get_analytics_independence_year"
+    monkeypatch.setitem(ANCHOR_COSTS, month_getter, 80.0)
+    monkeypatch.setitem(ANCHOR_COSTS, year_getter, 60.0)
+    client = _client()
+    first = _poll(client)
+    assert _aggregate(first["analytics_independence_month"]) == 80.0
+    assert _aggregate(first["analytics_independence_year"]) == 60.0
+
+    monkeypatch.setitem(ANCHOR_COSTS, month_getter, 82.0)
+    monkeypatch.setitem(ANCHOR_COSTS, year_getter, 61.0)
+    cached = _poll(client)
+    assert cached["analytics_independence_month"] is first["analytics_independence_month"]
+    assert cached["analytics_independence_year"] is first["analytics_independence_year"]
+
+    at_time(MID_PERIOD + timedelta(days=1))
+    hems = client._hems_client
+    hems.failing.add(month_getter)
+    refreshed = _poll(client)
+    assert _aggregate(refreshed["analytics_independence_month"]) == 80.0
+    assert _aggregate(refreshed["analytics_independence_year"]) == 61.0
+
+    hems.failing.clear()
+    recovered = _poll(client)
+    assert _aggregate(recovered["analytics_independence_month"]) == 82.0
+    assert recovered["analytics_independence_year"] is refreshed["analytics_independence_year"]
+    assert hems.calls[year_getter] == 2
+
+
+def test_credentials_change_refreshes_all_daily_analytics(at_time, monkeypatch):
+    at_time(MID_PERIOD)
+    client = _client()
+    _poll(client)
+    old_hems = client._hems_client
+    monkeypatch.setitem(ANCHOR_COSTS, "async_get_analytics_finance_year", 200.0)
+    monkeypatch.setitem(ANCHOR_COSTS, "async_get_analytics_independence_year", 70.0)
+    asyncio.run(client.async_get_hems_items(username="other", password="password"))
+
+    assert client._hems_client is not old_hems
+    payloads = captured_payloads[-1]
+    assert _aggregate(payloads["analytics_finance_year"]) == 200.0 + TODAY_COST
+    assert _aggregate(payloads["analytics_independence_year"]) == 70.0
+    for key in (*client_module.HEMS_SUMMARY_ANCHORS, *client_module.HEMS_DAILY_SUMMARIES):
+        assert client._hems_client.calls[f"async_get_{key}"] == 1
+
+
+def test_device_poll_does_not_refresh_expired_daily_analytics(at_time):
+    at_time(MID_PERIOD)
+    client = _client()
+    previous = _poll(client)
+    hems = client._hems_client
+    before = dict(hems.calls)
+    at_time(MID_PERIOD + timedelta(days=1))
+    asyncio.run(client.async_get_hems_items(
+        username="user", password="password", refresh_statistics=False,
+    ))
+    for key in (*client_module.HEMS_SUMMARY_ANCHORS, *client_module.HEMS_DAILY_SUMMARIES):
+        assert hems.calls[f"async_get_{key}"] == before[f"async_get_{key}"]
+        assert captured_payloads[-1][key] is previous[key]
+
+    _poll(client)
+    for key in (*client_module.HEMS_SUMMARY_ANCHORS, *client_module.HEMS_DAILY_SUMMARIES):
+        assert hems.calls[f"async_get_{key}"] == before[f"async_get_{key}"] + 1
+
+
+@pytest.mark.parametrize("moment", [MID_PERIOD, FIRST_OF_YEAR])
+def test_cached_daily_analytics_do_not_mask_a_statistics_only_outage(at_time, moment):
+    at_time(moment)
+    client = _client()
+    _poll(client)
+    client._hems_client.fail_all = True
+    with pytest.raises(client_module.SolarwattConnectionError):
+        asyncio.run(client.async_get_hems_items(
+            username="user", password="password", refresh_devices=False,
+            profile_cache_interval=3600,
+        ))
+
+
 def test_failed_anchor_keeps_the_previous_total_without_adding_today_twice(at_time):
     at_time(MID_PERIOD)
     client = _client()
@@ -298,7 +488,7 @@ def test_malformed_today_keeps_cached_totals_and_recovers(at_time, moment):
     hems.malformed.add("async_get_analytics_finance")
     payloads = _poll(client)
 
-    for key in ("analytics_finance", *client_module.HEMS_SUMMARY_ANCHORS):
+    for key in ("analytics_finance", "analytics_finance_month", "analytics_finance_year"):
         assert payloads[key] == previous[key]
         assert client._hems_payload_cache[key] == previous[key]
     assert len(client.hems_partial_errors) == 1
@@ -322,7 +512,7 @@ def test_malformed_today_on_first_poll_does_not_publish_partial_totals(at_time):
 
     payloads = _poll(client)
 
-    for key in ("analytics_finance", *client_module.HEMS_SUMMARY_ANCHORS):
+    for key in ("analytics_finance", "analytics_finance_month", "analytics_finance_year"):
         assert not payloads[key]
         assert key not in client._hems_payload_cache
     assert len(client.hems_partial_errors) == 1
@@ -372,7 +562,7 @@ def test_anchor_without_series_reports_today_alone(at_time):
     # A range that carries no series is valid data, not a failure: the account
     # has nothing for the completed days, so the year is today.
     assert _aggregate(payloads["analytics_finance_year"]) == TODAY_COST
-    assert "analytics_finance_year" in client._hems_summary_anchors
+    assert "analytics_finance_year" in client._hems_daily_analytics_cache
     assert not client.hems_partial_errors
 
 
@@ -388,8 +578,8 @@ def test_malformed_anchor_keeps_the_previous_total(at_time):
 
     assert _aggregate(payloads["analytics_finance_year"]) == 100.0 + TODAY_COST
     # The stale anchor stays put but is not carried forward to the new day.
-    assert client._hems_summary_anchors["analytics_finance_year"][0] == date(
-        2026, 9, 14
+    assert client._hems_daily_analytics_cache["analytics_finance_year"][0] == date(
+        2026, 9, 15
     )
 
 

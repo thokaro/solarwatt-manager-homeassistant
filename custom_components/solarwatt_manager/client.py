@@ -5,6 +5,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime
+from functools import partial
 from typing import Any, NamedTuple
 
 from aiohttp import ClientError, ClientResponseError, ClientSession, CookieJar
@@ -66,17 +67,15 @@ HEMSEndpointGetter = Callable[[], Awaitable[Any]]
 HEMS_STATS_HISTORY_REQUEST_TIMEOUT = 300
 HEMS_SEQUENTIAL_RETRY_LIMIT = 4
 HEMS_SUMMARY_ANCHORS: dict[str, SummaryAnchor] = {
-    "analytics_finance_month": SummaryAnchor(
-        "month",
-        "analytics_finance",
-        "async_get_analytics_finance_month",
-    ),
-    "analytics_finance_year": SummaryAnchor(
-        "year",
-        "analytics_finance",
-        "async_get_analytics_finance_year",
-    ),
+    f"analytics_{kind}_{period}": SummaryAnchor(
+        period,
+        "analytics_finance" if kind == "finance" else f"analytics_{kind}_work_today",
+        f"async_get_analytics_{kind}_{period}",
+    )
+    for kind in ("consumption", "production", "storage", "finance")
+    for period in ("month", "year")
 }
+HEMS_DAILY_SUMMARIES = ("analytics_independence_month", "analytics_independence_year")
 HEMS_YEAR_ANALYTICS_GETTERS: dict[str, str] = {
     "analytics_consumption_year": "async_get_analytics_consumption_year",
     "analytics_production_year": "async_get_analytics_production_year",
@@ -109,7 +108,7 @@ class SOLARWATTClient:
         self._hems_client: KiwiGridHEMSClient | None = None
         self._hems_client_credentials: tuple[str, str] | None = None
         self._hems_payload_cache: dict[str, Any] = {}
-        self._hems_summary_anchors: dict[str, tuple[date, Any]] = {}
+        self._hems_daily_analytics_cache: dict[str, tuple[date, Any]] = {}
         self._hems_profile_updated_at: float | None = None
         self._hems_endpoint_errors: dict[str, str] = {}
         self.hems_partial_errors: tuple[str, ...] = ()
@@ -197,7 +196,7 @@ class SOLARWATTClient:
         )
         self._hems_client_credentials = credentials
         self._hems_payload_cache.clear()
-        self._hems_summary_anchors.clear()
+        self._hems_daily_analytics_cache.clear()
         self._hems_profile_updated_at = None
         self._hems_endpoint_errors.clear()
         self.hems_partial_errors = ()
@@ -710,15 +709,7 @@ class SOLARWATTClient:
             and "user_profile" in self._hems_payload_cache
         )
         poll_now = datetime.now().astimezone()
-        anchor_windows = {
-            key: summary_anchor_time_window(anchor.period, now=poll_now)
-            for key, anchor in HEMS_SUMMARY_ANCHORS.items()
-        }
-        cached_anchors = {
-            key
-            for key, window in anchor_windows.items()
-            if self._anchor_is_cached(key, window)
-        }
+        cache_hits: set[str] = set()
 
         if hems.enabled:
             try:
@@ -742,13 +733,14 @@ class SOLARWATTClient:
                 except KiwiGridHEMSError as err:
                     return key, None, err
 
-        endpoint_getters = self._with_summary_anchor_getters(
+        endpoint_getters = self._with_daily_analytics_getters(
             hems,
             self._hems_endpoint_getters(
                 hems,
                 include_energy_flow=include_energy_flow,
             ),
-            anchor_windows,
+            poll_now,
+            cache_hits,
         )
         scheduled_getters: list[tuple[str, HEMSEndpointGetter]] = []
         for key, getter in endpoint_getters:
@@ -823,68 +815,72 @@ class SOLARWATTClient:
             self._hems_endpoint_errors[key] = f"{key}: {error}"
             payloads[key] = self._hems_payload_cache.get(key, [])
 
-        # An anchor served from cache proves nothing about the portal being up.
-        successful_requests -= len(cached_anchors & resolved_keys)
+        # Cached or empty-period responses prove nothing about portal availability.
+        successful_requests -= len(cache_hits & resolved_keys)
         self._apply_summary_anchors(payloads, resolved_keys, poll_now)
         errors = list(self._hems_endpoint_errors.values()) if collect_errors else []
         return payloads, errors, successful_requests
 
-    def _with_summary_anchor_getters(
+    def _with_daily_analytics_getters(
         self,
         hems: KiwiGridHEMSClient,
         endpoint_getters: tuple[tuple[str, HEMSEndpointGetter], ...],
-        anchor_windows: dict[str, tuple[datetime, datetime] | None],
+        poll_now: datetime,
+        cache_hits: set[str],
     ) -> tuple[tuple[str, HEMSEndpointGetter], ...]:
-        """Replace month/year finance getters by completed-day getters.
-
-        Those two ranges make the portal price one ISO week per request, so a
-        year-to-date request prices every week since January. Their completed
-        days are final, so they are fetched once per day.
-        """
-        return tuple(
-            (key, self._summary_anchor_getter(hems, key, anchor, anchor_windows[key]))
-            if (anchor := HEMS_SUMMARY_ANCHORS.get(key))
-            else (key, getter)
-            for key, getter in endpoint_getters
-        )
-
-    def _anchor_is_cached(
-        self,
-        key: str,
-        window: tuple[datetime, datetime] | None,
-    ) -> bool:
-        """Return whether one anchor can be answered without a request."""
-        if window is None:
-            return True
-        anchor_day, _payload = self._hems_summary_anchors.get(key, (None, None))
-        return anchor_day == window[1].date()
-
-    def _summary_anchor_getter(
-        self,
-        hems: KiwiGridHEMSClient,
-        key: str,
-        anchor: SummaryAnchor,
-        window: tuple[datetime, datetime] | None,
-    ) -> HEMSEndpointGetter:
-        async def _fetch_anchor() -> Any:
-            if window is None:
-                return None
-            if self._anchor_is_cached(key, window):
-                return self._hems_summary_anchors[key][1]
-            payload = await getattr(hems, anchor.getter_name)(
-                from_time=window[0],
-                to_time=window[1],
-            )
-            if not is_analytics_payload(payload):
-                # Pinning this would report today alone until the day rolls over.
-                raise KiwiGridHEMSProtocolError(
-                    f"GET /v11/analytics/finance {anchor.period} "
-                    "returned a malformed payload"
+        """Cache completed-day totals and server-calculated ratios daily."""
+        poll_day = poll_now.date()
+        getters: list[tuple[str, HEMSEndpointGetter]] = []
+        for key, getter in endpoint_getters:
+            request_getter: HEMSEndpointGetter | None = getter
+            if anchor := HEMS_SUMMARY_ANCHORS.get(key):
+                window = summary_anchor_time_window(anchor.period, now=poll_now)
+                request_getter = (
+                    partial(
+                        getattr(hems, anchor.getter_name),
+                        from_time=window[0],
+                        to_time=window[1],
+                    )
+                    if window is not None else None
                 )
-            self._hems_summary_anchors[key] = (window[1].date(), payload)
-            return payload
+            elif key not in HEMS_DAILY_SUMMARIES:
+                getters.append((key, getter))
+                continue
+            getters.append((key, partial(
+                self._async_get_daily_analytics,
+                key,
+                request_getter,
+                poll_day,
+                cache_hits,
+            )))
+        return tuple(getters)
 
-        return _fetch_anchor
+    async def _async_get_daily_analytics(
+        self,
+        key: str,
+        getter: HEMSEndpointGetter | None,
+        poll_day: date,
+        cache_hits: set[str],
+    ) -> Any:
+        """Reuse a daily response or fetch and validate it before caching.
+
+        A missing getter denotes the first day of a period, with no completed
+        days to request. Cache dates always identify the poll's calendar day.
+        """
+        if getter is None:
+            cache_hits.add(key)
+            return None
+        cached_day, payload = self._hems_daily_analytics_cache.get(key, (None, None))
+        if cached_day == poll_day:
+            cache_hits.add(key)
+            return payload
+        payload = await getter()
+        if not is_analytics_payload(payload):
+            raise KiwiGridHEMSProtocolError(
+                f"{key} returned a malformed analytics payload"
+            )
+        self._hems_daily_analytics_cache[key] = (poll_day, payload)
+        return payload
 
     def _apply_summary_anchors(
         self,
@@ -926,6 +922,8 @@ class SOLARWATTClient:
             ("smart_heaters", hems.async_get_smart_heaters),
             ("analytics_consumption", hems.async_get_analytics_consumption),
             ("analytics_production", hems.async_get_analytics_production),
+            ("analytics_production_work_today", hems.async_get_analytics_production_work_today),
+            ("analytics_storage_work_today", hems.async_get_analytics_storage_work_today),
             (
                 "analytics_consumption_work_today",
                 hems.async_get_analytics_consumption_work_today,

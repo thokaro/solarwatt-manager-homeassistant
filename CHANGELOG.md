@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026.9.3
+
+**Update behavior:** Month/year autarky and self-consumption ratios now update once
+per calendar day. Energy totals, including derived Total sensors, continue to update
+at the configured KiwiGrid Stats interval. Today's ratios also retain that interval.
+
+### ✨ Features
+
+- Added protection for derived KiwiGrid Stats Total energy sensors against downward portal corrections. Persist the highest calculated total across restarts while retaining the corrected raw value for calendar-year rollover, so corrections do not cause false meter resets or get counted twice. Explicit calibration and offset changes remain supported.
+
+### 🛠️ Changes
+
+- Consolidated daily analytics cache handling for completed-day totals and portal ratios, with one validation and expiry path and explicit tracking of cache hits. The refactor preserves the polling, request counts, retries, and Total protection described in this release.
+- Extended the finance daily cache to consumption, production, and storage month/year totals. Completed days are fetched once per calendar day and combined with today's matching WORK energy series on every Stats poll. Production and storage each add one current-day WORK request per poll; existing live POWER sensors remain unchanged.
+- Month/year autarky and self-consumption ratios now retain the portal value from the first successful Stats poll of each day. Today's ratios remain live; percentages are never added together.
+- Regular analytics requests decrease from 14 to 8 per Stats poll, with 10 daily summary requests instead of 2: approximately 17,272 fewer requests per day at a 30-second Stats interval, excluding retries and reloads.
+
+### ⬆️ Upgrade notes
+
+- Existing sensor names and unique IDs remain unchanged; no config-entry migration is required. Derived Total energy sensors still follow the Stats interval. Corrections to completed-day energy values appear after the next daily refresh; month/year ratios update daily. Reloading the integration clears the caches.
+- Existing Total state records acquire the optional persisted high-water value automatically from their saved base and last year value; no manual storage migration is needed. Downward corrections remain visible in the source year sensor while derived Total sensors wait for the corrected sum to catch up.
+
 ## 2026.9.2
 
 ### ✨ Features

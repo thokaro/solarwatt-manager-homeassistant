@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -577,6 +579,62 @@ def test_hems_context_empty_body_returns_empty_context():
     client = KiwiGridHEMSClient(_FakeContextSession())
 
     assert asyncio.run(client._async_fetch_context()) == {}
+
+
+@pytest.mark.parametrize("kind", ["consumption", "production", "storage"])
+def test_work_today_requests_energy_series_for_the_current_day(kind):
+    class FakeClient(KiwiGridHEMSClient):
+        async def _async_get_json(self, path, *, where):
+            self.requested_path = path
+            return {"timeseries": []}
+
+    client = FakeClient(session=None)
+    asyncio.run(getattr(client, f"async_get_analytics_{kind}_work_today")(
+        from_time=datetime(2026, 9, 16, 0, 0),
+        to_time=datetime(2026, 9, 16, 14, 30),
+    ))
+    url = urlsplit(client.requested_path)
+    assert url.path == f"/analytics/{kind}"
+    assert parse_qs(url.query) == {
+        "from": ["2026-09-16T00:00:00"],
+        "to": ["2026-09-16T14:30:00"],
+        "type": ["WORK"],
+        **({"isDetailed": ["true"]} if kind == "production" else {}),
+    }
+
+
+@pytest.mark.parametrize("kind", ["consumption", "production", "storage"])
+@pytest.mark.parametrize("period", ["month", "year"])
+def test_energy_summary_merge_preserves_existing_sensor_names_and_units(kind, period):
+    anchor = globals()[f"ANALYTICS_{kind.upper()}_{period.upper()}_PAYLOAD"]
+    today = {
+        "timeseries": [dict(series, aggregated=500) for series in anchor["timeseries"]],
+        "devices": anchor.get("devices", []),
+    }
+    merged = hems_client.merge_analytics_aggregates(anchor, today)
+    key = f"analytics_{kind}_{period}"
+    previous = hems_payloads_to_items(**{key: anchor})
+    current = hems_payloads_to_items(**{
+        key: merged,
+        "analytics_production_work_today": today,
+        "analytics_storage_work_today": today,
+    })
+    assert [item["name"] for item in current] == [item["name"] for item in previous]
+    assert [item["label"] for item in current] == [item["label"] for item in previous]
+    assert any(item["type"] == "Number:Energy" for item in current)
+    for before, after in zip(previous, current, strict=True):
+        if before["type"] != "Number:Energy":
+            assert after == before
+            continue
+        assert after["state"].endswith(" kWh")
+        assert float(after["state"].split()[0]) == pytest.approx(
+            float(before["state"].split()[0]) + 0.5,
+        )
+    assert hems_payloads_to_things(**{
+        key: merged,
+        "analytics_production_work_today": today,
+        "analytics_storage_work_today": today,
+    }) == hems_payloads_to_things(**{key: merged})
 
 
 def test_hems_login_start_http_503_is_temporary_connection_error():
