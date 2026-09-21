@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### 🛠️ Changes
+
+- Gave month and year analytics requests their own 30 second timeout, while today's requests keep the 10 second default. Those ranges are priced one ISO week at a time on the portal and regularly need longer than 10 seconds, so their daily cache entry was never stored and the request was repeated on every poll instead of once per day.
+
 ## 2026.9.3
 
 **Update behavior:** Month/year autarky and self-consumption ratios now update once
