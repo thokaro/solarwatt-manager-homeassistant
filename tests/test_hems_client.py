@@ -603,6 +603,9 @@ class _TimeoutRecordingSession:
     ("getter", "expected"),
     [
         ("async_get_analytics_finance", 10),
+        ("async_get_analytics_consumption_work_today", 10),
+        ("async_get_analytics_production_work_today", 10),
+        ("async_get_analytics_storage_work_today", 10),
         ("async_get_analytics_finance_month", hems_client.SUMMARY_REQUEST_TIMEOUT),
         ("async_get_analytics_finance_year", hems_client.SUMMARY_REQUEST_TIMEOUT),
         ("async_get_analytics_consumption_year", hems_client.SUMMARY_REQUEST_TIMEOUT),

@@ -938,7 +938,6 @@ class KiwiGridHEMSClient:
             )
             query_values = dict(config.get("today_query", {}))
             where_period = ""
-            timeout = self._request_timeout
         else:
             start, end = _work_summary_time_window(
                 period=period,
@@ -947,7 +946,11 @@ class KiwiGridHEMSClient:
             )
             query_values = dict(config.get("period_query", {}))
             where_period = f" {_analytics_where_period(normalized_period_id)}"
-            timeout = self._summary_request_timeout
+        timeout = (
+            self._summary_request_timeout
+            if period in {"month", "year"}
+            else self._request_timeout
+        )
         query_values = {
             "from": _format_analytics_time(start),
             "to": _format_analytics_time(end),
