@@ -1,11 +1,21 @@
 # Changelog
 
-## Unreleased
+## 2026.9.4
+
+### 🐛 Fixes
+
+- Increased the timeout for month and year analytics requests to at least 30 seconds. Slow portal responses can now populate the daily cache instead of timing out after 10 seconds and being requested again on every Stats poll. Longer client-configured timeouts are preserved.
+- Kept the existing timeout for all current-day analytics requests, including the consumption, production, and storage WORK series.
 
 ### 🛠️ Changes
 
-- Documented the existing battery backup status, reserve, mode, and charge sensors with an emergency-power notification example. Added regression coverage for the KATEK SolBrid payload from issue #19, both backup flag states, reserve limits, and omitted fields. Existing entities, names, unique IDs, and polling behavior are unchanged; no migration is required.
-- Gave month and year analytics requests their own 30 second timeout, while today's requests keep the 10 second default. Those ranges are priced one ISO week at a time on the portal and regularly need longer than 10 seconds, so their daily cache entry was never stored and the request was repeated on every poll instead of once per day.
+- Documented the existing battery backup status, reserve, mode, and charge sensors with an emergency-power notification example. The battery must be enabled in the integration's device selection and KiwiGrid Online credentials must be configured.
+- Added regression coverage for the KATEK SolBrid payload from issue #19, both backup flag states, reserve limits, omitted fields, and device selection.
+
+### ⬆️ Upgrade notes
+
+- Existing sensor names, unique IDs, and configured polling intervals remain unchanged. No migration is required.
+- Battery backup flags remain ordinary sensors with text states `"true"` and `"false"`; this release documents existing support and does not add new binary sensors. Their updates follow the HEMS device interval and depend on successful portal requests.
 
 ## 2026.9.3
 
