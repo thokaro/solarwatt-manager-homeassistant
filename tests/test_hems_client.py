@@ -581,10 +581,66 @@ def test_hems_context_empty_body_returns_empty_context():
     assert asyncio.run(client._async_fetch_context()) == {}
 
 
+class _TimeoutRecordingResponse(_FakeContextResponse):
+    headers = {"Content-Type": "application/json"}
+
+    async def json(self):
+        return {"timeseries": []}
+
+
+class _TimeoutRecordingSession:
+    """Session stub that records the timeout each request was given."""
+
+    def __init__(self):
+        self.timeouts = []
+
+    def get(self, *args, **kwargs):
+        self.timeouts.append(kwargs.get("timeout"))
+        return _TimeoutRecordingResponse()
+
+
+@pytest.mark.parametrize(
+    ("getter", "expected"),
+    [
+        ("async_get_analytics_finance", 10),
+        ("async_get_analytics_finance_month", hems_client.SUMMARY_REQUEST_TIMEOUT),
+        ("async_get_analytics_finance_year", hems_client.SUMMARY_REQUEST_TIMEOUT),
+        ("async_get_analytics_consumption_year", hems_client.SUMMARY_REQUEST_TIMEOUT),
+        ("async_get_analytics_independence_month", hems_client.SUMMARY_REQUEST_TIMEOUT),
+    ],
+)
+def test_summary_ranges_wait_longer_than_a_single_day(getter, expected):
+    class FakeClient(KiwiGridHEMSClient):
+        async def _async_get_json(self, path, *, where, timeout=None):
+            self.used_timeout = timeout
+            return {"timeseries": []}
+
+    client = FakeClient(session=None)
+    asyncio.run(getattr(client, getter)())
+
+    assert client.used_timeout == expected
+
+
+def test_summary_timeout_never_shortens_a_longer_configured_timeout():
+    client = KiwiGridHEMSClient(session=None, request_timeout=300)
+
+    assert client._summary_request_timeout == 300
+
+
+def test_request_timeout_is_applied_to_the_session():
+    session = _TimeoutRecordingSession()
+    client = KiwiGridHEMSClient(session, access_token="token")
+
+    asyncio.run(client._async_get_json("/x", where="GET /x"))
+    asyncio.run(client._async_get_json("/y", where="GET /y", timeout=45))
+
+    assert session.timeouts == [10, 45]
+
+
 @pytest.mark.parametrize("kind", ["consumption", "production", "storage"])
 def test_work_today_requests_energy_series_for_the_current_day(kind):
     class FakeClient(KiwiGridHEMSClient):
-        async def _async_get_json(self, path, *, where):
+        async def _async_get_json(self, path, *, where, timeout=None):
             self.requested_path = path
             return {"timeseries": []}
 
@@ -1039,7 +1095,7 @@ def test_async_get_energy_flow_uses_live_endpoint_without_query_parameters():
             super().__init__(session=None, username="user", password="pass")
             self.requested_path = None
 
-        async def _async_get_json(self, path, *, where):
+        async def _async_get_json(self, path, *, where, timeout=None):
             self.requested_path = path
             return {}
 
@@ -1056,7 +1112,7 @@ def test_async_get_home_consumption_consumers_uses_live_endpoint_without_query_p
             super().__init__(session=None, username="user", password="pass")
             self.requested_path = None
 
-        async def _async_get_json(self, path, *, where):
+        async def _async_get_json(self, path, *, where, timeout=None):
             self.requested_path = path
             return []
 
@@ -1073,7 +1129,7 @@ def test_async_get_smart_heaters_uses_live_endpoint_without_query_parameters():
             super().__init__(session=None, username="user", password="pass")
             self.requested_path = None
 
-        async def _async_get_json(self, path, *, where):
+        async def _async_get_json(self, path, *, where, timeout=None):
             self.requested_path = path
             return []
 

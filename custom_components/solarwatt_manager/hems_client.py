@@ -37,6 +37,11 @@ ENDPOINT_ANALYTICS_INDEPENDENCE = "/analytics/independence"
 ENDPOINT_ANALYTICS_FINANCE = "/analytics/finance"
 ENDPOINT_USER_PROFILE = "/user/profile"
 
+# Month and year ranges are priced one ISO week at a time on the server, so
+# they answer far slower than a single day. They are fetched once per day, so
+# waiting longer for them costs nothing while the default timeout loses them.
+SUMMARY_REQUEST_TIMEOUT = 30
+
 _LOGGER = logging.getLogger(__name__)
 
 ANALYTICS_KIND_CONFIG: dict[str, dict[str, Any]] = {
@@ -162,6 +167,10 @@ class KiwiGridHEMSClient:
         self._password = str(password or "")
         self._api_base = api_base.rstrip("/")
         self._request_timeout = max(int(request_timeout), 1)
+        self._summary_request_timeout = max(
+            self._request_timeout,
+            SUMMARY_REQUEST_TIMEOUT,
+        )
         self._auth_lock = asyncio.Lock()
 
     @property
@@ -397,7 +406,13 @@ class KiwiGridHEMSClient:
                 return
             await self.async_refresh_token()
 
-    async def _async_get_json(self, path: str, *, where: str) -> Any:
+    async def _async_get_json(
+        self,
+        path: str,
+        *,
+        where: str,
+        timeout: int | None = None,
+    ) -> Any:
         await self._async_ensure_access_token()
 
         for attempt in range(2):
@@ -412,7 +427,7 @@ class KiwiGridHEMSClient:
                 async with self._session.get(
                     url,
                     headers=headers,
-                    timeout=self._request_timeout,
+                    timeout=timeout or self._request_timeout,
                 ) as resp:
                     if resp.status in (401, 403):
                         if attempt == 0 and (self._refresh_token or (self._username and self._password)):
@@ -923,6 +938,7 @@ class KiwiGridHEMSClient:
             )
             query_values = dict(config.get("today_query", {}))
             where_period = ""
+            timeout = self._request_timeout
         else:
             start, end = _work_summary_time_window(
                 period=period,
@@ -931,6 +947,7 @@ class KiwiGridHEMSClient:
             )
             query_values = dict(config.get("period_query", {}))
             where_period = f" {_analytics_where_period(normalized_period_id)}"
+            timeout = self._summary_request_timeout
         query_values = {
             "from": _format_analytics_time(start),
             "to": _format_analytics_time(end),
@@ -940,6 +957,7 @@ class KiwiGridHEMSClient:
         payload = await self._async_get_json(
             f"{endpoint}?{urlencode(query_values)}",
             where=where,
+            timeout=timeout,
         )
         if not isinstance(payload, dict):
             raise KiwiGridHEMSProtocolError(f"{where} response is not an object")
