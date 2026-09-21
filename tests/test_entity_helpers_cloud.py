@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from .module_loader import load_component_module_with_stubs, make_module
+from .module_loader import load_component_module, load_component_module_with_stubs, make_module
 
 
 PACKAGE_NAME = "solarwatt_manager_entity_helpers_cloud_test"
@@ -96,3 +96,31 @@ def test_cloud_only_device_selection_uses_entry_id_as_registry_anchor():
             "remove_config_entry_id": "cloud-entry",
         }
     ]
+
+
+def test_battery_backup_items_are_discovered_as_sensors_for_the_selected_battery():
+    hems_client = load_component_module("hems_client")
+    battery_id = "704de3e0-1111-2222-3333-444444444444"
+    raw_items = hems_client.battery_endpoint_to_items([{
+        "id": battery_id,
+        "backup_active": False,
+        "backup_available": True,
+        "backup_state_of_charge": 0.15,
+        "mode": "DISCHARGING",
+        "state_of_charge": 0.92,
+    }])
+    items = {
+        item["name"]: SimpleNamespace(oh_type=item["type"])
+        for item in raw_items
+    }
+    owners = dict.fromkeys(items, battery_id)
+    prefix = f"hems_battery_{battery_id.replace('-', '_')}_"
+    expected = {
+        f"{prefix}{suffix}" for suffix in (
+            "backup_active", "backup_available", "backup_state_of_charge",
+            "mode", "state_of_charge",
+        )
+    }
+
+    assert set(entity_helpers.iter_item_sensor_names(items, owners, {battery_id})) == expected
+    assert list(entity_helpers.iter_item_sensor_names(items, owners, set())) == []
