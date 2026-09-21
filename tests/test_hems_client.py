@@ -789,6 +789,61 @@ def test_hems_payloads_to_items_maps_battery_measurements_without_metadata_senso
     assert not any(item["name"].endswith("_firmware") for item in items)
 
 
+@pytest.mark.parametrize("backup_active", [False, True])
+@pytest.mark.parametrize("backup_available", [False, True])
+@pytest.mark.parametrize("reserve", [0, 0.15, 1])
+def test_battery_backup_fields_are_exposed_on_the_battery_device(
+    backup_active, backup_available, reserve,
+):
+    battery = {
+        "id": BATTERY_ID,
+        "backup_active": backup_active,
+        "backup_available": backup_available,
+        "backup_state_of_charge": reserve,
+        "battery_type": "BATTERY",
+        "manufacturer": "KATEK Memmingen GmbH",
+        "mode": "DISCHARGING",
+        "model_code": "SolBrid 10-3-2",
+        "state_of_charge": 0.92,
+        "type": "BATTERY",
+    }
+    items = {item["name"]: item for item in hems_payloads_to_items(batteries=[battery])}
+    things = hems_payloads_to_things(batteries=[battery])
+    assert len(things) == 1
+    assert things[0]["UID"] == BATTERY_ID
+    linked_items = {
+        name for channel in things[0]["channels"] for name in channel["linkedItems"]
+    }
+    parse_state = load_component_module("state_parser").parse_state
+    expected = {
+        "backup_active": (str(backup_active).lower(), None),
+        "backup_available": (str(backup_available).lower(), None),
+        "backup_state_of_charge": (reserve * 100, "%"),
+        "mode": ("DISCHARGING", None),
+        "state_of_charge": (92, "%"),
+    }
+    for suffix, (value, unit) in expected.items():
+        name = f"hems_battery_{BATTERY_ID.replace('-', '_')}_{suffix}"
+        assert name in linked_items
+        item = items[name]
+        parsed = parse_state(item["state"], oh_type=item["type"])
+        assert (parsed.value, parsed.unit) == (value, unit)
+        assert item["editable"] is False
+
+
+@pytest.mark.parametrize("optional_fields", [{}, {
+    "backup_active": None,
+    "backup_available": None,
+    "backup_state_of_charge": None,
+}])
+def test_battery_without_backup_fields_has_no_backup_items(optional_fields):
+    items = hems_payloads_to_items(batteries=[{
+        "id": BATTERY_ID, "state_of_charge": 0.92, **optional_fields,
+    }])
+
+    assert not any("_backup_" in item["name"] for item in items)
+
+
 def test_hems_payloads_to_items_maps_smart_heater_temperature():
     items = hems_payloads_to_items(
         smart_heaters=[

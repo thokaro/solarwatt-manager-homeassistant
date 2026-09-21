@@ -233,6 +233,58 @@ When complete portal credentials are configured, the integration adds supported 
 
 HEMS metadata such as type, device state, optimization mode, switch state, and override requirements is exposed as diagnostic sensors. Device metadata such as manufacturer, model, firmware, and serial number is mapped to Home Assistant device information instead of separate ordinary sensors.
 
+### Battery backup / emergency power
+
+The integration already exposes the following `/v11/battery` fields as ordinary
+`sensor` entities on the battery device when the portal supplies them. This also
+applies to the KATEK SolBrid example in [issue #19](https://github.com/thokaro/solarwatt-manager-homeassistant/issues/19);
+no manufacturer-specific configuration is needed.
+
+| Sensor name | API field | Home Assistant state |
+| --- | --- | --- |
+| Backup Active | `backup_active` | Text `"true"` or `"false"`: emergency power currently active |
+| Backup Available | `backup_available` | Text `"true"` or `"false"`: backup capability available, not necessarily active |
+| Backup State Of Charge | `backup_state_of_charge` | Emergency reserve in percent; `0.15` becomes `15 %` |
+| Mode | `mode` | API mode text, for example `DISCHARGING` |
+| State Of Charge | `state_of_charge` | Current battery charge in percent; `0.92` becomes `92 %` |
+
+Configure KiwiGrid Online credentials and select the battery in the integration's
+device selection. Open the battery device under **Settings → Devices & services**
+to find its entities; check **Developer tools → States** for their actual entity IDs
+and values. Fields omitted by the portal do not create new sensors. The two backup
+flags are ordinary text sensors, so automations must match `"true"` / `"false"`.
+
+These values follow the **HEMS device interval**, not the Flow or Stats interval.
+Changes are detected on a successful device poll and depend on the portal being
+reachable and up to date. Cached values during a connection failure do not confirm
+the current emergency-power status.
+
+Example for an automation's YAML editor: replace `sensor.your_battery_backup_active`
+with the actual **Backup Active** entity ID. This creates a Home Assistant
+notification when the observed state changes from `"false"` to `"true"`.
+
+```yaml
+alias: Battery emergency power activated
+triggers:
+  - trigger: state
+    entity_id: sensor.your_battery_backup_active
+    from: "false"
+    to: "true"
+actions:
+  - action: persistent_notification.create
+    data:
+      title: Emergency power active
+      message: The battery reports that emergency power is active.
+mode: single
+```
+
+The explicit `from` state avoids notifications when an entity first becomes
+available already reporting `"true"`. See Home Assistant's
+[state trigger documentation](https://www.home-assistant.io/docs/automation/trigger/#state-trigger)
+and [persistent notification action](https://www.home-assistant.io/integrations/persistent_notification/).
+
+### Portal statistics
+
 Physical HEMS devices are attached to their real device where possible. Daily and monthly/yearly portal statistics are grouped under the `KiwiGrid Stats` device, for example:
 
 ```
