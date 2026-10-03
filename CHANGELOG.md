@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026.10.0
+
+### ✨ Features
+
+- Read the optional local `/rest/hems-configurator/public/gateway/info` endpoint at integration startup, on manual diagnostics refresh, and every 24 hours. Show `kiwiOsEdgeVersion` as the Manager device's software version and `serialNumber` as its serial number, using the existing device identifier.
+- Add a translated kiwiOS version diagnostic sensor to the existing SOLARWATT Flow device, respecting device selection and reusing the coordinator cache.
+- Cache the complete gateway response in the coordinator. Include kiwiOS and EM setup feature versions in downloadable diagnostics while excluding the serial number and unknown gateway fields.
+
+### ⬆️ Upgrade notes
+
+- Reload the integration to populate the Manager metadata. Gateway information is checked during regular polling and requested only once every 24 hours, in addition to startup and manual refresh. Cloud-only entries do not request it. Missing or failing gateway endpoints do not block energy updates; failed refreshes preserve the last successful metadata.
+- Existing sensor names, unique IDs, and device identifiers remain unchanged. No breaking changes or migration are required.
+
+### ✅ Validation
+
+- 357 tests passed, including gateway API errors, refresh intervals, cached metadata, device registration, sensor discovery, and diagnostics redaction.
+- Ruff and MyPy passed. No live hardware test was performed for this release.
+
 ## 2026.9.4
 
 ### 🐛 Fixes

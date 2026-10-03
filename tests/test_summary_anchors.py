@@ -123,6 +123,7 @@ client_module = load_component_module_with_stubs(
             f"{PACKAGE_NAME}.hems_api",
             ENERGY_OVERVIEW_PATH="/energy-overview",
             THINGS_PATH="/things",
+            GATEWAY_INFO_PATH="/rest/hems-configurator/public/gateway/info",
             energy_overview_to_items=lambda payload: [],
             hems_configurator_to_things=lambda payload: [],
             kiwigrid_flow_thing=lambda: {},

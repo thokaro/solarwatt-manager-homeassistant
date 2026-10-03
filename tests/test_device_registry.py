@@ -45,6 +45,8 @@ class ModernRegistry:
                 id=f"device-{len(self.devices)}", config_entry_id=config_entry_id, **info
             )
             self.devices[device.id] = device
+        else:
+            device.__dict__.update(info)
         return device
 
     def async_remove_device(self, device_id):
@@ -72,7 +74,9 @@ def modules():
     stubs = {
         **make_homeassistant_stubs(),
         f"{PACKAGE_NAME}.hems_api": make_module(
-            f"{PACKAGE_NAME}.hems_api", is_hems_thing=lambda thing: False
+            f"{PACKAGE_NAME}.hems_api", is_hems_thing=lambda thing: False,
+            ENERGY_OVERVIEW_THING_UID="energy-overview:standard:energy-overview",
+            GATEWAY_VERSION_ITEM_NAME="gateway_kiwi_os_version",
         ),
     }
     loaded = {}
@@ -114,6 +118,45 @@ def _entry():
     return SimpleNamespace(
         entry_id="entry", data={"installation_id": "installation"}, options={}
     )
+
+
+@pytest.mark.parametrize("already_registered", [False, True])
+def test_gateway_metadata_preserves_manager_identity(modules, already_registered):
+    entry = _entry()
+    entry.title = "SOLARWATT Manager"
+    entry.data["host"] = "manager.local"
+    manager = _device("manager", "entry")
+    manager.identifiers = {(DOMAIN, "installation")}
+    hass = SimpleNamespace(devices=ModernRegistry([manager] if already_registered else []))
+    original_identifiers = manager.identifiers.copy()
+
+    modules.entity_helpers.update_manager_device_info(hass, entry, {
+        "kiwiOsEdgeVersion": "10.26.36.0", "serialNumber": "TEST-SERIAL",
+        "emSetupFeatureVersion": "4.72.0.5",
+    })
+    assert len(hass.devices.devices) == 1
+    manager = next(iter(hass.devices.devices.values()))
+    assert manager.identifiers == original_identifiers
+    assert manager.sw_version == "10.26.36.0"
+    assert manager.serial_number == "TEST-SERIAL"
+    if already_registered:
+        assert manager.name_by_user == "User name for entry"
+    assert not hasattr(manager, "hw_version")
+
+    modules.entity_helpers.update_manager_device_info(hass, entry, {
+        "kiwiOsEdgeVersion": "10.27.0.0", "serialNumber": None,
+    })
+    assert manager.sw_version == "10.27.0.0"
+    assert manager.serial_number == "TEST-SERIAL"
+
+
+@pytest.mark.parametrize("payload", [{}, {"kiwiOsEdgeVersion": [], "serialNumber": " "}])
+def test_empty_gateway_metadata_does_not_create_manager(modules, payload):
+    entry = _entry()
+    entry.title = "SOLARWATT Manager"
+    hass = SimpleNamespace(devices=ModernRegistry())
+    modules.entity_helpers.update_manager_device_info(hass, entry, payload)
+    assert not hass.devices.devices
 
 
 def test_lookup_and_custom_device_name_are_scoped_to_config_entry(modules):

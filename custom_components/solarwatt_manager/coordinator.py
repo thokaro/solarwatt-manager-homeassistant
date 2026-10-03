@@ -24,7 +24,11 @@ from .const import (
     MIN_SCAN_INTERVAL,
     get_kiwigrid_hems_credentials,
 )
-from .entity_helpers import detach_entityless_thing_devices, ensure_parent_devices_registered
+from .entity_helpers import (
+    detach_entityless_thing_devices,
+    ensure_parent_devices_registered,
+    update_manager_device_info,
+)
 from .hems_api import item_names_to_thing_uids
 from .state_parser import SOLARWATTItem, parse_state
 from .thing_matching import (
@@ -42,6 +46,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.client = client
         self.stats_total_store: StatsTotalStore | None = None
         self.things: dict[str, dict[str, Any]] = {}
+        self.gateway_info: dict[str, Any] = {}
+        self._gateway_info_last_attempt: float | None = None
         self.item_to_thing_uid: dict[str, str] = {}
         self.item_to_channel_metadata: dict[str, dict[str, str]] = {}
         self._discovery_callbacks: set[Callable[[Mapping[str, Any] | None], None]] = set()
@@ -127,6 +133,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self._local_last_attempt = None
         await self.async_refresh()
         await self.async_refresh_things()
+        await self.async_refresh_gateway_info()
         ensure_parent_devices_registered(self.hass, self.entry, self.things)
         self.run_discovery_callbacks()
         detach_entityless_thing_devices(self.hass, self.entry, self.things)
@@ -139,6 +146,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         source_errors: list[SolarwattError] = []
 
         if self._local_configured():
+            await self.async_refresh_gateway_info(force=False)
             local_items, local_success, local_errors = (
                 await self._async_update_local_items()
             )
@@ -475,6 +483,25 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         ):
             self.async_update_listeners()
         await self.async_request_refresh()
+
+    async def async_refresh_gateway_info(self, *, force: bool = True) -> None:
+        """Refresh optional gateway metadata without affecting energy availability."""
+        if not self._local_configured():
+            return
+        now = time.monotonic()
+        if not force and (
+            self._gateway_info_last_attempt is None
+            or now - self._gateway_info_last_attempt < timedelta(days=1).total_seconds()
+        ):
+            return
+        self._gateway_info_last_attempt = now
+        try:
+            self.gateway_info = await self.client.async_get_gateway_info()
+        except SolarwattError as err:
+            self.logger.warning("Unable to refresh optional gateway info: %s", err)
+            return
+        update_manager_device_info(self.hass, self.entry, self.gateway_info)
+        self.async_update_listeners()
 
     async def async_refresh_things(self, *, prefer_hems_cache: bool = False) -> None:
         if self._local_configured():

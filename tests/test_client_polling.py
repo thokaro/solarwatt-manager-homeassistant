@@ -127,6 +127,7 @@ client_module = load_component_module_with_stubs(
             f"{PACKAGE_NAME}.hems_api",
             ENERGY_OVERVIEW_PATH="/energy-overview",
             THINGS_PATH="/things",
+            GATEWAY_INFO_PATH="/rest/hems-configurator/public/gateway/info",
             energy_overview_to_items=lambda payload: [],
             hems_configurator_to_things=lambda payload: [],
             kiwigrid_flow_thing=lambda: {},
@@ -148,6 +149,65 @@ def _client():
     client.hems_partial_errors = ()
     client._log = logging.getLogger(__name__)
     return client
+
+
+def test_gateway_info_uses_local_endpoint_and_preserves_complete_response():
+    client = _client()
+    payload = {
+        "serialNumber": "TEST-SERIAL",
+        "kiwiOsEdgeVersion": "10.26.36.0",
+        "emSetupFeatureVersion": "4.72.0.5",
+        "futureField": {"value": 1},
+    }
+    requests = []
+
+    async def get_json(path, **kwargs):
+        requests.append(path)
+        return payload
+
+    client._async_get_json_endpoint = get_json
+    assert asyncio.run(client.async_get_gateway_info()) is payload
+    assert requests == ["/rest/hems-configurator/public/gateway/info"]
+
+
+@pytest.mark.parametrize("payload", [None, [], "invalid"])
+def test_gateway_info_rejects_non_object_response(payload):
+    client = _client()
+
+    async def get_json(*args, **kwargs):
+        return payload
+
+    client._async_get_json_endpoint = get_json
+    with pytest.raises(client_module.SolarwattProtocolError):
+        asyncio.run(client.async_get_gateway_info())
+
+
+@pytest.mark.parametrize("status", [401, 403, 404, 500])
+def test_gateway_info_wraps_http_errors(status):
+    client = _client()
+
+    async def get_json(*args, **kwargs):
+        raise client_module.ClientResponseError(None, (), status=status)
+
+    client._async_get_json_endpoint = get_json
+    expected = (
+        client_module.SolarwattAuthError if status in (401, 403)
+        else client_module.SolarwattConnectionError
+    )
+    with pytest.raises(expected):
+        asyncio.run(client.async_get_gateway_info())
+
+
+@pytest.mark.parametrize("error", [asyncio.TimeoutError(), ValueError("invalid JSON")])
+def test_gateway_info_wraps_transport_and_json_errors(error):
+    client = _client()
+
+    async def get_json(*args, **kwargs):
+        raise error
+
+    client._async_get_json_endpoint = get_json
+    with pytest.raises(client_module.SolarwattError):
+        asyncio.run(client.async_get_gateway_info())
 
 
 def test_hems_poll_retries_one_transient_endpoint_sequentially():

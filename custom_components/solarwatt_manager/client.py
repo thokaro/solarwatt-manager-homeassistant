@@ -28,6 +28,7 @@ from .hems_client import (
 )
 from .hems_api import (
     ENERGY_OVERVIEW_PATH,
+    GATEWAY_INFO_PATH,
     THINGS_PATH,
     energy_overview_to_items,
     hems_configurator_to_things,
@@ -446,6 +447,29 @@ class SOLARWATTClient:
             raise SolarwattConnectionError(f"HTTP error {e.status} fetching HEMS energy overview") from e
         except (ClientError, asyncio.TimeoutError) as e:
             raise SolarwattConnectionError(f"Connection error fetching HEMS energy overview: {e}") from e
+
+    async def async_get_gateway_info(self) -> dict[str, Any]:
+        """Fetch the complete local gateway metadata response."""
+        try:
+            payload = await self._async_get_json_endpoint(
+                GATEWAY_INFO_PATH,
+                where=f"GET {GATEWAY_INFO_PATH}",
+            )
+            if not isinstance(payload, dict):
+                raise SolarwattProtocolError("Gateway info response is not an object")
+            return payload
+        except SolarwattError:
+            raise
+        except ClientResponseError as err:
+            if err.status in (401, 403):
+                raise SolarwattAuthError("HTTP error fetching gateway info") from err
+            raise SolarwattConnectionError(
+                f"HTTP error {err.status} fetching gateway info"
+            ) from err
+        except (ClientError, asyncio.TimeoutError) as err:
+            raise SolarwattConnectionError("Connection error fetching gateway info") from err
+        except ValueError as err:
+            raise SolarwattProtocolError("Gateway info response is not valid JSON") from err
 
     async def async_get_hems_configurator_things(self) -> list[dict[str, Any]]:
         """Fetch local HEMS configurator things from the SOLARWATT Manager."""

@@ -421,6 +421,27 @@ On a tested SOLARWATT Manager with KiwOS Edge `10.26.24.4` / EM setup feature `4
 
 * `/rest/hems-configurator/energy-overview` - live production, grid, household, and battery power values
 * `/rest/hems-configurator/things` - thing/device metadata
+* `/rest/hems-configurator/public/gateway/info` - optional Manager serial number and software versions
+
+The local Manager's **kiwiOS version** appears as its firmware/software version under
+**Settings → Devices & services → SOLARWATT Manager → Devices → your Manager**.
+The serial number is also stored on that device. For example, a response containing
+`kiwiOsEdgeVersion: "10.26.36.0"` displays `10.26.36.0` as the Manager's software version.
+`emSetupFeatureVersion` (for example `4.72.0.5`) is included alongside the kiwiOS version
+in the integration's downloadable diagnostics, under `gateway_info`; serial numbers
+are excluded from that export.
+
+The kiwiOS version is also available as a diagnostic sensor under
+**SOLARWATT Flow → Diagnostics → kiwiOS version**, provided that `SOLARWATT Flow` is
+enabled in the device selection. For example, this sensor reports `10.26.36.0`.
+
+Gateway metadata is fetched when the integration loads, when a diagnostics refresh
+button is pressed, and automatically every 24 hours on the next coordinator update.
+The complete response is cached by the coordinator. Failed attempts also wait 24 hours
+before the next automatic retry; manual refresh remains available. Reload the integration after installing this change
+to populate the metadata. Managers without this optional endpoint continue to work;
+cloud-only entries do not request it. Existing device identifiers and sensor unique IDs
+are unchanged.
 
 The integration reads local values directly from the HEMS configurator Energy Overview endpoint. They are exposed under the dedicated `SOLARWATT Flow` device. Stable internal item keys still follow the JSON fields, while the visible sensor names match their `KiwiGrid Flow` counterparts where equivalent:
 

@@ -34,6 +34,9 @@ _PRIVATE_TEXT = re.compile(
 def _redact(obj: Any, *, key: str = "") -> Any:
     """Redact private fields, free text, and identifying dictionary keys."""
     normalized_key = re.sub(r"[^a-z0-9]", "", key.lower())
+    if normalized_key in {"swversion", "kiwiosedgeversion", "emsetupfeatureversion"}:
+        if isinstance(obj, str) and re.fullmatch(r"\d+(?:\.\d+)+", obj):
+            return obj
     if normalized_key in {
         "id", "uid", "uuid", "mac", "ip", "ipv4", "ipv6", "lat", "lon", "lng",
         "user", "login", "account", "credentials", "auth", "position", "geo",
@@ -280,6 +283,11 @@ async def async_get_config_entry_diagnostics(
             "last_exception": repr(getattr(coordinator, "last_exception", None)) if getattr(coordinator, "last_exception", None) else None,
         },
         "kiwigrid_hems": _hems_status_payload(coordinator),
+        "gateway_info": {
+            key: value
+            for key, value in (getattr(coordinator, "gateway_info", {}) or {}).items()
+            if key in {"kiwiOsEdgeVersion", "emSetupFeatureVersion"}
+        },
         "energy_settings": {
             "energy_delta_kwh": energy_delta_kwh,
             "energy_sensors_last_write": energy_sensor_writes,

@@ -11,6 +11,7 @@ from .const import (
     CONF_HOST,
     DOMAIN,
     SOLARWATTConfigEntry,
+    build_device_info,
     build_thing_device_identifier,
     build_thing_device_info,
     get_device_registry_anchor,
@@ -18,6 +19,7 @@ from .const import (
     get_selected_thing_uids,
 )
 from .naming import clean_item_key
+from .hems_api import ENERGY_OVERVIEW_THING_UID, GATEWAY_VERSION_ITEM_NAME
 from .registry import (
     device_has_config_entry,
     get_device_by_identifier,
@@ -210,6 +212,10 @@ def _selected_entity_unique_ids(
         for item_name in selected_item_names
         if is_stats_total_source_item_name(item_name)
     )
+    if ENERGY_OVERVIEW_THING_UID in selected_thing_uids:
+        expected_unique_ids.add(
+            build_item_sensor_unique_id(entry.entry_id, GATEWAY_VERSION_ITEM_NAME)
+        )
 
     for thing_uid in (things or {}).keys():
         thing = (things or {}).get(thing_uid)
@@ -289,6 +295,29 @@ def _apply_expected_entity_selection(
 
 
 # Device-registry helpers.
+def update_manager_device_info(
+    hass: HomeAssistant,
+    entry: SOLARWATTConfigEntry,
+    gateway_info: Mapping[str, Any],
+) -> None:
+    """Update the existing Manager identity with optional gateway metadata."""
+    device_info = build_device_info(
+        get_device_registry_anchor(entry),
+        entry.title,
+        str(entry.data.get(CONF_HOST) or "").strip().lower(),
+    )
+    version = gateway_info.get("kiwiOsEdgeVersion")
+    serial = gateway_info.get("serialNumber")
+    if isinstance(version, str) and version.strip():
+        device_info["sw_version"] = version.strip()
+    if isinstance(serial, str) and serial.strip():
+        device_info["serial_number"] = serial.strip()
+    if "sw_version" in device_info or "serial_number" in device_info:
+        dr.async_get(hass).async_get_or_create(
+            config_entry_id=entry.entry_id, **device_info
+        )
+
+
 def ensure_parent_devices_registered(
     hass: HomeAssistant,
     entry: SOLARWATTConfigEntry,

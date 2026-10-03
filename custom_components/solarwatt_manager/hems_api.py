@@ -7,6 +7,8 @@ from typing import Any
 
 ENERGY_OVERVIEW_PATH = "/rest/hems-configurator/energy-overview"
 THINGS_PATH = "/rest/hems-configurator/things"
+GATEWAY_INFO_PATH = "/rest/hems-configurator/public/gateway/info"
+GATEWAY_VERSION_ITEM_NAME = "gateway_kiwi_os_version"
 HEMS_THING_PROPERTY = "solarwatt.hemsConfigurator"
 ENERGY_OVERVIEW_THING_PROPERTY = "solarwatt.energyOverview"
 ENERGY_OVERVIEW_THING_UID = "energy-overview:standard:energy-overview"

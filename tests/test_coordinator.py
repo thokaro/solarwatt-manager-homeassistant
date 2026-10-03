@@ -96,6 +96,7 @@ def _load_coordinator_module():
                 f"{package_name}.entity_helpers",
                 detach_entityless_thing_devices=lambda *args: None,
                 ensure_parent_devices_registered=lambda *args: None,
+                update_manager_device_info=lambda *args: None,
             ),
             f"{package_name}.hems_api": make_module(
                 f"{package_name}.hems_api",
@@ -186,6 +187,90 @@ def _coordinator(*, local_enabled: bool = True, hems_enabled: bool = True):
     client = FakeClient(local_enabled=local_enabled)
     coordinator = coordinator_module.SOLARWATTCoordinator(object(), entry, client)
     return coordinator, entry, client
+
+
+def test_gateway_metadata_is_cached_outside_regular_energy_polling(monkeypatch):
+    coordinator, _, client = _coordinator()
+    payload = {"kiwiOsEdgeVersion": "10.26.36.0", "futureField": 1}
+    calls = []
+    registered = []
+
+    async def get_gateway_info():
+        calls.append(True)
+        return payload
+
+    client.async_get_gateway_info = get_gateway_info
+    monkeypatch.setattr(
+        coordinator_module, "update_manager_device_info",
+        lambda hass, entry, info: registered.append(info),
+    )
+    asyncio.run(coordinator.async_refresh_gateway_info())
+    asyncio.run(coordinator._async_update_data())
+    assert coordinator.gateway_info is payload
+    assert registered == [payload]
+    assert calls == [True]
+
+    payload = {"kiwiOsEdgeVersion": "10.27.0.0"}
+    asyncio.run(coordinator.async_refresh_gateway_info())
+    assert coordinator.gateway_info is payload
+    assert registered[-1] is payload
+
+
+@pytest.mark.parametrize("error", [SolarwattError("missing endpoint"), SolarwattAuthError("denied")])
+def test_optional_gateway_failure_preserves_cache_and_energy_updates(error, caplog):
+    coordinator, entry, client = _coordinator()
+    cached = {"kiwiOsEdgeVersion": "10.26.36.0"}
+    coordinator.gateway_info = cached
+
+    async def get_gateway_info():
+        raise error
+
+    client.async_get_gateway_info = get_gateway_info
+    asyncio.run(coordinator.async_refresh_gateway_info())
+    assert coordinator.gateway_info is cached
+    assert asyncio.run(coordinator._async_update_data())["local_power"]
+    assert entry.reauth_calls == 0
+    assert "optional gateway info" in caplog.text
+
+
+def test_cloud_only_does_not_request_gateway_info():
+    coordinator, _, _ = _coordinator(local_enabled=False)
+    asyncio.run(coordinator.async_refresh_gateway_info())
+    assert coordinator.gateway_info == {}
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_gateway_refresh_runs_once_per_day_including_failed_attempts(monkeypatch, fail):
+    coordinator, _, client = _coordinator()
+    now = 100.0
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: now)
+    calls = []
+
+    async def get_gateway_info():
+        calls.append(now)
+        if fail:
+            raise SolarwattError("unavailable")
+        return {"kiwiOsEdgeVersion": str(len(calls))}
+
+    client.async_get_gateway_info = get_gateway_info
+    asyncio.run(coordinator.async_refresh_gateway_info())
+    now += 86399
+    asyncio.run(coordinator._async_update_data())
+    assert len(calls) == 1
+    now += 1
+    asyncio.run(coordinator._async_update_data())
+    asyncio.run(coordinator._async_update_data())
+    assert len(calls) == 2
+    if not fail:
+        assert coordinator.gateway_info["kiwiOsEdgeVersion"] == "2"
+
+    # Manual refresh bypasses the daily limit and restarts the interval.
+    now += 60
+    asyncio.run(coordinator.async_refresh_gateway_info())
+    assert len(calls) == 3
+    now += 86400
+    asyncio.run(coordinator._async_update_data())
+    assert len(calls) == 4
 
 
 def test_local_failure_keeps_hems_source_available():

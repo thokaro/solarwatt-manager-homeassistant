@@ -56,6 +56,7 @@ entity_helpers = load_component_module_with_stubs(
             CONF_HOST="host",
             DOMAIN="solarwatt_manager",
             SOLARWATTConfigEntry=object,
+            build_device_info=lambda *args: {},
             build_thing_device_identifier=lambda anchor, uid: (
                 "solarwatt_manager",
                 f"{anchor}:{uid}",

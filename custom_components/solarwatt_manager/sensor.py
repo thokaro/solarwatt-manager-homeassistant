@@ -4,7 +4,12 @@ from collections.abc import Mapping
 import math
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -34,10 +39,17 @@ from .entity_helpers import (
     iter_item_sensor_names,
 )
 from .naming import item_display_name, item_entity_name, slugify_entity_name, trim_device_tokens
+from .hems_api import ENERGY_OVERVIEW_THING_UID, GATEWAY_VERSION_ITEM_NAME
 from .sensor_meta import guess_ha_meta
 from .stats_total import StatsTotalStore
 
 STATS_TOTAL_ENTITY_MAP = "stats_total_entities"
+GATEWAY_VERSION_DESCRIPTION = SensorEntityDescription(
+    key=GATEWAY_VERSION_ITEM_NAME,
+    translation_key="kiwi_os_version",
+    entity_category=EntityCategory.DIAGNOSTIC,
+    icon="mdi:information-outline",
+)
 
 
 async def async_setup_entry(
@@ -90,6 +102,17 @@ def _collect_new_entities(
 ) -> list[SensorEntity]:
     """Build newly discovered item and thing sensors that are not added yet."""
     entities: list[SensorEntity] = []
+    if (
+        ENERGY_OVERVIEW_THING_UID in coordinator.things
+        and (
+            selected_thing_uids is None
+            or ENERGY_OVERVIEW_THING_UID in selected_thing_uids
+        )
+        and GATEWAY_VERSION_DESCRIPTION.key not in added_item_names
+    ):
+        added_item_names.add(GATEWAY_VERSION_DESCRIPTION.key)
+        entities.append(SOLARWATTGatewayVersionSensor(coordinator, entry.entry_id))
+
     for item_name in iter_item_sensor_names(
         coordinator.data,
         coordinator.item_to_thing_uid,
@@ -498,6 +521,32 @@ class SOLARWATTStatsTotalSensor(CoordinatorEntity, SensorEntity):
             "source_item": self._item_name,
             "offset": self.offset,
         }
+
+
+class SOLARWATTGatewayVersionSensor(CoordinatorEntity, SensorEntity):
+    """Expose the cached kiwiOS version on the local SOLARWATT Flow device."""
+
+    _attr_has_entity_name = True
+    entity_description = GATEWAY_VERSION_DESCRIPTION
+
+    def __init__(self, coordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = build_item_sensor_unique_id(
+            entry_id, self.entity_description.key
+        )
+        self._attr_device_info = build_thing_device_info(
+            coordinator.hass,
+            get_device_registry_anchor(coordinator.entry),
+            coordinator.things[ENERGY_OVERVIEW_THING_UID],
+            coordinator.things,
+            configuration_host=str(coordinator.client.host or ""),
+            config_entry_id=entry_id,
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        version = self.coordinator.gateway_info.get("kiwiOsEdgeVersion")
+        return version.strip() or None if isinstance(version, str) else None
 
 
 class SOLARWATTThingSensor(CoordinatorEntity, SensorEntity):

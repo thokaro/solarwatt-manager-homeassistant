@@ -57,6 +57,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) ->
         await coordinator.async_config_entry_first_refresh()
         await coordinator.async_refresh_things(prefer_hems_cache=True)
         migrate_device_registry_identifiers(hass, entry, coordinator.things)
+        await coordinator.async_refresh_gateway_info()
 
         sync_selected_thing_entities(
             hass,

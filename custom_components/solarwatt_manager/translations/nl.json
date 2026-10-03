@@ -170,6 +170,11 @@
     }
   },
   "entity": {
+    "sensor": {
+      "kiwi_os_version": {
+        "name": "kiwiOS-versie"
+      }
+    },
     "button": {
       "diagnostics_refresh": {
         "name": "Gegevens bijwerken"

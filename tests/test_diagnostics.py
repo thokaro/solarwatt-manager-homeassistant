@@ -116,6 +116,12 @@ def test_full_export_hides_private_data_and_preserves_measurements():
                   "properties": {"serialNumber": "SERIAL-PRIVATE", "mac": "001122334455", "latitude": 52.12345}},
             "opaque-private-uid": {"label": "Private garage"},
         },
+        gateway_info={
+            "serialNumber": "SERIAL-PRIVATE",
+            "kiwiOsEdgeVersion": "10.26.36.0",
+            "emSetupFeatureVersion": "4.72.0.5",
+            "futureField": "private",
+        },
         last_exception=ValueError("unlisted-password"),
         hems_last_error="private-host.local rejected unlisted-password",
         hems_partial_errors=("private-endpoint failed",),
@@ -150,6 +156,10 @@ def test_full_export_hides_private_data_and_preserves_measurements():
     assert result["things"]["things_compact"]["thing_1"]["thing_type_uid"] == "battery:standard"
     assert result["device"]["model"] == "Manager"
     assert result["device"]["sw_version"] == "1.2.3"
+    assert result["gateway_info"] == {
+        "kiwiOsEdgeVersion": "10.26.36.0",
+        "emSetupFeatureVersion": "4.72.0.5",
+    }
     assert result["coordinator"]["numeric_items"] == 1
     assert result["data_items_compact"]["item_1"]["parsed_value"] == 123.5
     assert result["data_items_compact"]["item_1"]["raw_state"] == "123.5 W"

@@ -170,6 +170,11 @@
     }
   },
   "entity": {
+    "sensor": {
+      "kiwi_os_version": {
+        "name": "Version kiwiOS"
+      }
+    },
     "button": {
       "diagnostics_refresh": {
         "name": "Mettre à jour les données"
