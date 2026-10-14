@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### 📚 Documentation
+
+- Add a German installation and user guide covering local and portal setup, polling options, energy-flow sensors, backup status, Total statistics actions, and troubleshooting; link it from the README.
+- Clarify local login credentials, default device selection, and local polling and energy-change defaults in the English README.
+
 ## 2026.10.0
 
 ### ✨ Features

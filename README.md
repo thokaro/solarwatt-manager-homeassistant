@@ -6,6 +6,8 @@
 
 # SOLARWATT Manager – Home Assistant Integration
 
+**English** | [Deutsche Anleitung](docs/anleitung-de.md)
+
 This custom integration connects a **SOLARWATT Manager** like FLEX or Rail to **Home Assistant** and provides local Manager data, optional **KiwiGrid HEMS** data from the SOLARWATT Manager Portal, analytics, controls, live flow values, and diagnostic sensors.
 
 The minimum supported Home Assistant version is **2024.12.0**.
@@ -80,11 +82,11 @@ After restarting Home Assistant:
 3. Search for **SOLARWATT Manager**
 4. Enter at least one connection type:
    * **Local Host/IP**: hostname or IPv4 address, optionally with `:port`. New forms are prefilled with `energymanager.local`.
-   * **Local username** / **Local password**: your local SOLARWATT Manager credentials
+   * **Local username** / **Local password**: use the password of the Manager's local web interface. The username defaults to `installer` and can usually be left unchanged, even though the local web login only asks for a password. These are separate from your portal credentials.
    * Optional tuning values such as **Update interval**, **Energy delta**, and **Power unavailable threshold** can be set here already or adjusted later in the integration options
    * Optional KiwiGrid HEMS credentials can be configured with **KiwiGrid (SOLARWATT Manager Portal) username or email address** and **KiwiGrid (SOLARWATT Manager Portal) password**. Entering both fields automatically activates KiwiGrid HEMS, KiwiGrid Flow, and the available HEMS devices and statistics.
    * Do not enter a full URL for the local host. The integration automatically tries HTTP and HTTPS.
-5. Select the SOLARWATT devices you want to create. SOLARWATT Flow, KiwiGrid Flow, KiwiGrid Stats, and battery devices are preselected when available.
+5. Select the SOLARWATT devices you want to create. SOLARWATT Flow, KiwiGrid Flow, detected KiwiGrid HEMS devices (including KiwiGrid Stats), location devices, and batteries are preselected when available.
 
 At least one complete data source is required. You can configure **local access only**,
 **KiwiGrid Online only**, or **both**. Saving an installation without either a local
@@ -132,8 +134,8 @@ The local update interval is in **Local SOLARWATT Manager**. Cloud device, Flow,
 Stats, and profile cache intervals are in **KiwiGrid Online**. **Sensor settings**
 contains the energy-change and power-unavailable thresholds.
 
-* **Update interval (seconds)** – polling interval for local Manager devices and `SOLARWATT Flow`
-* **Energy delta (kWh)** – write energy updates only if the change is >= threshold; set to `0` to write every update
+* **Update interval (seconds)** – polling interval for local Manager devices and `SOLARWATT Flow`; default: `15` seconds
+* **Energy delta (kWh)** – write energy updates only if the change is >= threshold; default: `0.01` kWh. Set to `0` to write every update
 * **Power unavailable threshold (polls)** – applies to power sensors only. If SOLARWATT briefly returns `unavailable`, the last valid power value is kept until the configured consecutive poll limit is reached. Example: `3` means the 1st and 2nd `unavailable` poll keep the previous value, and the sensor only switches to `unavailable` on the 3rd poll. Set to `0` to disable this debounce completely.
 * **KiwiGrid HEMS credentials** – when both the username/email and password are entered, the integration signs in automatically and activates the detected HEMS devices, `KiwiGrid Flow`, and `KiwiGrid Stats`.
 * **HEMS device interval (seconds)** – polling interval for physical KiwiGrid devices. The default is `30` seconds.
@@ -567,6 +569,7 @@ The integration does not rewrite existing entity IDs, so user-defined IDs and re
 │        ├─ it.json          # Italian translations
 │        └─ nl.json          # Dutch translations
 ├─ docs/
+│  ├─ anleitung-de.md        # German installation and user guide
 │  ├─ evcc-guide-german.md   # evcc setup guide
 │  └─ kiwigrid-items.md      # item reference for KiwiGrid systems
 ├─ tests/                    # pytest coverage for mapping, naming, parsing, translations
