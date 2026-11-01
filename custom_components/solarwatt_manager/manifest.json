@@ -2,7 +2,6 @@
   "domain": "solarwatt_manager",
   "name": "SOLARWATT Manager",
   "categories": [
-    "energy",
     "energy.solar_batteries",
     "energy.meters_monitoring"
   ],
