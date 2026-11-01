@@ -434,6 +434,13 @@ class SOLARWATTStatsTotalSensor(CoordinatorEntity, SensorEntity):
         entities.pop(self.entity_id, None)
         await super().async_will_remove_from_hass()
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        super().async_entity_id_changed(old_entity_id)
+        entities = self.hass.data[DOMAIN][STATS_TOTAL_ENTITY_MAP]
+        entities.pop(old_entity_id, None)
+        entities[self.entity_id] = self
+
     def _item_display_name(self) -> str:
         source_name = str(self._source_entity.name or item_entity_name(self._item_name)).strip()
         if source_name.lower().startswith("year "):

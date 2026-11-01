@@ -41,9 +41,20 @@ Note for users with **vision** components: If you need write/control functions s
 
 ## 📦 Installation
 
-This integration is part of the default **HACS** repository list.
+This integration is part of the default **HACS** repository list, which is also used by the built-in **Marketplace** starting with Home Assistant **2026.11**.
 
-### Option 1: Installation via HACS
+### Option 1: Installation via Marketplace (Home Assistant 2026.11 or newer)
+
+1. Open **Settings → Marketplace**
+2. Search for **SOLARWATT Manager**
+3. Install the integration
+4. Continue with the Configuration section below; a first installation via Marketplace does not require a restart
+
+When upgrading from HACS to Home Assistant 2026.11, the Marketplace automatically takes over installed integrations, custom repositories, and updates. You do not need to reinstall this integration. Restart Home Assistant when prompted after an integration update.
+
+See the [HACS Marketplace transition documentation](https://hacs.netlify.app/docs/marketplace/) for details.
+
+### Option 2: Installation via HACS (Home Assistant 2026.10 or older)
 
 1. Make sure **HACS** is installed in your Home Assistant instance
 2. Open **HACS**
@@ -54,7 +65,7 @@ This integration is part of the default **HACS** repository list.
 
 ---
 
-### Option 2: Manual Installation
+### Option 3: Manual Installation
 
 1. Download or clone this repository
 2. Copy the folder:
@@ -75,7 +86,7 @@ config/custom_components/
 
 ## ⚙️ Configuration
 
-After restarting Home Assistant:
+After installation (and a restart if required):
 
 1. Go to **Settings → Devices & Services**
 2. Click **Add Integration**

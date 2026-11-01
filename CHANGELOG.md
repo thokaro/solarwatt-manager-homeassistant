@@ -1,11 +1,29 @@
 # Changelog
 
-## Unreleased
+## 2026.11.0
+
+### 🛍️ Marketplace
+
+- Add energy, solar battery, and meter monitoring categories to the integration manifest.
+- Document installation via Marketplace for Home Assistant 2026.11 and newer, while retaining HACS and manual installation instructions.
 
 ### 📚 Documentation
 
 - Add a German installation and user guide covering local and portal setup, polling options, energy-flow sensors, backup status, Total statistics actions, and troubleshooting; link it from the README.
 - Clarify local login credentials, default device selection, and local polling and energy-change defaults in the English README.
+
+### 🐛 Fixes
+
+- Handle in-place entity ID changes for Stats Total sensors using `async_entity_id_changed`, keeping statistics services and unload cleanup working after renames ([#21](https://github.com/thokaro/solarwatt-manager-homeassistant/issues/21)). This supports the lifecycle introduced in Home Assistant 2026.11 and prepares for removal of the compatibility fallback in 2027.11. Thanks to @emontnemery for the detailed report and suggested fix. Existing unique IDs and stored totals are unchanged; no migration is required.
+
+### ⬆️ Upgrade notes
+
+- Existing sensor names, unique IDs, and stored totals remain unchanged. No breaking changes or migration are required.
+
+### ✅ Validation
+
+- 359 tests passed on Python 3.14, including regression coverage for Stats Total sensor renaming and removal.
+- Ruff and MyPy passed. No live hardware test was performed for this release.
 
 ## 2026.10.0
 

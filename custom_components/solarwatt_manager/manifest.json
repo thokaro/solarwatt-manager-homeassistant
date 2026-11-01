@@ -1,6 +1,11 @@
 {
   "domain": "solarwatt_manager",
   "name": "SOLARWATT Manager",
+  "categories": [
+    "energy",
+    "energy.solar_batteries",
+    "energy.meters_monitoring"
+  ],
   "codeowners": [
     "@thokaro"
   ],
@@ -14,5 +19,5 @@
   ],
   "quality_scale": "custom",
   "requirements": [],
-  "version": "2026.10.0"
+  "version": "2026.11.0"
 }
