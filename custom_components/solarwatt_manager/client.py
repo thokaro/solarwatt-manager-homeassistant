@@ -18,13 +18,15 @@ from .hems_client import (
     KiwiGridHEMSError,
     KiwiGridHEMSProtocolError,
     consumers_endpoint_to_items,
+    consumption_composition_to_items,
     energy_flow_endpoint_to_items,
     hems_device_names_by_id,
     hems_payloads_to_items,
     hems_payloads_to_things,
     is_analytics_payload,
     merge_analytics_aggregates,
-    summary_anchor_time_window,
+    optimization_reset_config,
+    selfsupply_endpoint_to_items,    summary_anchor_time_window,
 )
 from .hems_api import (
     ENERGY_OVERVIEW_PATH,
@@ -113,6 +115,7 @@ class SOLARWATTClient:
         self._hems_profile_updated_at: float | None = None
         self._hems_endpoint_errors: dict[str, str] = {}
         self.hems_partial_errors: tuple[str, ...] = ()
+        self._hems_config_lock = asyncio.Lock()
         self._log = logging.getLogger(__name__)
 
     def _set_base(self, base: str) -> None:
@@ -592,6 +595,28 @@ class SOLARWATTClient:
                 [],
             )
 
+        try:
+            selfsupply = await hems.async_get_home_selfsupply()
+            self._hems_payload_cache["home_selfsupply"] = selfsupply
+            self._hems_endpoint_errors.pop("home_selfsupply", None)
+        except KiwiGridHEMSAuthError as err:
+            raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
+        except KiwiGridHEMSError as err:
+            self._hems_endpoint_errors["home_selfsupply"] = f"home_selfsupply: {err}"
+            self._log.debug("KiwiGrid HEMS self-supply unavailable: %s", err)
+            selfsupply = self._hems_payload_cache.get("home_selfsupply", {})
+
+        try:
+            composition = await hems.async_get_home_consumption_composition()
+            self._hems_payload_cache["home_consumption_composition"] = composition
+            self._hems_endpoint_errors.pop("home_consumption_composition", None)
+        except KiwiGridHEMSAuthError as err:
+            raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
+        except KiwiGridHEMSError as err:
+            self._hems_endpoint_errors["home_consumption_composition"] = f"home_consumption_composition: {err}"
+            self._log.debug("KiwiGrid HEMS consumption composition unavailable: %s", err)
+            composition = self._hems_payload_cache.get("home_consumption_composition", {})
+
         name_payloads = {
             key: self._hems_payload_cache.get(key, [])
             for key in (
@@ -608,7 +633,7 @@ class SOLARWATTClient:
         return energy_flow_endpoint_to_items(
             payload,
             device_names_by_id=hems_device_names_by_id(**name_payloads),
-        ) + consumers_endpoint_to_items(consumers)
+        ) + consumers_endpoint_to_items(consumers) + selfsupply_endpoint_to_items(selfsupply) + consumption_composition_to_items(composition)
 
     async def async_calculate_hems_stats_total_value(
         self,
@@ -723,7 +748,7 @@ class SOLARWATTClient:
             key: payload
             for key, payload in self._hems_payload_cache.items()
             if include_energy_flow
-            or key not in {"energy_flow", "home_consumption_consumers"}
+            or key not in {"energy_flow", "home_consumption_consumers", "home_selfsupply", "home_consumption_composition"}
         }
         successful_requests = 0
         semaphore = asyncio.Semaphore(4)
@@ -771,7 +796,7 @@ class SOLARWATTClient:
             match key:
                 case "user_profile":
                     due = not profile_cached
-                case "energy_flow" | "home_consumption_consumers":
+                case "energy_flow" | "home_consumption_consumers" | "home_selfsupply" | "home_consumption_composition":
                     due = include_energy_flow
                 case _:
                     due = refresh_statistics if key.startswith("analytics_") else refresh_devices
@@ -976,6 +1001,8 @@ class SOLARWATTClient:
         if include_energy_flow:
             getters = getters[:7] + (
                 ("energy_flow", hems.async_get_energy_flow),
+                ("home_selfsupply", hems.async_get_home_selfsupply),
+                ("home_consumption_composition", hems.async_get_home_consumption_composition),
                 (
                     "home_consumption_consumers",
                     hems.async_get_home_consumption_consumers,
@@ -996,17 +1023,86 @@ class SOLARWATTClient:
         if not hems.enabled:
             raise SolarwattAuthError("KiwiGrid HEMS credentials are missing")
         try:
-            await hems.async_set_device_optimization_mode(device_id, optimization_mode)
+            async with self._hems_config_lock:
+                await hems.async_set_device_optimization_mode(device_id, optimization_mode)
         except KiwiGridHEMSAuthError as err:
             raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
         except KiwiGridHEMSError as err:
             raise SolarwattConnectionError(f"KiwiGrid HEMS device update failed: {err}") from err
+
+    async def async_reset_hems_device_optimization_config(
+        self, device_id: str, *, username: str = "", password: str = "",
+    ) -> None:
+        """Reset advertised defaults for the active mode, preserving schedules."""
+        hems = self._get_hems_client(username, password)
+        if not hems.enabled:
+            raise SolarwattAuthError("KiwiGrid HEMS credentials are missing")
+        async with self._hems_config_lock:
+            try:
+                optimizations = await hems.async_get_device_optimizations()
+                self._hems_payload_cache["device_optimizations"] = optimizations
+                optimization = next((item for item in optimizations if item.get("id") == device_id), None)
+                if optimization is None:
+                    raise SolarwattError("Optimization device is unavailable")
+                config = optimization_reset_config(optimization)
+                await hems.async_update_device_optimization_config(device_id, config)
+                optimization["config"] = config
+            except KiwiGridHEMSAuthError as err:
+                raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
+            except KiwiGridHEMSError as err:
+                raise SolarwattConnectionError(f"KiwiGrid HEMS configuration reset failed: {err}") from err
+
+    async def async_update_hems_device_optimization_config(
+        self, device_id: str, field: str, value: int,
+        *, username: str = "", password: str = "",
+    ) -> None:
+        """Merge one setting into current configuration, serializing read/write pairs."""
+        hems = self._get_hems_client(username, password)
+        if not hems.enabled:
+            raise SolarwattAuthError("KiwiGrid HEMS credentials are missing")
+        async with self._hems_config_lock:
+            try:
+                # Refresh before writing so changes made in the portal are preserved.
+                optimizations = await hems.async_get_device_optimizations()
+                self._hems_payload_cache["device_optimizations"] = optimizations
+                optimization = next((item for item in optimizations if item.get("id") == device_id), None)
+                if optimization is None or field.upper() not in optimization.get("supported_configs", []):
+                    raise SolarwattError("Optimization setting is not supported by this device")
+                current = optimization.get("config")
+                if not isinstance(current, dict) or not current.get("optimization_mode"):
+                    raise SolarwattError("Current optimization configuration is unavailable")
+                # Send only fields the portal sends; KiwiGrid rejects read-only ones such as user importance.
+                config = {
+                    key: current[key]
+                    for key in ("optimization_mode", "lowest_power", "max_power", "min_runtime", "min_resttime", "must_runtime")
+                    if current.get(key) is not None
+                }
+                target = current.get("target_time")
+                # The portal sends target_time only in departure mode; KiwiGrid rejects it otherwise.
+                if current["optimization_mode"] != "DEPARTURE_TIME":
+                    if field.startswith("target_time."):
+                        raise SolarwattError("Departure settings require the departure time optimization mode")
+                elif isinstance(target, dict) and {"capacity", "target_time"} <= target.keys():
+                    config["target_time"] = {"capacity": target["capacity"], "target_time": target["target_time"]}
+                if field.startswith("target_time."):
+                    if "target_time" not in config:
+                        raise SolarwattError("Current departure configuration is incomplete")
+                    config["target_time"][field.split(".", 1)[1]] = value
+                else:
+                    config[field] = value
+                await hems.async_update_device_optimization_config(device_id, config)
+                optimization["config"] = {**current, **config}
+            except KiwiGridHEMSAuthError as err:
+                raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
+            except KiwiGridHEMSError as err:
+                raise SolarwattConnectionError(f"KiwiGrid HEMS configuration update failed: {err}") from err
 
     async def async_set_hems_device_optimization_state(
         self,
         device_id: str,
         target_state: str,
         *,
+        duration_of_override: int | None = None,
         username: str = "",
         password: str = "",
     ) -> None:
@@ -1015,11 +1111,27 @@ class SOLARWATTClient:
         if not hems.enabled:
             raise SolarwattAuthError("KiwiGrid HEMS credentials are missing")
         try:
-            await hems.async_set_device_optimization_state(device_id, target_state)
+            await hems.async_set_device_optimization_state(
+                device_id, target_state, duration_of_override=duration_of_override
+            )
         except KiwiGridHEMSAuthError as err:
             raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
         except KiwiGridHEMSError as err:
             raise SolarwattConnectionError(f"KiwiGrid HEMS device switch failed: {err}") from err
+
+    async def async_clear_hems_device_optimization_state(
+        self, device_id: str, *, username: str = "", password: str = "",
+    ) -> None:
+        """Remove a manual override."""
+        hems = self._get_hems_client(username, password)
+        if not hems.enabled:
+            raise SolarwattAuthError("KiwiGrid HEMS credentials are missing")
+        try:
+            await hems.async_clear_device_optimization_state(device_id)
+        except KiwiGridHEMSAuthError as err:
+            raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
+        except KiwiGridHEMSError as err:
+            raise SolarwattConnectionError(f"KiwiGrid HEMS override reset failed: {err}") from err
 
     async def async_get_things(self) -> list[dict[str, Any]]:
         """Fetch local thing metadata from the HEMS configurator endpoint."""

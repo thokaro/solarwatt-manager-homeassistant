@@ -34,6 +34,8 @@ CONF_KIWIGRID_HEMS_PASSWORD = "kiwigrid_hems_password"
 CONF_KIWIGRID_HEMS_SCAN_INTERVAL = "kiwigrid_hems_scan_interval"
 CONF_KIWIGRID_FLOW_SCAN_INTERVAL = "kiwigrid_flow_scan_interval"
 CONF_KIWIGRID_STATS_SCAN_INTERVAL = "kiwigrid_stats_scan_interval"
+CONF_SENSOR_NAME_LANGUAGE = "sensor_name_language"
+CONF_KIWIGRID_OVERRIDE_DURATION = "kiwigrid_override_duration"
 CONF_KIWIGRID_PROFILE_CACHE_INTERVAL = "kiwigrid_profile_cache_interval"
 
 DEFAULT_LOCAL_HOST = "energymanager.local"
@@ -346,3 +348,9 @@ def is_unused_default_local_connection(
         and str(entry_data.get(CONF_USERNAME) or "").strip()
         in {"", DEFAULT_LOCAL_USERNAME}
     )
+
+
+OPTIMIZATION_CONFIG_FIELDS = (
+    "lowest_power", "max_power", "min_runtime", "min_resttime", "must_runtime",
+    "target_time.capacity", "target_time.target_time",
+)

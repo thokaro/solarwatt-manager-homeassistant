@@ -193,9 +193,9 @@ def test_item_names_to_thing_uids_maps_generated_hems_items():
     }
 
 
-def test_kiwigrid_flow_thing_uses_hems_v11_device_model():
+def test_kiwigrid_flow_thing_uses_hems_v12_device_model():
     thing = kiwigrid_flow_thing()
 
     assert thing["label"] == "KiwiGrid Flow"
-    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
-    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
+    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v12"
+    assert thing["properties"]["model"] == "KiwiGrid HEMS v12"

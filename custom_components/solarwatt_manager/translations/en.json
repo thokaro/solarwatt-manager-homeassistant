@@ -5,7 +5,9 @@
       "invalid_host": "Invalid host or IP address.",
       "invalid_username": "Invalid username.",
       "invalid_password": "Invalid password.",
+      "invalid_override_duration": "Duration must be a whole number of 0 or more.",
       "invalid_scan_interval": "Scan interval must be between 10 and 3600 seconds.",
+      "invalid_sensor_name_language": "Select auto, de or en as the language.",
       "invalid_energy_delta_kwh": "Energy delta must be 0 or greater (kWh).",
       "invalid_power_unavailable_threshold": "Power unavailable threshold must be 0 or greater.",
       "invalid_input": "Invalid input.",
@@ -46,6 +48,7 @@
               "kiwigrid_hems_scan_interval": "HEMS device interval (seconds)",
               "kiwigrid_flow_scan_interval": "KiwiGrid Flow interval (seconds)",
               "kiwigrid_stats_scan_interval": "KiwiGrid Stats interval (seconds)",
+              "kiwigrid_override_duration": "Override duration (minutes; 0 = existing behavior without duration)",
               "kiwigrid_profile_cache_interval": "User profile cache duration (seconds)"
             }
           },
@@ -53,6 +56,7 @@
             "name": "Sensor settings",
             "description": "Thresholds for energy changes and handling temporarily unavailable power readings.",
             "data": {
+              "sensor_name_language": "Sensor name language (auto = HA language, de = German, en = English)",
               "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
               "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable"
             }
@@ -116,7 +120,9 @@
       "invalid_host": "Invalid host or IP address.",
       "invalid_username": "Invalid username.",
       "invalid_password": "Invalid password.",
+      "invalid_override_duration": "Duration must be a whole number of 0 or more.",
       "invalid_scan_interval": "Scan interval must be between 10 and 3600 seconds.",
+      "invalid_sensor_name_language": "Select auto, de or en as the language.",
       "invalid_energy_delta_kwh": "Energy delta must be 0 or greater (kWh).",
       "invalid_power_unavailable_threshold": "Power unavailable threshold must be 0 or greater.",
       "invalid_input": "Invalid input.",
@@ -154,6 +160,7 @@
               "kiwigrid_hems_scan_interval": "HEMS device interval (seconds)",
               "kiwigrid_flow_scan_interval": "KiwiGrid Flow interval (seconds)",
               "kiwigrid_stats_scan_interval": "KiwiGrid Stats interval (seconds)",
+              "kiwigrid_override_duration": "Override duration (minutes; 0 = existing behavior without duration)",
               "kiwigrid_profile_cache_interval": "User profile cache duration (seconds)"
             }
           },
@@ -161,6 +168,7 @@
             "name": "Sensor settings",
             "description": "Thresholds for energy changes and handling temporarily unavailable power readings.",
             "data": {
+              "sensor_name_language": "Sensor name language (auto = HA language, de = German, en = English)",
               "energy_delta_kwh": "Energy change threshold (kWh). Write only if >= value; 0 = write every update",
               "power_unavailable_threshold": "Power unavailable threshold (polls). Keep the last value until the Nth unavailable; 0 = disable"
             }
@@ -170,12 +178,484 @@
     }
   },
   "entity": {
+    "number": {
+      "lowest_power": {
+        "name": "Switching threshold"
+      },
+      "max_power": {
+        "name": "Maximum charging power"
+      },
+      "min_runtime": {
+        "name": "Minimum runtime"
+      },
+      "min_resttime": {
+        "name": "Minimum rest time"
+      },
+      "must_runtime": {
+        "name": "Minimum runtime per day"
+      },
+      "target_time_capacity": {
+        "name": "Desired charging energy"
+      }
+    },
+    "time": {
+      "departure_time": {
+        "name": "Departure time"
+      }
+    },
     "sensor": {
+      "label_powerreleased": {
+        "name": "PowerReleased"
+      },
+      "label_workreleased": {
+        "name": "WorkReleased"
+      },
+      "label_workbuffered": {
+        "name": "WorkBuffered"
+      },
+      "label_workacin": {
+        "name": "WorkACIn"
+      },
+      "label_workacout": {
+        "name": "WorkACOut"
+      },
+      "label_stateofcharge": {
+        "name": "StateOfCharge"
+      },
+      "label_autarky": {
+        "name": "Autarky"
+      },
+      "label_profit": {
+        "name": "Profit"
+      },
+      "label_power_buffered": {
+        "name": "Power Buffered"
+      },
+      "label_power_released": {
+        "name": "Power Released"
+      },
+      "label_work_ac_in": {
+        "name": "Work AC In"
+      },
+      "label_work_ac_out": {
+        "name": "Work AC Out"
+      },
+      "label_work_consumed": {
+        "name": "Work Consumed"
+      },
+      "label_work_produced": {
+        "name": "Work Produced"
+      },
+      "label_work_buffered": {
+        "name": "Work Buffered"
+      },
+      "label_work_released": {
+        "name": "Work Released"
+      },
+      "label_work_in": {
+        "name": "Work In"
+      },
+      "label_work_out": {
+        "name": "Work Out"
+      },
+      "label_grid_in": {
+        "name": "Grid In"
+      },
+      "label_grid_out": {
+        "name": "Grid Out"
+      },
+      "label_grid_balance": {
+        "name": "Grid Balance"
+      },
+      "label_grid_power": {
+        "name": "Grid Power"
+      },
+      "label_battery_in": {
+        "name": "Battery In"
+      },
+      "label_battery_out": {
+        "name": "Battery Out"
+      },
+      "label_battery_balance_evcc": {
+        "name": "Battery Balance EVCC"
+      },
+      "label_battery_balance": {
+        "name": "Battery Balance"
+      },
+      "label_battery_power": {
+        "name": "Battery Power"
+      },
+      "label_battery_soc": {
+        "name": "Battery SoC"
+      },
+      "label_battery_in_from_grid": {
+        "name": "Battery In From Grid"
+      },
+      "label_battery_out_to_grid": {
+        "name": "Battery Out To Grid"
+      },
+      "label_pv_out": {
+        "name": "PV Out"
+      },
+      "label_consumption_in": {
+        "name": "Consumption In"
+      },
+      "label_consumption_direct_consumption": {
+        "name": "Consumption Direct Consumption"
+      },
+      "label_consumption_from_battery": {
+        "name": "Consumption From Battery"
+      },
+      "label_consumption_from_grid": {
+        "name": "Consumption From Grid"
+      },
+      "label_consumption_from_pv": {
+        "name": "Consumption From PV"
+      },
+      "label_ev_in": {
+        "name": "EV In"
+      },
+      "label_ev_out": {
+        "name": "EV Out"
+      },
+      "label_ev_balance": {
+        "name": "EV Balance"
+      },
+      "label_ev_bidirectional": {
+        "name": "EV Bidirectional"
+      },
+      "label_state_of_charge_minimum": {
+        "name": "State Of Charge Minimum"
+      },
+      "label_backup_state_of_charge": {
+        "name": "Backup State Of Charge"
+      },
+      "label_state_of_charge": {
+        "name": "State Of Charge"
+      },
+      "label_work_capacity": {
+        "name": "Work Capacity"
+      },
+      "label_power_ac_in_max": {
+        "name": "Power AC In Max"
+      },
+      "label_power_ac_out_max": {
+        "name": "Power AC Out Max"
+      },
+      "label_power_installed_peak": {
+        "name": "Power Installed Peak"
+      },
+      "label_backup_active": {
+        "name": "Backup Active"
+      },
+      "label_backup_available": {
+        "name": "Backup Available"
+      },
+      "label_time_of_use_available": {
+        "name": "Time Of Use Available"
+      },
+      "label_configured_in_location": {
+        "name": "Configured In Location"
+      },
+      "label_state_device": {
+        "name": "State Device"
+      },
+      "label_state_error": {
+        "name": "State Error"
+      },
+      "label_optimization_mode": {
+        "name": "Optimization Mode"
+      },
+      "label_switch_state": {
+        "name": "Switch State"
+      },
+      "label_schedule_exists": {
+        "name": "Schedule Exists"
+      },
+      "label_supports_switching": {
+        "name": "Supports Switching"
+      },
+      "label_requires_override": {
+        "name": "Requires Override"
+      },
+      "label_direct_consumption": {
+        "name": "Direct Consumption"
+      },
+      "label_self_consumption": {
+        "name": "Self Consumption"
+      },
+      "label_self_sufficiency": {
+        "name": "Self Sufficiency"
+      },
+      "label_pv_self_consumption_savings": {
+        "name": "PV Self Consumption Savings"
+      },
+      "label_feed_in_revenue": {
+        "name": "Feed In Revenue"
+      },
+      "label_total_savings": {
+        "name": "Total Savings"
+      },
+      "label_self_consumed_power": {
+        "name": "Self Consumed Power"
+      },
+      "label_household_from_battery_power": {
+        "name": "Household From Battery Power"
+      },
+      "label_household_from_grid_power": {
+        "name": "Household From Grid Power"
+      },
+      "label_household_from_pv_power": {
+        "name": "Household From PV Power"
+      },
+      "label_powerconsumed": {
+        "name": "PowerConsumed"
+      },
+      "label_powerproduced": {
+        "name": "PowerProduced"
+      },
+      "label_powerbuffered": {
+        "name": "PowerBuffered"
+      },
+      "label_powerconsumedfromgrid": {
+        "name": "PowerConsumedFromGrid"
+      },
+      "label_powerconsumedfromstorage": {
+        "name": "PowerConsumedFromStorage"
+      },
+      "label_powerconsumedfromproduction": {
+        "name": "PowerConsumedFromProduction"
+      },
+      "label_powerin": {
+        "name": "PowerIn"
+      },
+      "label_powerout": {
+        "name": "PowerOut"
+      },
+      "label_poweracin": {
+        "name": "PowerACIn"
+      },
+      "label_poweracout": {
+        "name": "PowerACOut"
+      },
+      "label_workconsumed": {
+        "name": "WorkConsumed"
+      },
+      "label_workproduced": {
+        "name": "WorkProduced"
+      },
+      "label_workin": {
+        "name": "WorkIn"
+      },
+      "label_workout": {
+        "name": "WorkOut"
+      },
+      "label_selfconsumption": {
+        "name": "SelfConsumption"
+      },
+      "label_selfsufficiency": {
+        "name": "SelfSufficiency"
+      },
+      "label_selfconsumptionrate": {
+        "name": "SelfConsumptionRate"
+      },
+      "label_selfsufficiencyrate": {
+        "name": "SelfSufficiencyRate"
+      },
+      "label_power_consumed": {
+        "name": "Power Consumed"
+      },
+      "label_power_produced": {
+        "name": "Power Produced"
+      },
+      "label_power_ac_in": {
+        "name": "Power AC In"
+      },
+      "label_power_ac_out": {
+        "name": "Power AC Out"
+      },
+      "label_power_in": {
+        "name": "Power In"
+      },
+      "label_power_out": {
+        "name": "Power Out"
+      },
+      "label_last_error": {
+        "name": "Last Error"
+      },
+      "label_item_count": {
+        "name": "Item Count"
+      },
+      "label_state_of_health": {
+        "name": "State Of Health"
+      },
+      "label_soc": {
+        "name": "SoC"
+      },
+      "label_soh": {
+        "name": "SoH"
+      },
+      "label_temperature": {
+        "name": "Temperature"
+      },
+      "label_voltage": {
+        "name": "Voltage"
+      },
+      "label_current": {
+        "name": "Current"
+      },
+      "label_frequency": {
+        "name": "Frequency"
+      },
+      "label_power": {
+        "name": "Power"
+      },
+      "label_energy": {
+        "name": "Energy"
+      },
+      "label_consumption": {
+        "name": "Consumption"
+      },
+      "label_production": {
+        "name": "Production"
+      },
+      "label_storage": {
+        "name": "Storage"
+      },
+      "label_independence": {
+        "name": "Independence"
+      },
+      "label_finance": {
+        "name": "Finance"
+      },
+      "label_today": {
+        "name": "Today"
+      },
+      "label_month": {
+        "name": "Month"
+      },
+      "label_year": {
+        "name": "Year"
+      },
+      "label_latest": {
+        "name": "Latest"
+      },
+      "label_total": {
+        "name": "Total"
+      },
+      "label_cost": {
+        "name": "Cost"
+      },
+      "label_costs": {
+        "name": "Costs"
+      },
+      "label_savings": {
+        "name": "Savings"
+      },
+      "label_saving": {
+        "name": "Saving"
+      },
+      "label_revenue": {
+        "name": "Revenue"
+      },
+      "label_battery": {
+        "name": "Battery"
+      },
+      "label_grid": {
+        "name": "Grid"
+      },
+      "label_household": {
+        "name": "Household"
+      },
+      "label_inverter": {
+        "name": "Inverter"
+      },
+      "label_meter": {
+        "name": "Meter"
+      },
+      "label_mode": {
+        "name": "Mode"
+      },
+      "label_type": {
+        "name": "Type"
+      },
+      "label_state": {
+        "name": "State"
+      },
+      "label_status": {
+        "name": "Status"
+      },
+      "label_balance": {
+        "name": "Balance"
+      },
+      "label_in": {
+        "name": "In"
+      },
+      "label_out": {
+        "name": "Out"
+      },
+      "label_available": {
+        "name": "Available"
+      },
+      "label_active": {
+        "name": "Active"
+      },
+      "label_count": {
+        "name": "Count"
+      },
+      "label_efficiency": {
+        "name": "Efficiency"
+      },
+      "label_capacity": {
+        "name": "Capacity"
+      },
+      "label_charge": {
+        "name": "Charge"
+      },
+      "label_discharge": {
+        "name": "Discharge"
+      },
+      "label_runtime": {
+        "name": "Runtime"
+      },
+      "label_connected": {
+        "name": "Connected"
+      },
+      "label_charging": {
+        "name": "Charging"
+      },
+      "consumption_composition_battery": {
+        "name": "Battery share of consumption"
+      },
+      "consumption_composition_grid": {
+        "name": "Grid share of consumption"
+      },
+      "consumption_composition_pv": {
+        "name": "PV share of consumption"
+      },
+      "self_sufficiency": {
+        "name": "Self-sufficiency"
+      },
+      "self_consumption": {
+        "name": "Self-consumption"
+      },
+      "self_sufficiency_composition_battery": {
+        "name": "Self-supply battery share"
+      },
+      "self_sufficiency_composition_pv": {
+        "name": "Self-supply PV share"
+      },
       "kiwi_os_version": {
         "name": "kiwiOS version"
       }
     },
     "button": {
+      "optimization_config_reset": {
+        "name": "Reset optimization settings"
+      },
+      "override_reset": {
+        "name": "End override"
+      },
       "diagnostics_refresh": {
         "name": "Update data"
       }

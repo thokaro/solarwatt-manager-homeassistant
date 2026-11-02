@@ -65,7 +65,7 @@ def test_connection_forms_separate_local_online_and_general_sections():
         for sections in (config_steps["user"]["sections"], options_sections):
             assert "scan_interval" in sections["local_connection"]["data"]
             assert set(sections["general_settings"]["data"]) == {
-                "energy_delta_kwh", "power_unavailable_threshold",
+                "energy_delta_kwh", "power_unavailable_threshold", "sensor_name_language",
             }
             assert {
                 "kiwigrid_hems_scan_interval",

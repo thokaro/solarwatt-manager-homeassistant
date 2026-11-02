@@ -199,3 +199,32 @@ def test_connection_forms_supply_url_placeholders(step, invalid_input, monkeypat
     }
     if invalid_input:
         assert result["errors"]
+
+
+@pytest.mark.parametrize("duration", [0, 15])
+def test_override_duration_options(duration):
+    flow = config_flow.SOLARWATTItemsOptionsFlow(SimpleNamespace(options={}))
+    saved = flow._build_options_data({"kiwigrid_override_duration": duration})
+    assert saved["kiwigrid_override_duration"] == duration
+    assert not config_flow._validate_options_data(saved)
+
+
+def test_override_duration_rejects_negative_value():
+    flow = config_flow.SOLARWATTItemsOptionsFlow(SimpleNamespace(options={}))
+    saved = flow._build_options_data({"kiwigrid_override_duration": -1})
+    assert "invalid_override_duration" in config_flow._validate_options_data(saved).values()
+
+
+@pytest.mark.parametrize("language", ["auto", "de", "en"])
+def test_sensor_name_language_option(language):
+    flow = config_flow.SOLARWATTItemsOptionsFlow(SimpleNamespace(options={}))
+    saved = flow._build_options_data({"sensor_name_language": language})
+    assert saved["sensor_name_language"] == language
+    assert not config_flow._validate_options_data(saved)
+
+
+def test_sensor_names_default_to_auto_and_reject_unknown_language():
+    flow = config_flow.SOLARWATTItemsOptionsFlow(SimpleNamespace(options={}))
+    assert flow._build_options_data({})["sensor_name_language"] == "auto"
+    saved = flow._build_options_data({"sensor_name_language": "xx"})
+    assert "invalid_sensor_name_language" in config_flow._validate_options_data(saved).values()

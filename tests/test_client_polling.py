@@ -115,12 +115,15 @@ client_module = load_component_module_with_stubs(
             KiwiGridHEMSError=FakeKiwiGridHEMSError,
             KiwiGridHEMSProtocolError=FakeKiwiGridHEMSProtocolError,
             consumers_endpoint_to_items=lambda payload: [],
+            consumption_composition_to_items=lambda payload: [],
+            selfsupply_endpoint_to_items=hems_client.selfsupply_endpoint_to_items,
             energy_flow_endpoint_to_items=lambda payload, **kwargs: [],
             hems_device_names_by_id=_hems_device_names_by_id,
             hems_payloads_to_items=_hems_payloads_to_items,
             hems_payloads_to_things=lambda **payloads: [],
             is_analytics_payload=hems_client.is_analytics_payload,
             merge_analytics_aggregates=hems_client.merge_analytics_aggregates,
+            optimization_reset_config=hems_client.optimization_reset_config,
             summary_anchor_time_window=hems_client.summary_anchor_time_window,
         ),
         f"{PACKAGE_NAME}.hems_api": make_module(
@@ -143,6 +146,7 @@ def _client():
     client._hems_client = None
     client._hems_client_credentials = None
     client._hems_payload_cache = {}
+    client._hems_config_lock = asyncio.Lock()
     client._hems_daily_analytics_cache = {}
     client._hems_profile_updated_at = None
     client._hems_endpoint_errors = {}
@@ -497,3 +501,225 @@ def test_flow_recovery_clears_errors_from_discovery(monkeypatch):
     asyncio.run(client.async_get_hems_items(username="user", password="password"))
 
     assert not client.hems_partial_errors
+
+
+def test_selfsupply_flow_cache_failure_and_recovery(monkeypatch):
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    payload = {"self_sufficiency": 0.75, "extra": {"retained": True}}
+    calls = 0
+
+    async def get_selfsupply():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise FakeKiwiGridHEMSConnectionError("temporarily unavailable")
+        return payload
+
+    monkeypatch.setattr(hems, "async_get_home_selfsupply", get_selfsupply)
+    for _ in range(3):
+        items = asyncio.run(client.async_get_hems_energy_flow_items(
+            username="user", password="password",
+        ))
+        assert items[0]["state"] == "75 %"
+        assert client._hems_payload_cache["home_selfsupply"] is payload
+    assert calls == 3
+    assert "home_selfsupply" not in client._hems_endpoint_errors
+
+    asyncio.run(client.async_get_hems_items(username="user", password="password"))
+    assert calls == 3
+    assert "home_selfsupply" not in captured_payloads[-1]
+
+
+def test_selfsupply_auth_failure_propagates(monkeypatch):
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+
+    async def fail():
+        raise FakeKiwiGridHEMSAuthError("expired")
+
+    monkeypatch.setattr(hems, "async_get_home_selfsupply", fail)
+    with pytest.raises(client_module.SolarwattAuthError):
+        asyncio.run(client.async_get_hems_energy_flow_items(
+            username="user", password="password",
+        ))
+
+
+
+def test_composition_cache_survives_failure(monkeypatch):
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    payload = {"battery": 1.0, "grid": 0.0, "pv": 0.0}
+    calls = 0
+
+    async def get_composition():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise FakeKiwiGridHEMSConnectionError("offline")
+        return payload
+
+    monkeypatch.setattr(hems, "async_get_home_consumption_composition", get_composition)
+    monkeypatch.setattr(client_module, "consumption_composition_to_items", hems_client.consumption_composition_to_items)
+    for _ in range(3):
+        items = asyncio.run(client.async_get_hems_energy_flow_items(username="user", password="password"))
+        assert items[0]["state"] == "100 %"
+        assert client._hems_payload_cache["home_consumption_composition"] is payload
+    assert "home_consumption_composition" not in client._hems_endpoint_errors
+    asyncio.run(client.async_get_hems_items(username="user", password="password"))
+    assert calls == 3
+    assert "home_consumption_composition" not in captured_payloads[-1]
+
+
+
+def test_config_updates_preserve_other_fields_and_serialize(monkeypatch):
+    from copy import deepcopy
+
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    remote = [{"id": "device", "supported_configs": ["TARGET_TIME.CAPACITY", "TARGET_TIME.TARGET_TIME"],
+               "config": {"optimization_mode": "DEPARTURE_TIME", "lowest_power": 3500,
+                          "target_time": {"capacity": 30000, "target_time": 50400000}}}]
+    sent = []
+
+    async def get():
+        result = deepcopy(remote)
+        await asyncio.sleep(0)
+        return result
+
+    async def update(device_id, config):
+        assert device_id == "device"
+        sent.append(deepcopy(config))
+        remote[0]["config"] = deepcopy(config)
+
+    monkeypatch.setattr(hems, "async_get_device_optimizations", get)
+    monkeypatch.setattr(hems, "async_update_device_optimization_config", update)
+
+    async def run():
+        await asyncio.gather(
+            client.async_update_hems_device_optimization_config("device", "target_time.capacity", 35000, username="user", password="password"),
+            client.async_update_hems_device_optimization_config("device", "target_time.target_time", 54000000, username="user", password="password"),
+        )
+
+    asyncio.run(run())
+    assert len(sent) == 2
+    assert sent[-1] == {"optimization_mode": "DEPARTURE_TIME", "lowest_power": 3500,
+                        "target_time": {"capacity": 35000, "target_time": 54000000}}
+    assert client._hems_payload_cache["device_optimizations"][0]["config"] == sent[-1]
+
+
+def test_config_update_sends_only_portal_fields(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    current = {"optimization_mode": "DEPARTURE_TIME", "min_runtime": 0, "min_resttime": 0,
+               "lowest_power": 4200, "max_power": 11000, "must_runtime": None, "user_importance": "HIGH",
+               "target_time": {"capacity": 30000, "target_time": 28800000, "extra": 1}}
+    monkeypatch.setattr(hems, "async_get_device_optimizations", AsyncMock(return_value=[{
+        "id": "device", "supported_configs": ["TARGET_TIME.TARGET_TIME"], "config": current,
+    }]))
+    update = AsyncMock()
+    monkeypatch.setattr(hems, "async_update_device_optimization_config", update)
+
+    asyncio.run(client.async_update_hems_device_optimization_config(
+        "device", "target_time.target_time", 39600000, username="user", password="password",
+    ))
+    update.assert_awaited_once_with("device", {
+        "optimization_mode": "DEPARTURE_TIME", "lowest_power": 4200, "max_power": 11000,
+        "min_runtime": 0, "min_resttime": 0, "target_time": {"capacity": 30000, "target_time": 39600000},
+    })
+    cached = client._hems_payload_cache["device_optimizations"][0]["config"]
+    assert cached["user_importance"] == "HIGH"
+    assert cached["target_time"]["target_time"] == 39600000
+
+
+def test_config_update_outside_departure_mode_omits_target_time(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    monkeypatch.setattr(hems, "async_get_device_optimizations", AsyncMock(return_value=[{
+        "id": "device", "supported_configs": ["LOWEST_POWER", "TARGET_TIME.TARGET_TIME"],
+        "config": {"optimization_mode": "PV_EXCESS", "lowest_power": 3500,
+                   "target_time": {"capacity": 30000, "target_time": 50400000}},
+    }]))
+    update = AsyncMock()
+    monkeypatch.setattr(hems, "async_update_device_optimization_config", update)
+
+    asyncio.run(client.async_update_hems_device_optimization_config(
+        "device", "lowest_power", 4200, username="user", password="password",
+    ))
+    update.assert_awaited_once_with("device", {"optimization_mode": "PV_EXCESS", "lowest_power": 4200})
+
+    update.reset_mock()
+    with pytest.raises(client_module.SolarwattError, match="departure time optimization mode"):
+        asyncio.run(client.async_update_hems_device_optimization_config(
+            "device", "target_time.target_time", 54000000, username="user", password="password",
+        ))
+    update.assert_not_awaited()
+
+
+@pytest.mark.parametrize("supported,config", [([], {}), (["MIN_RUNTIME"], {}),
+    (["TARGET_TIME.CAPACITY"], {"optimization_mode": "DEPARTURE_TIME", "target_time": {"capacity": 1}})])
+def test_config_write_rejects_missing_or_unsupported_metadata(monkeypatch, supported, config):
+    from unittest.mock import AsyncMock
+
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    monkeypatch.setattr(hems, "async_get_device_optimizations", AsyncMock(return_value=[{
+        "id": "device", "supported_configs": supported, "config": config,
+    }]))
+    update = AsyncMock()
+    monkeypatch.setattr(hems, "async_update_device_optimization_config", update)
+    with pytest.raises(client_module.SolarwattError):
+        asyncio.run(client.async_update_hems_device_optimization_config(
+            "device", supported[0].lower() if supported else "min_runtime", 1,
+            username="user", password="password",
+        ))
+    update.assert_not_awaited()
+
+
+@pytest.mark.parametrize("error_type,expected", [
+    (FakeKiwiGridHEMSAuthError, client_module.SolarwattAuthError),
+    (FakeKiwiGridHEMSConnectionError, client_module.SolarwattConnectionError),
+])
+def test_config_write_errors_preserve_cached_values(monkeypatch, error_type, expected):
+    from unittest.mock import AsyncMock
+
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    payload = [{"id": "device", "supported_configs": ["MIN_RUNTIME"],
+                "config": {"optimization_mode": "PV_EXCESS", "min_runtime": 5}}]
+    monkeypatch.setattr(hems, "async_get_device_optimizations", AsyncMock(return_value=payload))
+    monkeypatch.setattr(hems, "async_update_device_optimization_config", AsyncMock(side_effect=error_type("failed")))
+    with pytest.raises(expected):
+        asyncio.run(client.async_update_hems_device_optimization_config(
+            "device", "min_runtime", 3, username="user", password="password",
+        ))
+    assert payload[0]["config"]["min_runtime"] == 5
+
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_config_reset_reads_fresh_defaults_and_only_updates_after_success(monkeypatch, fail):
+    from unittest.mock import AsyncMock
+
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    payload = [{"id": "device", "config": {"optimization_mode": "PV_EXCESS", "min_runtime": 5},
+                "config_defaults": {"optimization_mode": "NOT_OPTIMIZED", "min_runtime": 0},
+                "supported_configs": ["MIN_RUNTIME"]}]
+    getter = AsyncMock(return_value=payload)
+    setter = AsyncMock(side_effect=FakeKiwiGridHEMSConnectionError("offline") if fail else None)
+    monkeypatch.setattr(hems, "async_get_device_optimizations", getter)
+    monkeypatch.setattr(hems, "async_update_device_optimization_config", setter)
+    request = client.async_reset_hems_device_optimization_config("device", username="user", password="password")
+    if fail:
+        with pytest.raises(client_module.SolarwattConnectionError):
+            asyncio.run(request)
+    else:
+        asyncio.run(request)
+    getter.assert_awaited_once()
+    setter.assert_awaited_once_with("device", {"optimization_mode": "PV_EXCESS", "min_runtime": 0})
+    assert payload[0]["config"]["min_runtime"] == (5 if fail else 0)

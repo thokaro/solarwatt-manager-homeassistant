@@ -48,6 +48,8 @@ def _load_coordinator_module():
         category: str | None
 
     constants = {
+        "OPTIMIZATION_CONFIG_FIELDS": ("lowest_power", "max_power", "min_runtime", "min_resttime", "must_runtime", "target_time.capacity", "target_time.target_time"),
+        "CONF_KIWIGRID_OVERRIDE_DURATION": "kiwigrid_override_duration",
         "CONF_KIWIGRID_HEMS_SCAN_INTERVAL": "kiwigrid_hems_scan_interval",
         "CONF_KIWIGRID_FLOW_SCAN_INTERVAL": "kiwigrid_flow_scan_interval",
         "CONF_KIWIGRID_STATS_SCAN_INTERVAL": "kiwigrid_stats_scan_interval",
@@ -323,7 +325,7 @@ def test_partial_auth_failure_starts_reauth_without_hiding_cloud_data():
 def test_hems_endpoint_partial_failure_keeps_source_available(caplog):
     coordinator, _, client = _coordinator(local_enabled=False)
     client.hems_partial_errors = (
-        "analytics_finance_year: Timeout while requesting GET /v11/analytics/finance year",
+        "analytics_finance_year: Timeout while requesting GET /v12/analytics/finance year",
     )
 
     with caplog.at_level(logging.WARNING):
@@ -495,3 +497,73 @@ def test_failed_statistics_do_not_retry_on_device_only_polls(monkeypatch):
             for request in client.hems_requests] == [
         (True, True), (True, False), (True, False), (True, True),
     ]
+
+
+
+@pytest.mark.parametrize("duration", [0, 15])
+def test_switch_duration_and_override_reset_refresh(duration):
+    from unittest.mock import AsyncMock
+
+    coordinator, entry, client = _coordinator()
+    entry.options["kiwigrid_override_duration"] = duration
+    client.async_set_hems_device_optimization_state = AsyncMock()
+    client.async_clear_hems_device_optimization_state = AsyncMock()
+    coordinator.async_refresh_things = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    asyncio.run(coordinator.async_set_hems_device_optimization_state("device", "ON"))
+    client.async_set_hems_device_optimization_state.assert_awaited_once_with(
+        "device", "ON", duration_of_override=duration or None,
+        username="cloud-user", password="cloud-password",
+    )
+    asyncio.run(coordinator.async_clear_hems_device_optimization_state("device"))
+    client.async_clear_hems_device_optimization_state.assert_awaited_once_with(
+        "device", username="cloud-user", password="cloud-password",
+    )
+    assert coordinator.async_refresh_things.await_count == 2
+    assert coordinator.async_request_refresh.await_count == 2
+
+
+@pytest.mark.parametrize("field,value", [
+    ("unknown", 1), ("min_runtime", -1), ("min_runtime", True), ("min_runtime", 1.5),
+    ("max_power", 2_147_483_648), ("target_time.target_time", 86_400_000),
+    ("target_time.target_time", 60001),
+])
+def test_config_values_rejected_before_api(field, value):
+    from unittest.mock import AsyncMock
+
+    coordinator, _, client = _coordinator()
+    client.async_update_hems_device_optimization_config = AsyncMock()
+    with pytest.raises(coordinator_module.SolarwattError):
+        asyncio.run(coordinator.async_update_hems_device_optimization_config("device", field, value))
+    client.async_update_hems_device_optimization_config.assert_not_awaited()
+
+
+def test_config_update_refreshes_device_metadata():
+    from unittest.mock import AsyncMock
+
+    coordinator, _, client = _coordinator()
+    client.async_update_hems_device_optimization_config = AsyncMock()
+    coordinator.async_refresh_things = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    asyncio.run(coordinator.async_update_hems_device_optimization_config("device", "min_runtime", 5))
+    client.async_update_hems_device_optimization_config.assert_awaited_once_with(
+        "device", "min_runtime", 5, username="cloud-user", password="cloud-password",
+    )
+    coordinator.async_refresh_things.assert_awaited_once()
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
+
+def test_config_reset_refreshes_metadata_without_assuming_state():
+    from unittest.mock import AsyncMock
+
+    coordinator, _, client = _coordinator()
+    client.async_reset_hems_device_optimization_config = AsyncMock()
+    coordinator.async_refresh_things = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    asyncio.run(coordinator.async_reset_hems_device_optimization_config("device"))
+    client.async_reset_hems_device_optimization_config.assert_awaited_once_with(
+        "device", username="cloud-user", password="cloud-password",
+    )
+    coordinator.async_refresh_things.assert_awaited_once()
+    coordinator.async_request_refresh.assert_awaited_once()

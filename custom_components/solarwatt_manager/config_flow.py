@@ -14,6 +14,7 @@ from homeassistant.data_entry_flow import section
 from .const import (
     CONF_ENABLED_THINGS,
     CONF_ENERGY_DELTA_KWH,
+    CONF_SENSOR_NAME_LANGUAGE,
     CONF_HOST,
     CONF_INSTALLATION_ID,
     CONF_KIWIGRID_HEMS_PASSWORD,
@@ -21,6 +22,7 @@ from .const import (
     CONF_KIWIGRID_FLOW_SCAN_INTERVAL,
     CONF_KIWIGRID_STATS_SCAN_INTERVAL,
     CONF_KIWIGRID_PROFILE_CACHE_INTERVAL,
+    CONF_KIWIGRID_OVERRIDE_DURATION,
     CONF_KIWIGRID_HEMS_USERNAME,
     CONF_PASSWORD,
     CONF_POWER_UNAVAILABLE_THRESHOLD,
@@ -267,6 +269,14 @@ def _is_never_invalid(_: Any) -> bool:
 
 _OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
     {
+        "key": CONF_SENSOR_NAME_LANGUAGE,
+        "default": "auto",
+        "normalize": _normalize_text,
+        "coerce": vol.In(["auto", "de", "en"]),
+        "error": "invalid_sensor_name_language",
+        "invalid": lambda value: value not in {"auto", "de", "en"},
+    },
+    {
         "key": CONF_KIWIGRID_HEMS_USERNAME,
         "default": "",
         "normalize": _normalize_text,
@@ -325,6 +335,14 @@ _OPTION_FIELD_SPECS: tuple[dict[str, Any], ...] = (
         "invalid": _is_invalid_scan_interval,
     },
     {
+        "key": CONF_KIWIGRID_OVERRIDE_DURATION,
+        "default": 0,
+        "normalize": _normalize_int,
+        "coerce": vol.Coerce(int),
+        "error": "invalid_override_duration",
+        "invalid": _is_invalid_power_unavailable_threshold,
+    },
+    {
         "key": CONF_ENERGY_DELTA_KWH,
         "default": DEFAULT_ENERGY_DELTA_KWH,
         "normalize": _normalize_float,
@@ -348,6 +366,7 @@ _KIWIGRID_OPTION_KEYS = {
     CONF_KIWIGRID_FLOW_SCAN_INTERVAL,
     CONF_KIWIGRID_STATS_SCAN_INTERVAL,
     CONF_KIWIGRID_PROFILE_CACHE_INTERVAL,
+    CONF_KIWIGRID_OVERRIDE_DURATION,
 }
 _KIWIGRID_CREDENTIAL_KEYS = {
     CONF_KIWIGRID_HEMS_USERNAME,
@@ -355,6 +374,7 @@ _KIWIGRID_CREDENTIAL_KEYS = {
 }
 _GENERAL_OPTION_KEYS = {
     CONF_ENERGY_DELTA_KWH,
+    CONF_SENSOR_NAME_LANGUAGE,
     CONF_POWER_UNAVAILABLE_THRESHOLD,
 }
 
@@ -653,10 +673,10 @@ def _kiwigrid_hems_selection_thing() -> dict[str, Any]:
         "properties": {
             "thingTypeTitle": "KiwiGrid Stats",
             "thingTypeCategory": "KIWIGRID_HEMS",
-            "kiwigridEndpoint": "/v11/analytics/consumption",
+            "kiwigridEndpoint": "/v12/analytics/consumption",
             "kiwigridKind": "analytics_consumption",
-            "generatedLabel": "KiwiGrid HEMS v11",
-            "model": "KiwiGrid HEMS v11",
+            "generatedLabel": "KiwiGrid HEMS v12",
+            "model": "KiwiGrid HEMS v12",
         },
         "channels": [
             {
@@ -668,7 +688,7 @@ def _kiwigrid_hems_selection_thing() -> dict[str, Any]:
                     "hems_analytics_consumption_today_consumption_powerconsumed"
                 ],
                 "properties": {
-                    "kiwigrid.endpoint": "/v11/analytics/consumption",
+                    "kiwigrid.endpoint": "/v12/analytics/consumption",
                     "kiwigrid.kind": "analytics_consumption",
                     "kig.meta.scope": "kiwigrid_hems",
                 },

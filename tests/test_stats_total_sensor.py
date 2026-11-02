@@ -33,7 +33,7 @@ def modules():
             SensorEntity=type("SensorEntity", (), {}),
             SensorEntityDescription=SimpleNamespace,
             SensorDeviceClass=SimpleNamespace(ENERGY="energy"),
-            SensorStateClass=SimpleNamespace(TOTAL_INCREASING="total_increasing"),
+            SensorStateClass=SimpleNamespace(MEASUREMENT="measurement", TOTAL_INCREASING="total_increasing"),
         ),
         "homeassistant.helpers.entity": make_module(
             "homeassistant.helpers.entity", EntityCategory=SimpleNamespace(DIAGNOSTIC="diagnostic")

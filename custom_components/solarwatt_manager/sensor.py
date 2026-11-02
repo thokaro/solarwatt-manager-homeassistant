@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_ENERGY_DELTA_KWH,
+    CONF_SENSOR_NAME_LANGUAGE,
     CONF_POWER_UNAVAILABLE_THRESHOLD,
     DEFAULT_ENERGY_DELTA_KWH,
     DEFAULT_POWER_UNAVAILABLE_THRESHOLD,
@@ -38,7 +39,7 @@ from .entity_helpers import (
     is_stats_total_source_item_name,
     iter_item_sensor_names,
 )
-from .naming import item_display_name, item_entity_name, slugify_entity_name, trim_device_tokens
+from .naming import localized_sensor_name, item_display_name, item_entity_name, slugify_entity_name, trim_device_tokens
 from .hems_api import ENERGY_OVERVIEW_THING_UID, GATEWAY_VERSION_ITEM_NAME
 from .sensor_meta import guess_ha_meta
 from .stats_total import StatsTotalStore
@@ -51,11 +52,43 @@ GATEWAY_VERSION_DESCRIPTION = SensorEntityDescription(
     icon="mdi:information-outline",
 )
 
+SELFSUPPLY_DESCRIPTIONS = {
+    f"hems_flow_{key}": SensorEntityDescription(
+        key=f"hems_flow_{key}",
+        translation_key=key,
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:home-percent",
+    )
+    for key in (
+        "self_sufficiency",
+        "self_consumption",
+        "self_sufficiency_composition_battery",
+        "self_sufficiency_composition_pv",
+        "consumption_composition_battery",
+        "consumption_composition_grid",
+        "consumption_composition_pv",
+    )
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: SOLARWATTConfigEntry, async_add_entities: AddEntitiesCallback
 ):
+    from homeassistant.helpers.translation import async_get_translations
+
     coordinator = entry.runtime_data
+    language = entry.options.get(CONF_SENSOR_NAME_LANGUAGE, "auto")
+    if language == "auto":
+        ha_language = str(hass.config.language or "en").lower().replace("_", "-")
+        language = "de" if ha_language.split("-", 1)[0] == "de" else "en"
+    translated = await async_get_translations(hass, language, "entity", {DOMAIN})
+    prefix = f"component.{DOMAIN}.entity.sensor."
+    coordinator.sensor_name_translations = {
+        key[len(prefix):-len(".name")]: value
+        for key, value in translated.items()
+        if key.startswith(prefix) and key.endswith(".name")
+    }
     energy_delta_kwh = float(entry.options.get(CONF_ENERGY_DELTA_KWH, DEFAULT_ENERGY_DELTA_KWH))
     power_unavailable_threshold = int(
         entry.options.get(
@@ -229,7 +262,13 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
         item = (self.coordinator.data or {}).get(item_name)
         channel_metadata = self.coordinator.item_to_channel_metadata.get(item_name)
 
-        self._attr_name = self._item_display_name()
+        description = SELFSUPPLY_DESCRIPTIONS.get(item_name)
+        if description is not None:
+            self.entity_description = description
+            self._attr_has_entity_name = True
+            self._attr_name = self._item_display_name()
+        else:
+            self._attr_name = self._item_display_name()
         if item and item.raw.get("entityCategory") == "diagnostic":
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -250,6 +289,12 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
                 self._attr_state_class in (SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING)
             )
             self._is_power = self._attr_device_class == SensorDeviceClass.POWER
+
+        if description is not None:
+            self._attr_device_class = None
+            self._attr_native_unit_of_measurement = description.native_unit_of_measurement
+            self._attr_state_class = description.state_class
+            self._attr_icon = description.icon
 
     # Entity/device naming helpers.
     def _thing(self) -> dict | None:
@@ -274,9 +319,14 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
 
     def _item_display_name(self) -> str:
         item = (self.coordinator.data or {}).get(self._item_name)
-        return item_display_name(
-            self._item_name,
-            item.label if item else None,
+        translations = getattr(self.coordinator, "sensor_name_translations", {})
+        description = SELFSUPPLY_DESCRIPTIONS.get(self._item_name)
+        if description is not None and description.translation_key in translations:
+            return translations[description.translation_key]
+        return localized_sensor_name(
+            item_display_name(self._item_name, item.label if item else None),
+            translations,
+            (str(thing.get("label") or "") for thing in self.coordinator.things.values()),
         )
 
     def _sync_display_name(self) -> bool:
@@ -289,7 +339,8 @@ class SOLARWATTItemSensor(CoordinatorEntity, SensorEntity):
     @property
     def suggested_object_id(self) -> str | None:
         device_name = self._build_device_name()
-        sensor_name = self._item_display_name()
+        item = (self.coordinator.data or {}).get(self._item_name)
+        sensor_name = item_display_name(self._item_name, item.label if item else None)
         return slugify_entity_name(trim_device_tokens(sensor_name, device_name)) or None
 
     # Numeric state handling for energy delta and temporary power unavailability.
@@ -443,9 +494,13 @@ class SOLARWATTStatsTotalSensor(CoordinatorEntity, SensorEntity):
 
     def _item_display_name(self) -> str:
         source_name = str(self._source_entity.name or item_entity_name(self._item_name)).strip()
-        if source_name.lower().startswith("year "):
-            source_name = source_name[5:].strip()
-        return f"Total {source_name}"
+        translations = getattr(self.coordinator, "sensor_name_translations", {})
+        year = translations.get("label_year", "Year")
+        for prefix in ("Year", year):
+            if source_name.lower().startswith(prefix.lower() + " "):
+                source_name = source_name[len(prefix):].strip()
+                break
+        return f"{translations.get('label_total', 'Total')} {source_name}"
 
     def _sync_display_name(self) -> bool:
         new_name = self._item_display_name()
@@ -541,6 +596,9 @@ class SOLARWATTGatewayVersionSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = build_item_sensor_unique_id(
             entry_id, self.entity_description.key
         )
+        translations = getattr(coordinator, "sensor_name_translations", {})
+        if self.entity_description.translation_key in translations:
+            self._attr_name = translations[self.entity_description.translation_key]
         self._attr_device_info = build_thing_device_info(
             coordinator.hass,
             get_device_registry_anchor(coordinator.entry),

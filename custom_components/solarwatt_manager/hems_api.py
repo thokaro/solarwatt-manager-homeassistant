@@ -220,8 +220,8 @@ def kiwigrid_flow_thing() -> dict[str, Any]:
             KIWIGRID_FLOW_THING_PROPERTY: "true",
             "thingTypeTitle": "KiwiGrid Flow",
             "thingTypeCategory": "KIWIGRID_FLOW",
-            "generatedLabel": "KiwiGrid HEMS v11",
-            "model": "KiwiGrid HEMS v11",
+            "generatedLabel": "KiwiGrid HEMS v12",
+            "model": "KiwiGrid HEMS v12",
         },
         "channels": [],
     }

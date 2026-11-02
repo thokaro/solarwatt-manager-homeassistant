@@ -15,7 +15,7 @@ from .registry_migrations import migrate_device_registry_identifiers
 from .services import async_register_services
 from .stats_total import StatsTotalStore
 
-PLATFORMS: list[str] = ["sensor", "button", "select", "switch"]
+PLATFORMS: list[str] = ["sensor", "button", "select", "switch", "number", "time"]
 _REMOVED_OPTION_KEYS = {
     "disable_duplicate_item_entities",
     "kiwigrid_hems_enabled",

@@ -21,6 +21,18 @@ class FakeCoordinatorEntity:
 def platforms():
     package = "solarwatt_manager_control_platform_test"
     stubs = {
+        "homeassistant.components.number": make_module(
+            "homeassistant.components.number", NumberEntity=type("NumberEntity", (), {}),
+            NumberEntityDescription=SimpleNamespace,
+            NumberDeviceClass=SimpleNamespace(POWER="power", DURATION="duration", ENERGY="energy"),
+            NumberMode=SimpleNamespace(BOX="box"),
+        ),
+        "homeassistant.components.time": make_module(
+            "homeassistant.components.time", TimeEntity=type("TimeEntity", (), {}),
+            TimeEntityDescription=SimpleNamespace,
+        ),
+        "homeassistant.components.button": make_module("homeassistant.components.button", ButtonEntity=type("ButtonEntity", (), {})),
+        "homeassistant.helpers.entity": make_module("homeassistant.helpers.entity", EntityCategory=SimpleNamespace(DIAGNOSTIC="diagnostic", CONFIG="config")),
         **make_homeassistant_stubs(),
         "homeassistant.exceptions": make_module(
             "homeassistant.exceptions", HomeAssistantError=RuntimeError
@@ -39,7 +51,7 @@ def platforms():
         ),
     }
     loaded = {}
-    for name in ("const", "entity_helpers", "select", "switch"):
+    for name in ("const", "entity_helpers", "select", "switch", "button", "number", "time"):
         loaded[name] = load_component_module_with_stubs(name, package_name=package, stubs=stubs)
         stubs[f"{package}.{name}"] = loaded[name]
     return SimpleNamespace(**loaded)
@@ -76,6 +88,9 @@ def _setup(platform, things, options=None, entry_id="entry"):
         register_discovery_callback=register,
         async_set_hems_device_optimization_mode=AsyncMock(),
         async_set_hems_device_optimization_state=AsyncMock(),
+        async_clear_hems_device_optimization_state=AsyncMock(),
+        async_reset_hems_device_optimization_config=AsyncMock(),
+        async_update_hems_device_optimization_config=AsyncMock(),
     )
     entry.runtime_data = coordinator
     batches = []
@@ -192,3 +207,119 @@ def test_select_and_switch_discovery_are_independent_for_the_same_entry(platform
     for discover in rig.callbacks:
         discover()
     assert len(rig.batches) == len(switch_batches) == 1
+
+
+
+def test_reset_button_discovery_command_and_errors(platforms):
+    rig = _setup(platforms.button, {"first": _thing("first"), "other": _thing("other")},
+                 {"enabled_things": ["first"]})
+    buttons = [entity for batch in rig.batches for entity in batch
+               if isinstance(entity, platforms.button.SOLARWATTOverrideResetButton)]
+    assert len(buttons) == 1
+    button = buttons[0]
+    assert button._attr_unique_id == "entry_thing_first_override_reset"
+    assert button._attr_translation_key == "override_reset"
+    asyncio.run(button.async_press())
+    rig.coordinator.async_clear_hems_device_optimization_state.assert_awaited_once_with(
+        "12345678-1234-1234-1234-123456789abc"
+    )
+    rig.coordinator.async_clear_hems_device_optimization_state.side_effect = ValueError("offline")
+    with pytest.raises(RuntimeError, match="Unable to reset"):
+        asyncio.run(button.async_press())
+    for discover in rig.callbacks:
+        discover()
+    assert len([e for batch in rig.batches for e in batch if isinstance(
+        e, platforms.button.SOLARWATTOverrideResetButton
+    )]) == 1
+
+
+
+@pytest.mark.parametrize("platform,field,raw,expected,new_value,expected_raw", [
+    ("number", "lowest_power", "3500", 3500, 4000, 4000),
+    ("number", "min_runtime", "5", 5, 3, 3),
+    ("number", "must_runtime", "3", 3, 4, 4),
+    ("number", "target_time.capacity", "30000", 30, 35.5, 35500),
+    ("time", "target_time.target_time", "50400000", "14:00", "15:30", 55800000),
+])
+def test_config_controls_dynamic_discovery_units_and_commands(platforms, platform, field, raw, expected, new_value, expected_raw):
+    from datetime import time
+
+    props = {"optimizationSupportedConfigs": field.upper(), f"optimizationConfig_{field}": raw}
+    thing = _thing(**props)
+    rig = _setup(getattr(platforms, platform), {"thing": thing}, {"enabled_things": ["thing"]})
+    entities = [e for batch in rig.batches for e in batch]
+    assert len(entities) == 1
+    entity = entities[0]
+    assert entity._attr_unique_id == f"entry_thing_thing_optimization_{field.replace('.', '_')}"
+    assert entity._attr_device_info["identifiers"] == {("solarwatt_manager", "installation:thing")}
+    if platform == "time":
+        assert entity.native_value == time.fromisoformat(expected)
+        asyncio.run(entity.async_set_value(time.fromisoformat(new_value)))
+    else:
+        assert entity.native_value == expected
+        asyncio.run(entity.async_set_native_value(new_value))
+    rig.coordinator.async_update_hems_device_optimization_config.assert_awaited_once_with(
+        "12345678-1234-1234-1234-123456789abc", field, expected_raw,
+    )
+    expected_ids = platforms.entity_helpers._selected_entity_unique_ids(
+        rig.entry, {}, {}, {"thing"}, rig.coordinator.things,
+    )
+    assert entity._attr_unique_id in expected_ids
+    for discover in rig.callbacks:
+        discover()
+    assert len([e for batch in rig.batches for e in batch]) == 1
+
+
+@pytest.mark.parametrize("platform", ["number", "time"])
+def test_config_controls_wait_for_capabilities_and_respect_selection(platforms, platform):
+    rig = _setup(getattr(platforms, platform), {"thing": _thing()}, {"enabled_things": []})
+    assert not rig.batches
+    field = "MIN_RUNTIME" if platform == "number" else "TARGET_TIME.TARGET_TIME"
+    rig.coordinator.things["thing"] = _thing(optimizationSupportedConfigs=field)
+    for callback in rig.callbacks:
+        callback()
+    assert not rig.batches
+    for callback in rig.callbacks:
+        callback({"enabled_things": ["thing"]})
+    assert len([e for batch in rig.batches for e in batch]) == 1
+
+
+@pytest.mark.parametrize("value", [-1, float("nan"), float("inf"), True, 1.5])
+def test_number_rejects_invalid_whole_unit_values(platforms, value):
+    rig = _setup(platforms.number, {"thing": _thing(optimizationSupportedConfigs="MIN_RUNTIME")})
+    entity = rig.batches[0][0]
+    with pytest.raises(RuntimeError):
+        asyncio.run(entity.async_set_native_value(value))
+    rig.coordinator.async_update_hems_device_optimization_config.assert_not_awaited()
+
+
+def test_time_rejects_seconds_and_does_not_assume_utc(platforms):
+    from datetime import time, timezone
+
+    rig = _setup(platforms.time, {"thing": _thing(optimizationSupportedConfigs="TARGET_TIME.TARGET_TIME")})
+    entity = rig.batches[0][0]
+    for value in (time(14, 0, 1), time(14, 0, tzinfo=timezone.utc)):
+        with pytest.raises(RuntimeError):
+            asyncio.run(entity.async_set_value(value))
+    rig.coordinator.async_update_hems_device_optimization_config.assert_not_awaited()
+
+
+
+def test_config_reset_button_is_distinct_and_respects_selection(platforms):
+    thing = _thing(optimizationHasDefaults="true", optimizationSupportedConfigs="MIN_RUNTIME")
+    rig = _setup(platforms.button, {"thing": thing}, {"enabled_things": []})
+    assert not rig.batches
+    for callback in rig.callbacks:
+        callback({"enabled_things": ["thing"]})
+    buttons = [e for batch in rig.batches for e in batch if isinstance(e, platforms.button.SOLARWATTConfigResetButton)]
+    assert len(buttons) == 1
+    button = buttons[0]
+    assert button._attr_unique_id == "entry_thing_thing_optimization_config_reset"
+    assert button._attr_translation_key == "optimization_config_reset"
+    asyncio.run(button.async_press())
+    rig.coordinator.async_reset_hems_device_optimization_config.assert_awaited_once_with(
+        "12345678-1234-1234-1234-123456789abc"
+    )
+    rig.coordinator.async_clear_hems_device_optimization_state.assert_not_awaited()
+    ids = platforms.entity_helpers._selected_entity_unique_ids(rig.entry, {}, {}, {"thing"}, rig.coordinator.things)
+    assert button._attr_unique_id in ids

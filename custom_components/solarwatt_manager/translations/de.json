@@ -5,7 +5,9 @@
       "invalid_host": "Ungültiger Host oder IP-Adresse.",
       "invalid_username": "Ungültiger Benutzername.",
       "invalid_password": "Ungültiges Passwort.",
+      "invalid_override_duration": "Die Dauer muss eine ganze Zahl ab 0 sein.",
       "invalid_scan_interval": "Das Update-Intervall muss zwischen 10 und 3600 Sekunden liegen.",
+      "invalid_sensor_name_language": "Bitte auto, de oder en als Sprache wählen.",
       "invalid_energy_delta_kwh": "Das Energie-Delta muss größer oder gleich 0 sein (kWh).",
       "invalid_power_unavailable_threshold": "Der Power-unavailable-Schwellwert muss größer oder gleich 0 sein.",
       "invalid_input": "Ungültige Eingabe.",
@@ -46,6 +48,7 @@
               "kiwigrid_hems_scan_interval": "HEMS-Geräteintervall (Sekunden)",
               "kiwigrid_flow_scan_interval": "KiwiGrid-Flow-Intervall (Sekunden)",
               "kiwigrid_stats_scan_interval": "KiwiGrid-Stats-Intervall (Sekunden)",
+              "kiwigrid_override_duration": "Übersteuerungsdauer (Minuten; 0 = bisheriges Verhalten ohne Dauer)",
               "kiwigrid_profile_cache_interval": "Cache-Dauer des Benutzerprofils (Sekunden)"
             }
           },
@@ -53,6 +56,7 @@
             "name": "Sensor-Einstellungen",
             "description": "Schwellwerte für Energieänderungen und den Umgang mit kurzzeitig fehlenden Leistungswerten.",
             "data": {
+              "sensor_name_language": "Sprache der Sensorbezeichnungen (auto = HA-Sprache, de = Deutsch, en = Englisch)",
               "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
               "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert"
             }
@@ -116,7 +120,9 @@
       "invalid_host": "Ungültiger Host oder IP-Adresse.",
       "invalid_username": "Ungültiger Benutzername.",
       "invalid_password": "Ungültiges Passwort.",
+      "invalid_override_duration": "Die Dauer muss eine ganze Zahl ab 0 sein.",
       "invalid_scan_interval": "Das Update-Intervall muss zwischen 10 und 3600 Sekunden liegen.",
+      "invalid_sensor_name_language": "Bitte auto, de oder en als Sprache wählen.",
       "invalid_energy_delta_kwh": "Das Energie-Delta muss größer oder gleich 0 sein (kWh).",
       "invalid_power_unavailable_threshold": "Der Power-unavailable-Schwellwert muss größer oder gleich 0 sein.",
       "invalid_input": "Ungültige Eingabe.",
@@ -154,6 +160,7 @@
               "kiwigrid_hems_scan_interval": "HEMS-Geräteintervall (Sekunden)",
               "kiwigrid_flow_scan_interval": "KiwiGrid-Flow-Intervall (Sekunden)",
               "kiwigrid_stats_scan_interval": "KiwiGrid-Stats-Intervall (Sekunden)",
+              "kiwigrid_override_duration": "Übersteuerungsdauer (Minuten; 0 = bisheriges Verhalten ohne Dauer)",
               "kiwigrid_profile_cache_interval": "Cache-Dauer des Benutzerprofils (Sekunden)"
             }
           },
@@ -161,6 +168,7 @@
             "name": "Sensor-Einstellungen",
             "description": "Schwellwerte für Energieänderungen und den Umgang mit kurzzeitig fehlenden Leistungswerten.",
             "data": {
+              "sensor_name_language": "Sprache der Sensorbezeichnungen (auto = HA-Sprache, de = Deutsch, en = Englisch)",
               "energy_delta_kwh": "Schwellwert Energy-Änderung (kWh). Schreiben nur bei >= Wert; 0 = bei jedem Update schreiben",
               "power_unavailable_threshold": "Power-unavailable-Schwellwert (Polls). Letzten Wert bis zum N-ten unavailable halten; 0 = deaktiviert"
             }
@@ -170,12 +178,484 @@
     }
   },
   "entity": {
+    "number": {
+      "lowest_power": {
+        "name": "Schaltschwelle"
+      },
+      "max_power": {
+        "name": "Maximale Ladeleistung"
+      },
+      "min_runtime": {
+        "name": "Mindestlaufzeit"
+      },
+      "min_resttime": {
+        "name": "Mindestruhezeit"
+      },
+      "must_runtime": {
+        "name": "Mindestlaufzeit pro Tag"
+      },
+      "target_time_capacity": {
+        "name": "Gewünschte Ladeenergie"
+      }
+    },
+    "time": {
+      "departure_time": {
+        "name": "Abfahrtszeit"
+      }
+    },
     "sensor": {
+      "label_powerreleased": {
+        "name": "Speicherentladung"
+      },
+      "label_workreleased": {
+        "name": "Entladene Energie"
+      },
+      "label_workbuffered": {
+        "name": "Gespeicherte Energie"
+      },
+      "label_workacin": {
+        "name": "Bezogene AC-Energie"
+      },
+      "label_workacout": {
+        "name": "Abgegebene AC-Energie"
+      },
+      "label_stateofcharge": {
+        "name": "Ladezustand"
+      },
+      "label_autarky": {
+        "name": "Autarkie"
+      },
+      "label_profit": {
+        "name": "Ertrag"
+      },
+      "label_power_buffered": {
+        "name": "Speicherladung"
+      },
+      "label_power_released": {
+        "name": "Speicherentladung"
+      },
+      "label_work_ac_in": {
+        "name": "Bezogene AC-Energie"
+      },
+      "label_work_ac_out": {
+        "name": "Abgegebene AC-Energie"
+      },
+      "label_work_consumed": {
+        "name": "Verbrauchsenergie"
+      },
+      "label_work_produced": {
+        "name": "Erzeugte Energie"
+      },
+      "label_work_buffered": {
+        "name": "Gespeicherte Energie"
+      },
+      "label_work_released": {
+        "name": "Entladene Energie"
+      },
+      "label_work_in": {
+        "name": "Bezogene Energie"
+      },
+      "label_work_out": {
+        "name": "Abgegebene Energie"
+      },
+      "label_grid_in": {
+        "name": "Netzbezug"
+      },
+      "label_grid_out": {
+        "name": "Netzeinspeisung"
+      },
+      "label_grid_balance": {
+        "name": "Netzleistungsbilanz"
+      },
+      "label_grid_power": {
+        "name": "Netzleistung"
+      },
+      "label_battery_in": {
+        "name": "Batterieladung"
+      },
+      "label_battery_out": {
+        "name": "Batterieentladung"
+      },
+      "label_battery_balance_evcc": {
+        "name": "Batterieleistungsbilanz EVCC"
+      },
+      "label_battery_balance": {
+        "name": "Batterieleistungsbilanz"
+      },
+      "label_battery_power": {
+        "name": "Batterieleistung"
+      },
+      "label_battery_soc": {
+        "name": "Batterie-Ladezustand"
+      },
+      "label_battery_in_from_grid": {
+        "name": "Batterieladung aus dem Netz"
+      },
+      "label_battery_out_to_grid": {
+        "name": "Batterieeinspeisung ins Netz"
+      },
+      "label_pv_out": {
+        "name": "PV-Erzeugung"
+      },
+      "label_consumption_in": {
+        "name": "Gesamtverbrauch"
+      },
+      "label_consumption_direct_consumption": {
+        "name": "Direktverbrauch"
+      },
+      "label_consumption_from_battery": {
+        "name": "Verbrauch aus Batterie"
+      },
+      "label_consumption_from_grid": {
+        "name": "Verbrauch aus Netz"
+      },
+      "label_consumption_from_pv": {
+        "name": "Verbrauch aus PV"
+      },
+      "label_ev_in": {
+        "name": "Fahrzeugladung"
+      },
+      "label_ev_out": {
+        "name": "Fahrzeugentladung"
+      },
+      "label_ev_balance": {
+        "name": "Fahrzeug-Leistungsbilanz"
+      },
+      "label_ev_bidirectional": {
+        "name": "Bidirektionales Laden"
+      },
+      "label_state_of_charge_minimum": {
+        "name": "Minimaler Ladezustand"
+      },
+      "label_backup_state_of_charge": {
+        "name": "Notstrom-Ladezustand"
+      },
+      "label_state_of_charge": {
+        "name": "Ladezustand"
+      },
+      "label_work_capacity": {
+        "name": "Speicherkapazität"
+      },
+      "label_power_ac_in_max": {
+        "name": "Maximale AC-Ladeleistung"
+      },
+      "label_power_ac_out_max": {
+        "name": "Maximale AC-Entladeleistung"
+      },
+      "label_power_installed_peak": {
+        "name": "Installierte Spitzenleistung"
+      },
+      "label_backup_active": {
+        "name": "Notstrom aktiv"
+      },
+      "label_backup_available": {
+        "name": "Notstrom verfügbar"
+      },
+      "label_time_of_use_available": {
+        "name": "Zeitsteuerung verfügbar"
+      },
+      "label_configured_in_location": {
+        "name": "Am Standort konfiguriert"
+      },
+      "label_state_device": {
+        "name": "Gerätestatus"
+      },
+      "label_state_error": {
+        "name": "Fehlerstatus"
+      },
+      "label_optimization_mode": {
+        "name": "Optimierungsmodus"
+      },
+      "label_switch_state": {
+        "name": "Schaltzustand"
+      },
+      "label_schedule_exists": {
+        "name": "Zeitplan vorhanden"
+      },
+      "label_supports_switching": {
+        "name": "Schalten unterstützt"
+      },
+      "label_requires_override": {
+        "name": "Übersteuerung erforderlich"
+      },
+      "label_direct_consumption": {
+        "name": "Direktverbrauch"
+      },
+      "label_self_consumption": {
+        "name": "Eigenverbrauch"
+      },
+      "label_self_sufficiency": {
+        "name": "Autarkie"
+      },
+      "label_pv_self_consumption_savings": {
+        "name": "Ersparnis durch PV-Eigenverbrauch"
+      },
+      "label_feed_in_revenue": {
+        "name": "Einspeiseerlös"
+      },
+      "label_total_savings": {
+        "name": "Gesamtersparnis"
+      },
+      "label_self_consumed_power": {
+        "name": "Eigenverbrauchsleistung"
+      },
+      "label_household_from_battery_power": {
+        "name": "Haushaltsleistung aus Batterie"
+      },
+      "label_household_from_grid_power": {
+        "name": "Haushaltsleistung aus Netz"
+      },
+      "label_household_from_pv_power": {
+        "name": "Haushaltsleistung aus PV"
+      },
+      "label_powerconsumed": {
+        "name": "Verbrauch"
+      },
+      "label_powerproduced": {
+        "name": "Erzeugung"
+      },
+      "label_powerbuffered": {
+        "name": "Speicherladung"
+      },
+      "label_powerconsumedfromgrid": {
+        "name": "Netzbezugsleistung"
+      },
+      "label_powerconsumedfromstorage": {
+        "name": "Verbrauchsleistung aus Speicher"
+      },
+      "label_powerconsumedfromproduction": {
+        "name": "Verbrauchsleistung aus Erzeugung"
+      },
+      "label_powerin": {
+        "name": "Bezugsleistung"
+      },
+      "label_powerout": {
+        "name": "Abgabeleistung"
+      },
+      "label_poweracin": {
+        "name": "AC-Bezugsleistung"
+      },
+      "label_poweracout": {
+        "name": "AC-Abgabeleistung"
+      },
+      "label_workconsumed": {
+        "name": "Verbrauchsenergie"
+      },
+      "label_workproduced": {
+        "name": "Erzeugte Energie"
+      },
+      "label_workin": {
+        "name": "Bezogene Energie"
+      },
+      "label_workout": {
+        "name": "Abgegebene Energie"
+      },
+      "label_selfconsumption": {
+        "name": "Eigenverbrauch"
+      },
+      "label_selfsufficiency": {
+        "name": "Autarkie"
+      },
+      "label_selfconsumptionrate": {
+        "name": "Eigenverbrauchsquote"
+      },
+      "label_selfsufficiencyrate": {
+        "name": "Autarkiegrad"
+      },
+      "label_power_consumed": {
+        "name": "Verbrauch"
+      },
+      "label_power_produced": {
+        "name": "Erzeugung"
+      },
+      "label_power_ac_in": {
+        "name": "AC-Bezugsleistung"
+      },
+      "label_power_ac_out": {
+        "name": "AC-Abgabeleistung"
+      },
+      "label_power_in": {
+        "name": "Bezugsleistung"
+      },
+      "label_power_out": {
+        "name": "Abgabeleistung"
+      },
+      "label_last_error": {
+        "name": "Letzter Fehler"
+      },
+      "label_item_count": {
+        "name": "Anzahl Messwerte"
+      },
+      "label_state_of_health": {
+        "name": "Gesundheitszustand"
+      },
+      "label_soc": {
+        "name": "Ladezustand"
+      },
+      "label_soh": {
+        "name": "Gesundheitszustand"
+      },
+      "label_temperature": {
+        "name": "Temperatur"
+      },
+      "label_voltage": {
+        "name": "Spannung"
+      },
+      "label_current": {
+        "name": "Stromstärke"
+      },
+      "label_frequency": {
+        "name": "Frequenz"
+      },
+      "label_power": {
+        "name": "Leistung"
+      },
+      "label_energy": {
+        "name": "Energie"
+      },
+      "label_consumption": {
+        "name": "Verbrauch"
+      },
+      "label_production": {
+        "name": "Erzeugung"
+      },
+      "label_storage": {
+        "name": "Speicher"
+      },
+      "label_independence": {
+        "name": "Autarkie"
+      },
+      "label_finance": {
+        "name": "Finanzen"
+      },
+      "label_today": {
+        "name": "Heute"
+      },
+      "label_month": {
+        "name": "Monat"
+      },
+      "label_year": {
+        "name": "Jahr"
+      },
+      "label_latest": {
+        "name": "Letzter Wert"
+      },
+      "label_total": {
+        "name": "Gesamt"
+      },
+      "label_cost": {
+        "name": "Kosten"
+      },
+      "label_costs": {
+        "name": "Kosten"
+      },
+      "label_savings": {
+        "name": "Ersparnis"
+      },
+      "label_saving": {
+        "name": "Ersparnis"
+      },
+      "label_revenue": {
+        "name": "Erlös"
+      },
+      "label_battery": {
+        "name": "Batterie"
+      },
+      "label_grid": {
+        "name": "Netz"
+      },
+      "label_household": {
+        "name": "Haushalt"
+      },
+      "label_inverter": {
+        "name": "Wechselrichter"
+      },
+      "label_meter": {
+        "name": "Zähler"
+      },
+      "label_mode": {
+        "name": "Modus"
+      },
+      "label_type": {
+        "name": "Typ"
+      },
+      "label_state": {
+        "name": "Zustand"
+      },
+      "label_status": {
+        "name": "Status"
+      },
+      "label_balance": {
+        "name": "Bilanz"
+      },
+      "label_in": {
+        "name": "Bezug"
+      },
+      "label_out": {
+        "name": "Abgabe"
+      },
+      "label_available": {
+        "name": "Verfügbar"
+      },
+      "label_active": {
+        "name": "Aktiv"
+      },
+      "label_count": {
+        "name": "Anzahl"
+      },
+      "label_efficiency": {
+        "name": "Wirkungsgrad"
+      },
+      "label_capacity": {
+        "name": "Kapazität"
+      },
+      "label_charge": {
+        "name": "Ladung"
+      },
+      "label_discharge": {
+        "name": "Entladung"
+      },
+      "label_runtime": {
+        "name": "Laufzeit"
+      },
+      "label_connected": {
+        "name": "Verbunden"
+      },
+      "label_charging": {
+        "name": "Ladevorgang"
+      },
+      "consumption_composition_battery": {
+        "name": "Batterieanteil am Verbrauch"
+      },
+      "consumption_composition_grid": {
+        "name": "Netzanteil am Verbrauch"
+      },
+      "consumption_composition_pv": {
+        "name": "PV-Anteil am Verbrauch"
+      },
+      "self_sufficiency": {
+        "name": "Autarkie"
+      },
+      "self_consumption": {
+        "name": "Eigenverbrauchsquote"
+      },
+      "self_sufficiency_composition_battery": {
+        "name": "Batterieanteil der Eigenversorgung"
+      },
+      "self_sufficiency_composition_pv": {
+        "name": "PV-Anteil der Eigenversorgung"
+      },
       "kiwi_os_version": {
         "name": "kiwiOS-Version"
       }
     },
     "button": {
+      "optimization_config_reset": {
+        "name": "Optimierungseinstellungen zurücksetzen"
+      },
+      "override_reset": {
+        "name": "Übersteuerung beenden"
+      },
       "diagnostics_refresh": {
         "name": "Daten aktualisieren"
       }

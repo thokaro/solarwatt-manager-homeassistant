@@ -248,7 +248,7 @@ HEMS metadata such as type, device state, optimization mode, switch state, and o
 
 ### Battery backup / emergency power
 
-The integration already exposes the following `/v11/battery` fields as ordinary
+The integration already exposes the following `/v12/battery` fields as ordinary
 `sensor` entities on the battery device when the portal supplies them. This also
 applies to the KATEK SolBrid example in [issue #19](https://github.com/thokaro/solarwatt-manager-homeassistant/issues/19);
 no manufacturer-specific configuration is needed.
@@ -388,7 +388,115 @@ target:
   entity_id: sensor.kiwigrid_stats_total_consumption_workconsumed
 ```
 
+### Sensor name language
+
+Under integration **Options → Sensor settings**, choose **Sensor name language**:
+`auto` (default), `de` (German) or `en` (English). Automatic selection uses the
+Home Assistant system language: German for `de` (including regional variants),
+English for every other language. Explicit `de`/`en` choices override this,
+including the new self-supply sensors and
+existing Flow, battery and statistics sensor terminology. For example,
+**Battery SoC** is **Batterie-Ladezustand** in German, and **Grid In** is
+**Netzbezug**. SoC means state of charge, translated as **Ladezustand**.
+
+Saving the option reloads the integration. Automatic language is resolved at
+integration setup; reload after changing the Home Assistant system language.
+It uses the system language, not individual users’ frontend language preferences.
+Existing explicit language choices are retained; select `auto` to follow HA.
+Only display names change; existing
+entity IDs, unique IDs and recorded statistics are retained. Device names from
+the portal and manually assigned Home Assistant entity names are preserved.
+Unknown vendor-specific labels remain identifiable instead of being guessed.
+Control names (buttons, number/time settings and mode selection) continue to use
+Home Assistant's interface language; this option controls sensor names.
+
+### Device optimization settings
+
+Selected portal devices expose only the settings listed in their API
+`supported_configs`. These controls appear on the existing device automatically:
+
+| Setting | Home Assistant unit | API field |
+| --- | --- | --- |
+| Switching / charging-start threshold | W | `lowest_power` |
+| Maximum charging power | W | `max_power` |
+| Minimum runtime | min | `min_runtime` |
+| Minimum rest time | min | `min_resttime` |
+| Minimum runtime per day | min | `must_runtime` |
+| Desired charging energy | kWh | `target_time.capacity` (Wh) |
+| Departure time | Local clock time, minute precision | `target_time.target_time` (milliseconds since midnight) |
+
+For example, setting **35.5 kWh** sends `35500` Wh; **15:30** sends `55800000`
+milliseconds. The clock value follows the portal's local departure time and is
+not converted to UTC. Daily runtime is distinct from the separate manual override
+duration setting below.
+
+Each change reads the current optimization configuration, changes the selected
+field, and sends a PATCH while preserving the optimization mode and other values.
+Changes made through this integration are serialized. This does not change or
+clear existing schedules. The refreshed configuration supplies entity state;
+failed writes are reported and are not treated as successful changes.
+
+Numeric controls use text input with non-negative integer API values (energy is
+converted from kWh). The technical upper limit is a signed 32-bit integer, not a
+manufacturer rating; device-specific limits remain enforced by the portal API.
+Missing or incomplete configuration leaves the affected control unavailable or
+rejects the write rather than inventing default values. Reload the integration
+after updating to load the new Number and Time platforms. Existing devices and
+entity unique IDs are unchanged; no migration is required.
+
+### Reset optimization settings
+
+Devices advertising configuration defaults expose a separate **Reset optimization
+settings** button. It reads fresh `config_defaults` and `supported_configs` from
+the portal and restores defaults for the active mode. **PV excess** resets its
+supported settings without sending departure-time fields; **Departure time** also
+restores the advertised charging energy and clock time. The current mode is kept,
+even when `config_defaults.optimization_mode` says `NOT_OPTIMIZED`.
+
+The button is unavailable for **Not optimized**, unknown modes, or incomplete
+defaults. It does not write schedules and is separate from **End override**.
+For example, a device advertising 4,200 W / 11,000 W, 0-minute runtimes, 30 kWh and
+08:00 restores those values in Departure time mode; these values are examples,
+not hardcoded defaults. No reset is sent until the button is pressed.
+
+### Manual optimization overrides
+
+In the integration options under **KiwiGrid connection**, set **Override duration**
+in minutes, for example `15`. Subsequent ON/OFF commands from the integration's
+existing device switches include `duration_of_override: 15`. The default `0`
+omits this field and preserves the previous behavior; it does **not** mean an
+unlimited override. This setting applies to all switchable portal devices in the
+config entry and does not change an override already running.
+
+Switchable portal devices also have an **End override** button. It sends
+`DELETE /v12/device/{id}/optimization/state` and refreshes the device state.
+Ending an override is not an OFF command: the configured optimization determines
+what the device does next. The action does not edit schedules or optimization
+configuration. Portal errors are reported rather than treated as success.
+
 ### KiwiGrid Flow
+
+Live `/home/consumption/composition` values add three percentage sensors for the
+battery, grid and PV shares of consumption. For example,
+`{"battery": 1.0, "grid": 0.0, "pv": 0.0}` displays **100 %**, **0 %**, **0 %**.
+These shares include grid supply and differ from the battery/PV composition of
+self-supply. They share one additional request per Flow poll; a temporary failure
+retains the last successful response without blocking other Flow sensors.
+
+The integration uses the KiwiGrid HEMS `/v12` API. The live
+`/home/selfsupply` endpoint adds four translated percentage sensors to this device:
+self-sufficiency, self-consumption, and the battery and PV shares of self-supply.
+For example, `self_sufficiency: 1.0` becomes **100 %**, while
+`self_sufficiency_composition: {"battery": 0.75, "pv": 0.25}` becomes **75 %**
+battery and **25 %** PV. These describe the current response without `from`/`to`
+parameters, rather than the daily analytics totals.
+
+All four sensors share one request per configured **KiwiGrid Flow interval** and
+reuse the complete cached response. A temporary self-supply endpoint failure keeps
+the last successful values and does not block the other Flow sensors. Missing or
+invalid fields do not create new sensors. Reload the integration after updating;
+keep `KiwiGrid Flow` selected to discover the sensors. Existing entity unique IDs
+are unchanged and no migration is needed.
 
 `KiwiGrid Flow` is a dedicated device for live energy-flow and consumer values from the SOLARWATT Manager Portal. It is independent from the local `SOLARWATT Flow` device and is also available when both local Manager access and KiwiGrid HEMS are configured. Example sensors:
 

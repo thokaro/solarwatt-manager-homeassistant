@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026.11.1
+
+### 🐛 Fixes
+
+- Switch the KiwiGrid HEMS API base URL to v12 after the v11 endpoint retirement reported in [#22](https://github.com/thokaro/solarwatt-manager-homeassistant/issues/22). Update endpoint paths in diagnostics and errors.
+- Correct remaining v11 model labels and placeholder endpoint metadata to v12 in device selection and device information. Existing device identifiers and entity unique IDs remain unchanged.
+- Fix HTTP 400 ("User importance can be updated by dedicated user importance endpoint") when editing optimization settings: send only the fields the portal sends (never `user_importance`, also not on reset), omit `target_time` outside departure mode, and reject departure edits with a clear error unless departure mode is active.
+- Treat End override as done when no override is active instead of failing with KiwiGrid's HTTP 502 "Device does not have override info".
+- Include the server's reason in KiwiGrid HEMS HTTP error messages.
+
+### ✨ Features
+
+- Add capability-driven Number and Time controls for optimization power thresholds, maximum charging power, minimum runtime/rest time, minimum daily runtime, desired charging energy and departure time. Use confirmed W/min/Wh/time conversions, translated labels, and the existing physical devices.
+- Read current configuration before editing, serialize configuration writes, preserve other settings and schedules, and refresh metadata after success. Respect device selection and include the new controls in entity-registry synchronization.
+- Add a separate translated Reset optimization settings button. Read current device defaults, preserve the active mode, omit departure fields in PV excess mode, and leave schedules unchanged. Disable reset for inactive/unknown modes or incomplete defaults; refresh device metadata after success.
+- Add an End override button to switchable portal devices, using DELETE on the optimization state endpoint and refreshing device state without changing schedules.
+- Add an optional override duration in minutes to the OptionsFlow. Default 0 preserves existing switch requests; positive values are sent as `duration_of_override` for ON/OFF commands.
+- Add four translated live self-supply percentage sensors to KiwiGrid Flow using `/v12/home/selfsupply`: self-sufficiency, self-consumption, and battery/PV shares. Reuse the configured Flow interval and cache complete responses; transient endpoint failures retain previous values without blocking other Flow sensors.
+- Add translated battery/grid/PV consumption-share sensors from `/v12/home/consumption/composition`, with Flow-interval polling and cached fallback.
+- Add a sensor-name language option: Automatic by default (German for a German Home Assistant system language, English otherwise), with explicit German/English overrides. Translate known Flow, battery and analytics terminology and the new percentage sensors, including SoC as Ladezustand. Preserve API device names, entity IDs, unique IDs and statistics.
+
+### ⬆️ Upgrade notes
+
+- Reload the integration after updating and keep KiwiGrid Flow selected. Two additional requests are made per Flow poll for self-supply and consumption composition.
+- Sensor display names default to automatic language selection, with manual overrides in the options.
+- Existing entity IDs and unique IDs remain unchanged. No breaking changes or migration are required.
+
+### ✅ Validation
+
+- 452 tests passed on Python 3.14; Ruff and MyPy passed. Includes self-supply mapping, cache recovery, override duration and reset, configuration controls, concurrent updates, mode-specific writes and resets, and regression coverage for the `user_importance` and missing-override responses.
+- Departure time, optimization settings and End override were verified live against the KiwiGrid portal with a Keba P30 wallbox and a myStrom plug.
+
 ## 2026.11.0
 
 ### 🛍️ Marketplace

@@ -10,6 +10,7 @@ from homeassistant.helpers import entity_registry as er
 from .const import (
     CONF_HOST,
     DOMAIN,
+    OPTIMIZATION_CONFIG_FIELDS,
     SOLARWATTConfigEntry,
     build_device_info,
     build_thing_device_identifier,
@@ -65,6 +66,42 @@ def get_hems_device_id(thing: Mapping[str, Any], fallback_uid: str) -> str:
     properties = thing.get("properties")
     props = properties if isinstance(properties, Mapping) else {}
     return str(props.get("identifier") or fallback_uid or "").strip()
+
+
+def build_thing_override_reset_unique_id(entry_id: str, thing_uid: str) -> str:
+    """Stable identity for the override reset action."""
+    return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_override_reset"
+
+
+def build_thing_config_reset_unique_id(entry_id: str, thing_uid: str) -> str:
+    return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_optimization_config_reset"
+
+
+def has_optimization_defaults(thing: Mapping[str, Any]) -> bool:
+    props = thing.get("properties")
+    return isinstance(props, Mapping) and props.get("optimizationHasDefaults") == "true" and bool(props.get("optimizationSupportedConfigs"))
+
+
+def build_thing_optimization_config_unique_id(entry_id: str, thing_uid: str, field: str) -> str:
+    """Stable identity for a configurable optimization field."""
+    return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_optimization_{field.replace('.', '_')}"
+
+
+def supports_optimization_config(thing: Mapping[str, Any], field: str) -> bool:
+    props = thing.get("properties")
+    if not isinstance(props, Mapping):
+        return False
+    return field.upper() in str(props.get("optimizationSupportedConfigs") or "").split(",")
+
+
+def optimization_config_value(thing: Mapping[str, Any], field: str) -> float | None:
+    props = thing.get("properties")
+    if not isinstance(props, Mapping):
+        return None
+    try:
+        return float(props[f"optimizationConfig_{field}"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def is_hems_switchable_thing(thing: Mapping[str, Any]) -> bool:
@@ -222,6 +259,12 @@ def _selected_entity_unique_ids(
         if thing_uid not in selected_thing_uids:
             continue
         expected_unique_ids.update(_thing_entity_unique_ids(entry.entry_id, thing_uid))
+        if isinstance(thing, Mapping):
+            if has_optimization_defaults(thing):
+                expected_unique_ids.add(build_thing_config_reset_unique_id(entry.entry_id, thing_uid))
+            for field in OPTIMIZATION_CONFIG_FIELDS:
+                if supports_optimization_config(thing, field):
+                    expected_unique_ids.add(build_thing_optimization_config_unique_id(entry.entry_id, thing_uid, field))
         if isinstance(thing, Mapping) and is_hems_optimizable_thing(thing):
             expected_unique_ids.add(
                 build_thing_evstation_optimization_select_unique_id(entry.entry_id, thing_uid)
@@ -229,6 +272,9 @@ def _selected_entity_unique_ids(
         if isinstance(thing, Mapping) and is_hems_switchable_thing(thing):
             expected_unique_ids.add(
                 build_thing_optimization_switch_unique_id(entry.entry_id, thing_uid)
+            )
+            expected_unique_ids.add(
+                build_thing_override_reset_unique_id(entry.entry_id, thing_uid)
             )
 
     return expected_unique_ids
@@ -274,7 +320,7 @@ def _apply_expected_entity_selection(
 ) -> None:
     """Enable expected entities and disable managed entities outside the selection."""
     ent_reg, entries = _managed_registry_entries(
-        hass, entry, domains={"sensor", "button", "select", "switch"}
+        hass, entry, domains={"sensor", "button", "select", "switch", "number", "time"}
     )
     managed_prefix = f"{entry.entry_id}_"
     for registry_entry in entries:

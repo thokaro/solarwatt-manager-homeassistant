@@ -14,7 +14,7 @@ from urllib.parse import quote, urlencode, urljoin
 
 from aiohttp import ClientError, ClientResponseError, ClientSession
 
-KIWIGRID_API_BASE = "https://hems.kiwigrid.com/v11"
+KIWIGRID_API_BASE = "https://hems.kiwigrid.com/v12"
 KIWIGRID_TOKEN_URL = "https://auth.energymanager.com/auth/realms/solarwatt/protocol/openid-connect/token"
 KIWIGRID_CLIENT_ID = "energy-monitor-home"
 KIWIGRID_AUTH_URL = "https://auth.energymanager.com/auth/realms/solarwatt/protocol/openid-connect/auth"
@@ -25,6 +25,8 @@ ENDPOINT_BATTERY = "/battery"
 ENDPOINT_DEVICE = "/device"
 ENDPOINT_DEVICE_OPTIMIZATION = "/device/optimization"
 ENDPOINT_ENERGY_FLOW = "/energy-flow"
+ENDPOINT_HOME_SELFSUPPLY = "/home/selfsupply"
+ENDPOINT_HOME_CONSUMPTION_COMPOSITION = "/home/consumption/composition"
 ENDPOINT_HOME_CONSUMPTION_CONSUMERS = "/home/consumption/consumers"
 ENDPOINT_PV_PLANT = "/pv-plant"
 ENDPOINT_EVSTATION = "/evstation"
@@ -144,7 +146,7 @@ def _raise_for_login_http_error(status: int, *, where: str) -> None:
 
 
 class KiwiGridHEMSClient:
-    """Client for the KiwiGrid HEMS v11 HEMS API.
+    """Client for the KiwiGrid HEMS v12 API.
 
     The endpoint methods intentionally stay thin. Endpoint specific data
     normalization happens in the mapping functions below, grouped by endpoint.
@@ -479,7 +481,7 @@ class KiwiGridHEMSClient:
         method: str,
         path: str,
         *,
-        payload: dict[str, Any],
+        payload: dict[str, Any] | None = None,
         where: str,
     ) -> None:
         await self._async_ensure_access_token()
@@ -514,6 +516,12 @@ class KiwiGridHEMSClient:
                             f"HEMS endpoint not found while requesting {where}"
                         )
 
+                    if resp.status >= 400:
+                        text = await resp.text()
+                        raise KiwiGridHEMSConnectionError(
+                            f"HTTP {resp.status} while requesting {where}: {text[:250]}"
+                        )
+
                     resp.raise_for_status()
                     return
             except KiwiGridHEMSError:
@@ -535,43 +543,43 @@ class KiwiGridHEMSClient:
             raise KiwiGridHEMSProtocolError(f"{where} response is not a list")
         return [item for item in payload if isinstance(item, dict)]
 
-    # /v11/battery ---------------------------------------------------------
+    # /v12/battery ---------------------------------------------------------
     async def async_get_battery(self) -> list[dict[str, Any]]:
-        """Fetch battery details from /v11/battery."""
+        """Fetch battery details from /v12/battery."""
         return await self._async_get_list_endpoint(
             ENDPOINT_BATTERY,
-            where="GET /v11/battery",
+            where="GET /v12/battery",
         )
 
-    # /v11/device ----------------------------------------------------------
+    # /v12/device ----------------------------------------------------------
     async def async_get_devices(self) -> list[dict[str, Any]]:
-        """Fetch device overview from /v11/device."""
+        """Fetch device overview from /v12/device."""
         return await self._async_get_list_endpoint(
             ENDPOINT_DEVICE,
-            where="GET /v11/device",
+            where="GET /v12/device",
         )
 
     async def async_get_device_optimizations(self) -> list[dict[str, Any]]:
-        """Fetch device optimization metadata from /v11/device/optimization."""
+        """Fetch device optimization metadata from /v12/device/optimization."""
         return await self._async_get_list_endpoint(
             ENDPOINT_DEVICE_OPTIMIZATION,
-            where="GET /v11/device/optimization",
+            where="GET /v12/device/optimization",
         )
 
-    # /v11/pv-plant --------------------------------------------------------
+    # /v12/pv-plant --------------------------------------------------------
     async def async_get_pv_plants(self) -> list[dict[str, Any]]:
-        """Fetch PV plant details from /v11/pv-plant."""
+        """Fetch PV plant details from /v12/pv-plant."""
         return await self._async_get_list_endpoint(
             ENDPOINT_PV_PLANT,
-            where="GET /v11/pv-plant",
+            where="GET /v12/pv-plant",
         )
 
-    # /v11/evstation -------------------------------------------------------
+    # /v12/evstation -------------------------------------------------------
     async def async_get_evstations(self) -> list[dict[str, Any]]:
-        """Fetch EV station details from /v11/evstation."""
+        """Fetch EV station details from /v12/evstation."""
         return await self._async_get_list_endpoint(
             ENDPOINT_EVSTATION,
-            where="GET /v11/evstation",
+            where="GET /v12/evstation",
         )
 
     async def async_set_device_optimization_mode(
@@ -591,13 +599,27 @@ class KiwiGridHEMSClient:
             "PATCH",
             f"/device/{safe_device_id}/optimization/config",
             payload={"optimization_mode": mode},
-            where="PATCH /v11/device/{id}/optimization/config",
+            where="PATCH /v12/device/{id}/optimization/config",
+        )
+
+    async def async_update_device_optimization_config(
+        self, device_id: str, config: dict[str, Any],
+    ) -> None:
+        """Update optimization settings without modifying schedules."""
+        safe_device_id = quote(str(device_id or "").strip(), safe="")
+        if not safe_device_id:
+            raise KiwiGridHEMSProtocolError("KiwiGrid HEMS device id is missing")
+        await self._async_send_json(
+            "PATCH", f"/device/{safe_device_id}/optimization/config",
+            payload=config, where="PATCH /v12/device/{id}/optimization/config",
         )
 
     async def async_set_device_optimization_state(
         self,
         device_id: str,
         target_state: str,
+        *,
+        duration_of_override: int | None = None,
     ) -> None:
         """Switch a KiwiGrid HEMS optimizable device on or off."""
         safe_device_id = quote(str(device_id or "").strip(), safe="")
@@ -609,57 +631,101 @@ class KiwiGridHEMSClient:
                 f"Unsupported KiwiGrid HEMS target state: {target_state}"
             )
 
+        payload: dict[str, Any] = {"target_state": state}
+        if duration_of_override is not None:
+            if isinstance(duration_of_override, bool) or not isinstance(duration_of_override, int) or duration_of_override <= 0:
+                raise KiwiGridHEMSProtocolError("Override duration must be a positive number of minutes")
+            payload["duration_of_override"] = duration_of_override
         await self._async_send_json(
             "PUT",
             f"/device/{safe_device_id}/optimization/state",
-            payload={"target_state": state},
-            where="PUT /v11/device/{id}/optimization/state",
+            payload=payload,
+            where="PUT /v12/device/{id}/optimization/state",
         )
 
-    # /v11/plug ------------------------------------------------------------
+    async def async_clear_device_optimization_state(self, device_id: str) -> None:
+        """End a manual override without changing optimization or schedules."""
+        safe_device_id = quote(str(device_id or "").strip(), safe="")
+        if not safe_device_id:
+            raise KiwiGridHEMSProtocolError("KiwiGrid HEMS device id is missing")
+        try:
+            await self._async_send_json(
+                "DELETE",
+                f"/device/{safe_device_id}/optimization/state",
+                where="DELETE /v12/device/{id}/optimization/state",
+            )
+        except KiwiGridHEMSConnectionError as err:
+            # KiwiGrid answers HTTP 502 when no override is active; the requested state is already reached.
+            if "does not have override info" not in str(err):
+                raise
+            _LOGGER.debug("No active KiwiGrid HEMS override to end")
+
+    # /v12/plug ------------------------------------------------------------
     async def async_get_plugs(self) -> list[dict[str, Any]]:
-        """Fetch smart plug details from /v11/plug."""
+        """Fetch smart plug details from /v12/plug."""
         return await self._async_get_list_endpoint(
             ENDPOINT_PLUG,
-            where="GET /v11/plug",
+            where="GET /v12/plug",
         )
 
-    # /v11/smart-heater ----------------------------------------------------
+    # /v12/smart-heater ----------------------------------------------------
     async def async_get_smart_heaters(self) -> list[dict[str, Any]]:
-        """Fetch smart heater details from /v11/smart-heater."""
+        """Fetch smart heater details from /v12/smart-heater."""
         return await self._async_get_list_endpoint(
             ENDPOINT_SMART_HEATER,
-            where="GET /v11/smart-heater",
+            where="GET /v12/smart-heater",
         )
 
-    # /v11/energy-flow -----------------------------------------------------
+    # /v12/energy-flow -----------------------------------------------------
     async def async_get_energy_flow(self) -> dict[str, Any]:
-        """Fetch the live energy flow from /v11/energy-flow."""
+        """Fetch the live energy flow from /v12/energy-flow."""
         payload = await self._async_get_json(
             ENDPOINT_ENERGY_FLOW,
-            where="GET /v11/energy-flow",
+            where="GET /v12/energy-flow",
         )
         if not isinstance(payload, dict):
             raise KiwiGridHEMSProtocolError(
-                "GET /v11/energy-flow response is not an object"
+                "GET /v12/energy-flow response is not an object"
             )
         return payload
 
+    async def async_get_home_selfsupply(self) -> dict[str, Any]:
+        """Fetch live self-supply ratios without a time range."""
+        payload = await self._async_get_json(
+            ENDPOINT_HOME_SELFSUPPLY,
+            where="GET /v12/home/selfsupply",
+        )
+        if not isinstance(payload, dict):
+            raise KiwiGridHEMSProtocolError(
+                "GET /v12/home/selfsupply response is not an object"
+            )
+        return payload
+
+    async def async_get_home_consumption_composition(self) -> dict[str, Any]:
+        """Fetch current consumption shares without a time range."""
+        payload = await self._async_get_json(
+            ENDPOINT_HOME_CONSUMPTION_COMPOSITION,
+            where="GET /v12/home/consumption/composition",
+        )
+        if not isinstance(payload, dict):
+            raise KiwiGridHEMSProtocolError("Consumption composition response is not an object")
+        return payload
+
     async def async_get_home_consumption_consumers(self) -> list[dict[str, Any]]:
-        """Fetch live consumer consumption from /v11/home/consumption/consumers."""
+        """Fetch live consumer consumption from /v12/home/consumption/consumers."""
         return await self._async_get_list_endpoint(
             ENDPOINT_HOME_CONSUMPTION_CONSUMERS,
-            where="GET /v11/home/consumption/consumers",
+            where="GET /v12/home/consumption/consumers",
         )
 
-    # /v11/analytics/consumption ------------------------------------------
+    # /v12/analytics/consumption ------------------------------------------
     async def async_get_analytics_consumption(
         self,
         *,
         from_time: datetime | None = None,
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
-        """Fetch today's consumption analytics from /v11/analytics/consumption."""
+        """Fetch today's consumption analytics from /v12/analytics/consumption."""
         return await self._async_get_analytics_timeseries(
             "analytics_consumption",
             from_time=from_time,
@@ -709,14 +775,14 @@ class KiwiGridHEMSClient:
             period="month",
         )
 
-    # /v11/analytics/production -------------------------------------------
+    # /v12/analytics/production -------------------------------------------
     async def async_get_analytics_production(
         self,
         *,
         from_time: datetime | None = None,
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
-        """Fetch today's production analytics from /v11/analytics/production."""
+        """Fetch today's production analytics from /v12/analytics/production."""
         return await self._async_get_analytics_timeseries(
             "analytics_production",
             from_time=from_time,
@@ -766,14 +832,14 @@ class KiwiGridHEMSClient:
             period="month",
         )
 
-    # /v11/analytics/storage ----------------------------------------------
+    # /v12/analytics/storage ----------------------------------------------
     async def async_get_analytics_storage(
         self,
         *,
         from_time: datetime | None = None,
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
-        """Fetch today's storage analytics from /v11/analytics/storage."""
+        """Fetch today's storage analytics from /v12/analytics/storage."""
         return await self._async_get_analytics_timeseries(
             "analytics_storage",
             from_time=from_time,
@@ -823,14 +889,14 @@ class KiwiGridHEMSClient:
             period="month",
         )
 
-    # /v11/analytics/independence -----------------------------------------
+    # /v12/analytics/independence -----------------------------------------
     async def async_get_analytics_independence(
         self,
         *,
         from_time: datetime | None = None,
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
-        """Fetch today's independence analytics from /v11/analytics/independence."""
+        """Fetch today's independence analytics from /v12/analytics/independence."""
         return await self._async_get_analytics_timeseries(
             "analytics_independence",
             from_time=from_time,
@@ -865,14 +931,14 @@ class KiwiGridHEMSClient:
             period="month",
         )
 
-    # /v11/analytics/finance ----------------------------------------------
+    # /v12/analytics/finance ----------------------------------------------
     async def async_get_analytics_finance(
         self,
         *,
         from_time: datetime | None = None,
         to_time: datetime | None = None,
     ) -> dict[str, Any]:
-        """Fetch today's finance analytics from /v11/analytics/finance."""
+        """Fetch today's finance analytics from /v12/analytics/finance."""
         return await self._async_get_analytics_timeseries(
             "analytics_finance",
             from_time=from_time,
@@ -908,14 +974,14 @@ class KiwiGridHEMSClient:
         )
 
     async def async_get_user_profile(self) -> dict[str, Any]:
-        """Fetch user profile preferences from /v11/user/profile."""
+        """Fetch user profile preferences from /v12/user/profile."""
         payload = await self._async_get_json(
             ENDPOINT_USER_PROFILE,
-            where="GET /v11/user/profile",
+            where="GET /v12/user/profile",
         )
         if not isinstance(payload, dict):
             raise KiwiGridHEMSProtocolError(
-                "GET /v11/user/profile response is not an object"
+                "GET /v12/user/profile response is not an object"
             )
         return payload
 
@@ -956,7 +1022,7 @@ class KiwiGridHEMSClient:
             "to": _format_analytics_time(end),
             **query_values,
         }
-        where = f"GET /v11{endpoint}{where_period}"
+        where = f"GET /v12{endpoint}{where_period}"
         payload = await self._async_get_json(
             f"{endpoint}?{urlencode(query_values)}",
             where=where,
@@ -978,6 +1044,8 @@ def hems_payloads_to_items(
     smart_heaters: list[dict[str, Any]] | None = None,
     energy_flow: dict[str, Any] | None = None,
     home_consumption_consumers: list[dict[str, Any]] | None = None,
+    home_selfsupply: dict[str, Any] | None = None,
+    home_consumption_composition: dict[str, Any] | None = None,
     analytics_consumption: dict[str, Any] | None = None,
     analytics_production: dict[str, Any] | None = None,
     analytics_consumption_work_today: dict[str, Any] | None = None,
@@ -1043,6 +1111,8 @@ def hems_payloads_to_items(
         )
     )
     items.extend(consumers_endpoint_to_items(home_consumption_consumers or []))
+    items.extend(selfsupply_endpoint_to_items(home_selfsupply or {}))
+    items.extend(consumption_composition_to_items(home_consumption_composition or {}))
     analytics_payloads = {
         "analytics_consumption": analytics_consumption,
         "analytics_production": analytics_production,
@@ -1074,7 +1144,7 @@ def hems_payloads_to_items(
     return [item for item in items if item is not None]
 
 
-# /v11/battery -------------------------------------------------------------
+# /v12/battery -------------------------------------------------------------
 
 
 def _defined_items(
@@ -1085,7 +1155,7 @@ def _defined_items(
 
 
 def battery_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Map /v11/battery payloads to items."""
+    """Map /v12/battery payloads to items."""
     items: list[dict[str, Any]] = []
     for battery in payload:
         prefix = _hems_prefix("battery", battery)
@@ -1107,11 +1177,11 @@ def battery_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[st
     return items
 
 
-# /v11/pv-plant ------------------------------------------------------------
+# /v12/pv-plant ------------------------------------------------------------
 
 
 def pv_plant_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Map /v11/pv-plant payloads to items."""
+    """Map /v12/pv-plant payloads to items."""
     items: list[dict[str, Any]] = []
     for pv_plant in payload:
         prefix = _hems_prefix("pv_plant", pv_plant)
@@ -1127,11 +1197,11 @@ def pv_plant_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[s
     return items
 
 
-# /v11/evstation -----------------------------------------------------------
+# /v12/evstation -----------------------------------------------------------
 
 
 def evstation_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Map /v11/evstation payloads to items."""
+    """Map /v12/evstation payloads to items."""
     items: list[dict[str, Any]] = []
     for evstation in payload:
         prefix = _hems_prefix("evstation", evstation)
@@ -1145,11 +1215,11 @@ def evstation_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[
     return items
 
 
-# /v11/plug ----------------------------------------------------------------
+# /v12/plug ----------------------------------------------------------------
 
 
 def plug_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Map /v11/plug payloads to items."""
+    """Map /v12/plug payloads to items."""
     items: list[dict[str, Any]] = []
     for plug in payload:
         prefix = _hems_prefix("plug", plug)
@@ -1157,13 +1227,13 @@ def plug_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[str, 
     return items
 
 
-# /v11/smart-heater --------------------------------------------------------
+# /v12/smart-heater --------------------------------------------------------
 
 
 def smart_heater_endpoint_to_items(
     payload: Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Map /v11/smart-heater payloads to items."""
+    """Map /v12/smart-heater payloads to items."""
     items: list[dict[str, Any]] = []
     for heater in payload:
         prefix = _hems_prefix("smart_heater", heater)
@@ -1189,7 +1259,7 @@ def smart_heater_endpoint_to_items(
     return items
 
 
-# /v11/energy-flow ---------------------------------------------------------
+# /v12/energy-flow ---------------------------------------------------------
 
 
 def energy_flow_endpoint_to_items(
@@ -1197,7 +1267,7 @@ def energy_flow_endpoint_to_items(
     *,
     device_names_by_id: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Map /v11/energy-flow payloads to dedicated KiwiGrid Flow items."""
+    """Map /v12/energy-flow payloads to dedicated KiwiGrid Flow items."""
     if not isinstance(payload, Mapping):
         return []
 
@@ -1262,8 +1332,39 @@ def energy_flow_endpoint_to_items(
     return [item for item in items if item is not None]
 
 
+def selfsupply_endpoint_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Map live self-supply ratios to the existing Flow device."""
+    items: list[dict[str, Any]] = []
+    for path in (
+        ("self_sufficiency",),
+        ("self_consumption",),
+        ("self_sufficiency_composition", "battery"),
+        ("self_sufficiency_composition", "pv"),
+    ):
+        value = _nested_number(payload, *path)
+        if value is None or not isfinite(value):
+            continue
+        item = _kiwigrid_flow_percentage_item("_".join(path), value)
+        item.pop("label", None)
+        items.append(item)
+    return items
+
+
+def consumption_composition_to_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Map current consumption sources to Flow percentages."""
+    items: list[dict[str, Any]] = []
+    for source in ("battery", "grid", "pv"):
+        value = _nested_number(payload, source)
+        if value is None or not isfinite(value):
+            continue
+        item = _kiwigrid_flow_percentage_item(f"consumption_composition_{source}", value)
+        item.pop("label", None)
+        items.append(item)
+    return items
+
+
 def consumers_endpoint_to_items(payload: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Map /v11/home/consumption/consumers payloads to KiwiGrid Flow items."""
+    """Map /v12/home/consumption/consumers payloads to KiwiGrid Flow items."""
     items: list[dict[str, Any] | None] = []
     for consumer in payload:
         if not isinstance(consumer, Mapping):
@@ -1363,7 +1464,7 @@ def _formatted_number_state(value: Any, unit: str, *, decimals: int) -> str:
     return f"{numeric:.{decimals}f}".rstrip("0").rstrip(".") + suffix
 
 
-# /v11/device --------------------------------------------------------------
+# /v12/device --------------------------------------------------------------
 
 
 def device_endpoint_to_items(
@@ -1371,7 +1472,7 @@ def device_endpoint_to_items(
     *,
     skip_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Map /v11/device payloads to items.
+    """Map /v12/device payloads to items.
 
     Devices that are already represented by endpoint-specific payloads are
     skipped to avoid duplicate entities for the same physical device.
@@ -1389,7 +1490,7 @@ def device_endpoint_to_items(
     return items
 
 
-# /v11/analytics time series ----------------------------------------------
+# /v12/analytics time series ----------------------------------------------
 
 
 def _analytics_payload_to_items(
@@ -1631,6 +1732,8 @@ def hems_payloads_to_things(
     smart_heaters: list[dict[str, Any]] | None = None,
     energy_flow: dict[str, Any] | None = None,
     home_consumption_consumers: list[dict[str, Any]] | None = None,
+    home_selfsupply: dict[str, Any] | None = None,
+    home_consumption_composition: dict[str, Any] | None = None,
     analytics_consumption: dict[str, Any] | None = None,
     analytics_production: dict[str, Any] | None = None,
     analytics_consumption_work_today: dict[str, Any] | None = None,
@@ -1827,7 +1930,7 @@ def _items_for_hems_payload(kind: str, payload: dict[str, Any]) -> list[dict[str
 def _hems_thing_properties(kind: str, payload: dict[str, Any], title: str) -> dict[str, str]:
     model = _hems_device_model(payload, title)
     is_synthetic_hems_device = _is_synthetic_hems_kind(kind)
-    generated_label = "KiwiGrid HEMS v11" if is_synthetic_hems_device else str(model or title).strip()
+    generated_label = "KiwiGrid HEMS v12" if is_synthetic_hems_device else str(model or title).strip()
     props: dict[str, str] = {
         "thingTypeTitle": title,
         "thingTypeCategory": "KIWIGRID_HEMS",
@@ -1866,6 +1969,38 @@ def _hems_device_model(payload: Mapping[str, Any], title: str) -> str:
     return str(title or "").strip()
 
 
+def optimization_reset_config(optimization: Mapping[str, Any]) -> dict[str, Any]:
+    """Build a mode-specific reset from advertised defaults, never schedules."""
+    current = optimization.get("config")
+    mode = current.get("optimization_mode") if isinstance(current, Mapping) else None
+    if mode not in {"PV_EXCESS", "DEPARTURE_TIME"}:
+        raise KiwiGridHEMSProtocolError("Reset requires an active supported optimization mode")
+    defaults = optimization.get("config_defaults")
+    supported = optimization.get("supported_configs")
+    if not isinstance(defaults, Mapping) or not isinstance(supported, list):
+        raise KiwiGridHEMSProtocolError("Optimization defaults are unavailable")
+    config: dict[str, Any] = {"optimization_mode": mode}
+    for field in supported:
+        if not isinstance(field, str):
+            raise KiwiGridHEMSProtocolError("Invalid supported optimization setting")
+        path = field.lower().split(".")
+        # User importance has a dedicated endpoint; the config endpoint rejects it.
+        if path[0] in {"optimization_mode", "user_importance"} or (path[0] == "target_time" and mode != "DEPARTURE_TIME"):
+            continue
+        value: Any = defaults
+        for part in path:
+            if not isinstance(value, Mapping) or part not in value or value[part] is None:
+                raise KiwiGridHEMSProtocolError(f"Missing optimization default: {field}")
+            value = value[part]
+        target = config
+        for part in path[:-1]:
+            target = target.setdefault(part, {})
+        target[path[-1]] = value
+    if len(config) == 1:
+        raise KiwiGridHEMSProtocolError("No resettable optimization settings")
+    return config
+
+
 def _hems_optimization_properties(payload: dict[str, Any]) -> dict[str, str]:
     optimization = payload.get("optimization")
     if not isinstance(optimization, dict):
@@ -1882,6 +2017,29 @@ def _hems_optimization_properties(payload: dict[str, Any]) -> dict[str, str]:
     ):
         if text := str(value).strip() if value is not None else "":
             props[key] = text
+
+    try:
+        optimization_reset_config(optimization)
+    except KiwiGridHEMSProtocolError:
+        props["optimizationResetAvailable"] = "false"
+    else:
+        props["optimizationResetAvailable"] = "true"
+    props["optimizationHasDefaults"] = str(bool(optimization.get("config_defaults"))).lower()
+    supported_configs = optimization.get("supported_configs")
+    if isinstance(supported_configs, list):
+        props["optimizationSupportedConfigs"] = ",".join(
+            str(field).upper() for field in supported_configs
+        )
+    for key in ("lowest_power", "max_power", "min_runtime", "min_resttime", "must_runtime"):
+        value = _finite_number(config.get(key))
+        if value is not None:
+            props[f"optimizationConfig_{key}"] = str(value)
+    target_time = config.get("target_time")
+    if isinstance(target_time, dict):
+        for key in ("capacity", "target_time"):
+            value = _finite_number(target_time.get(key))
+            if value is not None:
+                props[f"optimizationConfig_target_time.{key}"] = str(value)
 
     supported_modes = optimization.get("supported_optimization_modes")
     if isinstance(supported_modes, list):
@@ -1923,18 +2081,18 @@ def _hems_kind_title(kind: str) -> str:
 
 def _hems_kind_endpoint(kind: str) -> str:
     return {
-        "battery": "/v11/battery",
-        "pv_plant": "/v11/pv-plant",
-        "evstation": "/v11/evstation",
-        "plug": "/v11/plug",
-        "smart_heater": "/v11/smart-heater",
-        "device": "/v11/device",
-        "analytics_consumption": "/v11/analytics/consumption",
-        "analytics_production": "/v11/analytics/production",
-        "analytics_storage": "/v11/analytics/storage",
-        "analytics_independence": "/v11/analytics/independence",
-        "analytics_finance": "/v11/analytics/finance",
-    }.get(kind, "/v11")
+        "battery": "/v12/battery",
+        "pv_plant": "/v12/pv-plant",
+        "evstation": "/v12/evstation",
+        "plug": "/v12/plug",
+        "smart_heater": "/v12/smart-heater",
+        "device": "/v12/device",
+        "analytics_consumption": "/v12/analytics/consumption",
+        "analytics_production": "/v12/analytics/production",
+        "analytics_storage": "/v12/analytics/storage",
+        "analytics_independence": "/v12/analytics/independence",
+        "analytics_finance": "/v12/analytics/finance",
+    }.get(kind, "/v12")
 
 # Shared item helpers ------------------------------------------------------
 

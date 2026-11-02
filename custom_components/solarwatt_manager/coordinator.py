@@ -16,7 +16,9 @@ from .const import (
     CONF_KIWIGRID_FLOW_SCAN_INTERVAL,
     CONF_KIWIGRID_STATS_SCAN_INTERVAL,
     CONF_KIWIGRID_PROFILE_CACHE_INTERVAL,
+    CONF_KIWIGRID_OVERRIDE_DURATION,
     CONF_SCAN_INTERVAL,
+    OPTIMIZATION_CONFIG_FIELDS,
     DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
     DEFAULT_KIWIGRID_PROFILE_CACHE_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
@@ -456,6 +458,53 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             self.async_update_listeners()
         await self.async_request_refresh()
 
+    async def async_update_hems_device_optimization_config(
+        self, device_id: str, field: str, value: int,
+    ) -> None:
+        """Validate API units, update settings and publish fresh device metadata."""
+        if field not in OPTIMIZATION_CONFIG_FIELDS:
+            raise SolarwattError("Unknown optimization setting")
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > 2_147_483_647:
+            raise SolarwattError("Optimization value must be a non-negative 32-bit integer")
+        if field == "target_time.target_time" and (value >= 86_400_000 or value % 60_000):
+            raise SolarwattError("Departure time must be a minute within the day")
+        enabled, username, password = self._hems_credentials()
+        if not enabled or not (username and password):
+            raise SolarwattError("KiwiGrid HEMS is not configured")
+        await self.client.async_update_hems_device_optimization_config(
+            device_id, field, value, username=username, password=password,
+        )
+        self.invalidate_hems_cache()
+        await self.async_refresh_things()
+        self.async_update_listeners()
+        await self.async_request_refresh()
+
+    async def async_reset_hems_device_optimization_config(self, device_id: str) -> None:
+        """Reset defaults for the active mode and refresh device metadata."""
+        enabled, username, password = self._hems_credentials()
+        if not enabled or not (username and password):
+            raise SolarwattError("KiwiGrid HEMS is not configured")
+        await self.client.async_reset_hems_device_optimization_config(
+            device_id, username=username, password=password,
+        )
+        self.invalidate_hems_cache()
+        await self.async_refresh_things()
+        self.async_update_listeners()
+        await self.async_request_refresh()
+
+    async def async_clear_hems_device_optimization_state(self, device_id: str) -> None:
+        """End a manual override and refresh the server's resulting state."""
+        enabled, username, password = self._hems_credentials()
+        if not enabled or not (username and password):
+            raise SolarwattError("KiwiGrid HEMS is not configured")
+        await self.client.async_clear_hems_device_optimization_state(
+            device_id, username=username, password=password,
+        )
+        self.invalidate_hems_cache()
+        await self.async_refresh_things()
+        self.async_update_listeners()
+        await self.async_request_refresh()
+
     async def async_set_hems_device_optimization_state(
         self,
         device_id: str,
@@ -471,6 +520,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         await self.client.async_set_hems_device_optimization_state(
             device_id,
             target_state,
+            duration_of_override=self.entry.options.get(CONF_KIWIGRID_OVERRIDE_DURATION, 0) or None,
             username=hems_username,
             password=hems_password,
         )

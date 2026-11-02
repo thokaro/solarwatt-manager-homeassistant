@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Iterable
 from functools import lru_cache
 
 # -----------------------------
@@ -227,3 +228,38 @@ def format_display_name(name: str) -> str:
 
     parts = re.split(r"([^A-Za-z0-9]+)", name)
     return "".join(_format_token(part) if idx % 2 == 0 else part for idx, part in enumerate(parts))
+
+
+@lru_cache(maxsize=4)
+def _sensor_label_pattern(keys: tuple[str, ...]) -> re.Pattern[str]:
+    words = sorted((key.removeprefix("label_").replace("_", " ") for key in keys), key=len, reverse=True)
+    return re.compile(r"(?<![\w])(?:" + "|".join(re.escape(word) for word in words) + r")(?![\w])", re.IGNORECASE)
+
+
+def localized_sensor_name(
+    name: str, translations: Mapping[str, str], device_names: Iterable[str] = (),
+) -> str:
+    """Translate known sensor terminology while preserving API device names."""
+    keys = tuple(sorted(key for key in translations if key.startswith("label_")))
+    if not keys:
+        return name
+    protected: list[str] = []
+    for device in sorted(set(device_names), key=len, reverse=True):
+        if not device:
+            continue
+        # Flow labels use title-cased device slugs; analytics retain API names.
+        for variant in dict.fromkeys((device, slugify_entity_name(device).replace("_", " "), item_entity_name(device))):
+            if not variant:
+                continue
+            pattern = re.compile(r"(?<!\w)" + re.escape(variant) + r"(?!\w)", re.IGNORECASE)
+            def protect(match: re.Match[str]) -> str:
+                protected.append(match.group())
+                return f"\x00{len(protected)-1}\x00"
+            name = pattern.sub(protect, name)
+    name = name.replace("_", " ")
+    translated = _sensor_label_pattern(keys).sub(
+        lambda match: translations["label_" + match.group().lower().replace(" ", "_")], name,
+    )
+    for index, original in enumerate(protected):
+        translated = translated.replace(f"\x00{index}\x00", original)
+    return translated

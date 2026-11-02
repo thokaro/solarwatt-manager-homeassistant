@@ -84,3 +84,43 @@ def test_entity_suggested_object_id_uses_sensor_name_without_device_prefix():
     assert slugify_entity_name(
         trim_device_tokens("Month Finance saving", "KiwiGrid Stats")
     ) == "month_finance_saving"
+
+
+def _sensor_translations(language):
+    import json
+    from pathlib import Path
+    data = json.loads((Path(__file__).parents[1] / 'custom_components' / 'solarwatt_manager' / 'translations' / f'{language}.json').read_text())
+    return {key: value['name'] for key, value in data['entity']['sensor'].items()}
+
+
+def test_localized_names_cover_flow_battery_and_finance():
+    translations = _sensor_translations('de')
+    for original, expected in {
+        'Battery SoC': 'Batterie-Ladezustand',
+        'BMS SoC': 'BMS Ladezustand',
+        'Grid In': 'Netzbezug',
+        'State Of Charge Minimum': 'Minimaler Ladezustand',
+        'Today Finance pv_self_consumption_savings': 'Heute Finanzen Ersparnis durch PV-Eigenverbrauch',
+        'Month Storage WorkReleased': 'Monat Speicher Entladene Energie',
+        'PV Out': 'PV-Erzeugung',
+    }.items():
+        assert naming.localized_sensor_name(original, translations) == expected
+
+
+def test_sensor_language_preserves_api_device_names():
+    translations = _sensor_translations('de')
+    assert naming.localized_sensor_name(
+        'SOLARWATT Battery Vision Three Out', translations, ['SOLARWATT Battery vision three']
+    ) == 'SOLARWATT Battery Vision Three Abgabe'
+    assert naming.localized_sensor_name(
+        'Today Production myStrom (Waschmaschine) PowerConsumed', translations,
+        ['myStrom (Waschmaschine)'],
+    ) == 'Heute Erzeugung myStrom (Waschmaschine) Verbrauch'
+
+
+def test_english_sensor_language_keeps_english_terms():
+    translations = _sensor_translations('en')
+    assert naming.localized_sensor_name('Battery SoC', translations) == 'Battery SoC'
+    assert naming.localized_sensor_name('Today Finance Cost', translations) == 'Today Finance Cost'
+    assert translations['self_sufficiency'] == 'Self-sufficiency'
+    assert translations['consumption_composition_grid'] == 'Grid share of consumption'

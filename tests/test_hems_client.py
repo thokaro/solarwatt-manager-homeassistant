@@ -894,7 +894,7 @@ def test_hems_payloads_to_things_uses_smart_heater_name_and_metadata():
     assert thing["UID"] == SMART_HEATER_ID
     assert thing["label"] == "Heizstab (AC ELWA)"
     assert thing["thingTypeUID"] == "kiwigrid-hems:smart_heater"
-    assert thing["properties"]["kiwigridEndpoint"] == "/v11/smart-heater"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v12/smart-heater"
     assert thing["properties"]["generatedLabel"] == "SMART_HEATER"
     assert (
         f"hems_smart_heater_{SMART_HEATER_ID.replace('-', '_')}_temperature"
@@ -1333,7 +1333,7 @@ def test_hems_payloads_to_things_uses_payload_name_and_device_metadata():
     assert thing["properties"] == {
         "thingTypeTitle": "KiwiGrid HEMS PV Plant",
         "thingTypeCategory": "KIWIGRID_HEMS",
-        "kiwigridEndpoint": "/v11/pv-plant",
+        "kiwigridEndpoint": "/v12/pv-plant",
         "kiwigridKind": "pv_plant",
         "generatedLabel": "Sunny Tripower 20000TL",
         "vendor": "SMA",
@@ -1395,9 +1395,9 @@ def test_hems_payloads_to_things_adds_analytics_production_channels_to_kiwigrid_
     assert thing["UID"] == "kiwigrid-hems"
     assert thing["label"] == "KiwiGrid Stats"
     assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_production"
-    assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/production"
-    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
-    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v12/analytics/production"
+    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v12"
+    assert thing["properties"]["model"] == "KiwiGrid HEMS v12"
     assert "identifier" not in thing["properties"]
     assert "serialNumber" not in thing["properties"]
     assert "hems_analytics_production_today_production_powerproduced" in {
@@ -1431,9 +1431,9 @@ def test_hems_payloads_to_things_adds_analytics_storage_channels_to_kiwigrid_hem
     assert thing["UID"] == "kiwigrid-hems"
     assert thing["label"] == "KiwiGrid Stats"
     assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_storage"
-    assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/storage"
-    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
-    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v12/analytics/storage"
+    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v12"
+    assert thing["properties"]["model"] == "KiwiGrid HEMS v12"
     assert "identifier" not in thing["properties"]
     linked_items = {channel["linkedItems"][0] for channel in thing["channels"]}
     assert "hems_analytics_storage_today_storage_powerbuffered" in linked_items
@@ -1467,9 +1467,9 @@ def test_hems_payloads_to_things_adds_analytics_independence_channels_to_kiwigri
     assert thing["UID"] == "kiwigrid-hems"
     assert thing["label"] == "KiwiGrid Stats"
     assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_independence"
-    assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/independence"
-    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v11"
-    assert thing["properties"]["model"] == "KiwiGrid HEMS v11"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v12/analytics/independence"
+    assert thing["properties"]["generatedLabel"] == "KiwiGrid HEMS v12"
+    assert thing["properties"]["model"] == "KiwiGrid HEMS v12"
     assert "identifier" not in thing["properties"]
     assert "hems_analytics_independence_today_independence_autarky" in {
         channel["linkedItems"][0] for channel in thing["channels"]
@@ -1501,7 +1501,7 @@ def test_hems_payloads_to_things_adds_analytics_consumption_channels_to_kiwigrid
     assert thing["label"] == "KiwiGrid Stats"
     assert thing["thingTypeUID"] == "kiwigrid-hems:analytics_consumption"
     assert thing["statusInfo"]["status"] == "ONLINE"
-    assert thing["properties"]["kiwigridEndpoint"] == "/v11/analytics/consumption"
+    assert thing["properties"]["kiwigridEndpoint"] == "/v12/analytics/consumption"
     assert "hems_analytics_consumption_today_consumption_powerconsumed" in {
         channel["linkedItems"][0] for channel in thing["channels"]
     }
@@ -1705,3 +1705,222 @@ def test_hems_payloads_to_things_groups_synthetic_periods_under_one_device():
     assert "hems_analytics_independence_year_independence_autarky" in linked_items
     assert "hems_analytics_finance_month_finance_cost" in linked_items
     assert "hems_analytics_finance_year_finance_balance" in linked_items
+
+
+@pytest.mark.parametrize("payload", [[], None, "invalid"])
+def test_selfsupply_rejects_non_object_response(payload):
+    class FakeClient(KiwiGridHEMSClient):
+        async def _async_get_json(self, path, **kwargs):
+            assert path == "/home/selfsupply"
+            return payload
+
+    client = FakeClient(session=None)
+    with pytest.raises(hems_client.KiwiGridHEMSProtocolError):
+        asyncio.run(client.async_get_home_selfsupply())
+
+
+def test_selfsupply_live_endpoint_and_percentage_mapping():
+    payload = {
+        "self_sufficiency": 1.0,
+        "self_sufficiency_composition": {"battery": 0.75, "pv": 0.25},
+        "self_consumption": 0.0,
+    }
+
+    class FakeClient(KiwiGridHEMSClient):
+        async def _async_get_json(self, path, **kwargs):
+            assert path == "/home/selfsupply"
+            return payload
+
+    assert hems_client.KIWIGRID_API_BASE == "https://hems.kiwigrid.com/v12"
+    client = FakeClient(session=None)
+    assert asyncio.run(client.async_get_home_selfsupply()) is payload
+    items = hems_payloads_to_items(home_selfsupply=payload)
+    mapped = {item["name"]: item for item in items}
+    for suffix, state in {
+        "self_sufficiency": "100 %",
+        "self_consumption": "0 %",
+        "self_sufficiency_composition_battery": "75 %",
+        "self_sufficiency_composition_pv": "25 %",
+    }.items():
+        item = mapped[f"hems_flow_{suffix}"]
+        assert item["state"] == state
+        assert item["category"] == "kiwigrid_flow"
+        assert item["type"] == "Number:Dimensionless"
+
+
+@pytest.mark.parametrize("value", [None, True, "invalid", float("nan"), float("inf")])
+def test_selfsupply_ignores_missing_or_invalid_ratios(value):
+    assert hems_client.selfsupply_endpoint_to_items({
+        "self_sufficiency": value,
+        "self_sufficiency_composition": None,
+    }) == []
+
+
+@pytest.mark.parametrize("duration", [None, 15])
+def test_override_requests_and_reset_match_portal(duration):
+    calls = []
+
+    class FakeClient(KiwiGridHEMSClient):
+        async def _async_send_json(self, method, path, *, payload=None, where):
+            calls.append((method, path, payload))
+
+    client = FakeClient(session=None)
+    asyncio.run(client.async_set_device_optimization_state(
+        "device/id", "ON", duration_of_override=duration,
+    ))
+    expected = {"target_state": "ON"}
+    if duration is not None:
+        expected["duration_of_override"] = duration
+    assert calls[-1] == ("PUT", "/device/device%2Fid/optimization/state", expected)
+    asyncio.run(client.async_clear_device_optimization_state("device/id"))
+    assert calls[-1] == ("DELETE", "/device/device%2Fid/optimization/state", None)
+
+
+@pytest.mark.parametrize("duration", [0, -1, True, 1.5, "15"])
+def test_override_rejects_invalid_duration_before_network(duration):
+    client = KiwiGridHEMSClient(session=None)
+    with pytest.raises(hems_client.KiwiGridHEMSProtocolError):
+        asyncio.run(client.async_set_device_optimization_state(
+            "device", "ON", duration_of_override=duration,
+        ))
+
+
+def test_composition_live_endpoint_and_ratios():
+    payload = {"battery": 0.75, "grid": 0.25, "pv": 0.0}
+
+    class FakeClient(KiwiGridHEMSClient):
+        async def _async_get_json(self, path, **kwargs):
+            assert path == "/home/consumption/composition"
+            return payload
+
+    assert asyncio.run(FakeClient(session=None).async_get_home_consumption_composition()) is payload
+    items = hems_payloads_to_items(home_consumption_composition=payload)
+    assert {item["name"]: item["state"] for item in items if "composition" in item["name"]} == {
+        "hems_flow_consumption_composition_battery": "75 %",
+        "hems_flow_consumption_composition_grid": "25 %",
+        "hems_flow_consumption_composition_pv": "0 %",
+    }
+    assert hems_client.consumption_composition_to_items({"battery": None, "grid": True, "pv": float("nan")}) == []
+
+
+def test_optimization_config_metadata_preserves_units_and_capabilities():
+    props = hems_client._hems_optimization_properties({"optimization": {
+        "supported_configs": ["MIN_RUNTIME", "TARGET_TIME.CAPACITY", "TARGET_TIME.TARGET_TIME"],
+        "config": {"min_runtime": 5, "target_time": {"capacity": 30000, "target_time": 50400000}},
+    }})
+    assert props["optimizationSupportedConfigs"] == "MIN_RUNTIME,TARGET_TIME.CAPACITY,TARGET_TIME.TARGET_TIME"
+    assert float(props["optimizationConfig_min_runtime"]) == 5
+    assert float(props["optimizationConfig_target_time.capacity"]) == 30000
+    assert float(props["optimizationConfig_target_time.target_time"]) == 50400000
+
+
+def test_config_update_only_patches_config_and_never_schedules():
+    calls = []
+
+    class FakeClient(KiwiGridHEMSClient):
+        async def _async_send_json(self, method, path, *, payload=None, where):
+            calls.append((method, path, payload))
+
+    config = {"optimization_mode": "PV_EXCESS", "min_runtime": 3}
+    asyncio.run(FakeClient(session=None).async_update_device_optimization_config("device/id", config))
+    assert calls == [("PATCH", "/device/device%2Fid/optimization/config", config)]
+
+
+
+@pytest.mark.parametrize("mode", ["PV_EXCESS", "DEPARTURE_TIME"])
+def test_reset_uses_device_defaults_and_preserves_active_mode(mode):
+    from copy import deepcopy
+
+    payload = {
+        "config": {"optimization_mode": mode, "min_runtime": 5},
+        "config_defaults": {"optimization_mode": "NOT_OPTIMIZED", "min_runtime": 0,
+                            "lowest_power": 4200, "max_power": 11000,
+                            "target_time": {"capacity": 30000, "target_time": 28800000}},
+        "supported_configs": ["MIN_RUNTIME", "LOWEST_POWER", "MAX_POWER", "TARGET_TIME.CAPACITY", "TARGET_TIME.TARGET_TIME"],
+    }
+    before = deepcopy(payload)
+    result = hems_client.optimization_reset_config(payload)
+    assert result == {
+        "optimization_mode": mode, "min_runtime": 0, "lowest_power": 4200, "max_power": 11000,
+        **({"target_time": {"capacity": 30000, "target_time": 28800000}} if mode == "DEPARTURE_TIME" else {}),
+    }
+    assert payload == before
+
+
+@pytest.mark.parametrize("payload", [
+    {}, {"config": {"optimization_mode": "NOT_OPTIMIZED"}},
+    {"config": {"optimization_mode": "UNKNOWN"}},
+    {"config": {"optimization_mode": "PV_EXCESS"}, "config_defaults": {}, "supported_configs": []},
+    {"config": {"optimization_mode": "PV_EXCESS"}, "config_defaults": {}, "supported_configs": ["MIN_RUNTIME"]},
+    {"config": {"optimization_mode": "DEPARTURE_TIME"}, "config_defaults": {"target_time": {}}, "supported_configs": ["TARGET_TIME.CAPACITY"]},
+])
+def test_reset_rejects_inactive_mode_or_incomplete_defaults(payload):
+    with pytest.raises(hems_client.KiwiGridHEMSProtocolError):
+        hems_client.optimization_reset_config(payload)
+
+
+def test_reset_excludes_defaults_not_advertised_by_device():
+    payload = {"config": {"optimization_mode": "PV_EXCESS"},
+               "config_defaults": {"min_runtime": 7, "max_power": 10000},
+               "supported_configs": ["MIN_RUNTIME"]}
+    assert hems_client.optimization_reset_config(payload) == {"optimization_mode": "PV_EXCESS", "min_runtime": 7}
+    props = hems_client._hems_optimization_properties({"optimization": payload})
+    assert props["optimizationResetAvailable"] == "true"
+    payload["config"]["optimization_mode"] = "NOT_OPTIMIZED"
+    props = hems_client._hems_optimization_properties({"optimization": payload})
+    assert props["optimizationResetAvailable"] == "false"
+    assert props["optimizationHasDefaults"] == "true"
+
+
+def test_send_json_bad_request_includes_server_message():
+    class _BadRequestResponse(_FakeContextResponse):
+        status = 400
+
+        async def text(self):
+            return '{"message":"target_time is not allowed"}'
+
+    class _BadRequestSession:
+        def request(self, *args, **kwargs):
+            return _BadRequestResponse()
+
+    client = KiwiGridHEMSClient(_BadRequestSession(), access_token="token")
+
+    with pytest.raises(KiwiGridHEMSConnectionError, match="HTTP 400 .*target_time is not allowed"):
+        asyncio.run(client.async_update_device_optimization_config("device", {"optimization_mode": "PV_EXCESS"}))
+
+
+def test_reset_omits_user_importance():
+    payload = {
+        "config": {"optimization_mode": "PV_EXCESS", "lowest_power": 1000, "min_resttime": 5, "min_runtime": 4,
+                   "must_runtime": 5, "user_importance": {"is_anchored": False, "value": 0}},
+        "config_defaults": {"optimization_mode": "NOT_OPTIMIZED", "lowest_power": 0, "min_resttime": 0, "min_runtime": 0,
+                            "must_runtime": 0, "user_importance": {"is_anchored": False, "value": 0}},
+        "supported_configs": ["MIN_RUNTIME", "MIN_RESTTIME", "MUST_RUNTIME", "USER_IMPORTANCE", "LOWEST_POWER"],
+    }
+    assert hems_client.optimization_reset_config(payload) == {
+        "optimization_mode": "PV_EXCESS", "min_runtime": 0, "min_resttime": 0, "must_runtime": 0, "lowest_power": 0,
+    }
+
+
+@pytest.mark.parametrize("message,ends_quietly", [
+    ("Device does not have override info. Device id: device", True),
+    ("Gateway unreachable", False),
+])
+def test_clear_override_without_active_override_is_no_op(message, ends_quietly):
+    class _BadGatewayResponse(_FakeContextResponse):
+        status = 502
+
+        async def text(self):
+            return f'{{"status":502,"error":"Bad Gateway","message":"{message}"}}'
+
+    class _BadGatewaySession:
+        def request(self, *args, **kwargs):
+            return _BadGatewayResponse()
+
+    client = KiwiGridHEMSClient(_BadGatewaySession(), access_token="token")
+
+    if ends_quietly:
+        asyncio.run(client.async_clear_device_optimization_state("device"))
+    else:
+        with pytest.raises(KiwiGridHEMSConnectionError, match="HTTP 502"):
+            asyncio.run(client.async_clear_device_optimization_state("device"))
