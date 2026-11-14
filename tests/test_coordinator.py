@@ -48,7 +48,7 @@ def _load_coordinator_module():
         category: str | None
 
     constants = {
-        "OPTIMIZATION_CONFIG_FIELDS": ("lowest_power", "max_power", "min_runtime", "min_resttime", "must_runtime", "target_time.capacity", "target_time.target_time"),
+        "OPTIMIZATION_CONFIG_FIELDS": ("lowest_power", "max_power", "min_runtime", "min_resttime", "must_runtime", "target_time.capacity", "target_time.target_time", "dynamic_tariff.capacity", "dynamic_tariff.operation_time", "dynamic_tariff.target_state_of_charge"),
         "CONF_KIWIGRID_OVERRIDE_DURATION": "kiwigrid_override_duration",
         "CONF_KIWIGRID_HEMS_SCAN_INTERVAL": "kiwigrid_hems_scan_interval",
         "CONF_KIWIGRID_FLOW_SCAN_INTERVAL": "kiwigrid_flow_scan_interval",
@@ -527,6 +527,7 @@ def test_switch_duration_and_override_reset_refresh(duration):
     ("unknown", 1), ("min_runtime", -1), ("min_runtime", True), ("min_runtime", 1.5),
     ("max_power", 2_147_483_648), ("target_time.target_time", 86_400_000),
     ("target_time.target_time", 60001),
+    ("dynamic_tariff.operation_time", 25), ("dynamic_tariff.target_state_of_charge", 101),
 ])
 def test_config_values_rejected_before_api(field, value):
     from unittest.mock import AsyncMock
@@ -538,16 +539,17 @@ def test_config_values_rejected_before_api(field, value):
     client.async_update_hems_device_optimization_config.assert_not_awaited()
 
 
-def test_config_update_refreshes_device_metadata():
+@pytest.mark.parametrize("field,value", [("min_runtime", 5), ("dynamic_tariff.capacity", 9000), ("dynamic_tariff.operation_time", 2), ("dynamic_tariff.target_state_of_charge", 80)])
+def test_config_update_refreshes_device_metadata(field, value):
     from unittest.mock import AsyncMock
 
     coordinator, _, client = _coordinator()
     client.async_update_hems_device_optimization_config = AsyncMock()
     coordinator.async_refresh_things = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
-    asyncio.run(coordinator.async_update_hems_device_optimization_config("device", "min_runtime", 5))
+    asyncio.run(coordinator.async_update_hems_device_optimization_config("device", field, value))
     client.async_update_hems_device_optimization_config.assert_awaited_once_with(
-        "device", "min_runtime", 5, username="cloud-user", password="cloud-password",
+        "device", field, value, username="cloud-user", password="cloud-password",
     )
     coordinator.async_refresh_things.assert_awaited_once()
     coordinator.async_request_refresh.assert_awaited_once()
@@ -564,6 +566,21 @@ def test_config_reset_refreshes_metadata_without_assuming_state():
     asyncio.run(coordinator.async_reset_hems_device_optimization_config("device"))
     client.async_reset_hems_device_optimization_config.assert_awaited_once_with(
         "device", username="cloud-user", password="cloud-password",
+    )
+    coordinator.async_refresh_things.assert_awaited_once()
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
+def test_dynamic_tariff_mode_refreshes_metadata():
+    from unittest.mock import AsyncMock
+
+    coordinator, _, client = _coordinator()
+    client.async_set_hems_device_optimization_mode = AsyncMock()
+    coordinator.async_refresh_things = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    asyncio.run(coordinator.async_set_hems_device_optimization_mode("device", "DYNAMIC_TARIFF"))
+    client.async_set_hems_device_optimization_mode.assert_awaited_once_with(
+        "device", "DYNAMIC_TARIFF", username="cloud-user", password="cloud-password",
     )
     coordinator.async_refresh_things.assert_awaited_once()
     coordinator.async_request_refresh.assert_awaited_once()

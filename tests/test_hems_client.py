@@ -1924,3 +1924,31 @@ def test_clear_override_without_active_override_is_no_op(message, ends_quietly):
     else:
         with pytest.raises(KiwiGridHEMSConnectionError, match="HTTP 502"):
             asyncio.run(client.async_clear_device_optimization_state("device"))
+
+
+@pytest.mark.parametrize("mode", ["PV_EXCESS", "DEPARTURE_TIME", "DYNAMIC_TARIFF"])
+def test_tariff_metadata_and_mode_specific_reset(mode):
+    from copy import deepcopy
+
+    optimization = {
+        "supported_configs": ["DYNAMIC_TARIFF.OPERATION_TIME", "DYNAMIC_TARIFF.CAPACITY",
+                              "DYNAMIC_TARIFF.TARGET_STATE_OF_CHARGE", "LOWEST_POWER",
+                              "TARGET_TIME.CAPACITY", "USER_IMPORTANCE"],
+        "config": {"optimization_mode": mode, "dynamic_tariff": {
+            "operation_time": 2, "capacity": 9000, "target_state_of_charge": 80}},
+        "config_defaults": {"dynamic_tariff": {
+            "operation_time": 4, "capacity": 14780, "target_state_of_charge": 100},
+            "lowest_power": 0, "target_time": {"capacity": 30000}},
+    }
+    before = deepcopy(optimization)
+    props = hems_client._hems_optimization_properties({"optimization": optimization})
+    assert float(props["optimizationConfig_dynamic_tariff.capacity"]) == 9000
+    assert float(props["optimizationConfig_dynamic_tariff.operation_time"]) == 2
+    assert float(props["optimizationConfig_dynamic_tariff.target_state_of_charge"]) == 80
+    assert props["optimizationResetAvailable"] == "true"
+    result = hems_client.optimization_reset_config(optimization)
+    assert result == {"optimization_mode": mode, "lowest_power": 0,
+                      **({"dynamic_tariff": optimization["config_defaults"]["dynamic_tariff"]}
+                         if mode == "DYNAMIC_TARIFF" else {}),
+                      **({"target_time": {"capacity": 30000}} if mode == "DEPARTURE_TIME" else {})}
+    assert optimization == before

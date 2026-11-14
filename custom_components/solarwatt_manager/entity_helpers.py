@@ -113,7 +113,7 @@ def is_hems_switchable_thing(thing: Mapping[str, Any]) -> bool:
 
 
 def is_hems_optimizable_thing(thing: Mapping[str, Any]) -> bool:
-    """Return True for KiwiGrid HEMS things with switchable optimization."""
+    """Return True for KiwiGrid HEMS things advertising multiple supported optimization modes."""
     properties = thing.get("properties")
     props = properties if isinstance(properties, Mapping) else {}
     supported_modes = {
@@ -121,7 +121,7 @@ def is_hems_optimizable_thing(thing: Mapping[str, Any]) -> bool:
         for mode in str(props.get("optimizationSupportedModes") or "").split(",")
         if mode.strip()
     }
-    return is_hems_switchable_thing(thing) and len(supported_modes) > 1
+    return len(supported_modes & {"NOT_OPTIMIZED", "PV_EXCESS", "DEPARTURE_TIME", "DYNAMIC_TARIFF"}) > 1
 
 
 def is_switch_item(item: Any) -> bool:

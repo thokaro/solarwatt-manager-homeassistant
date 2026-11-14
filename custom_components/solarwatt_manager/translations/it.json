@@ -194,6 +194,15 @@
       "must_runtime": {
         "name": "Tempo minimo giornaliero"
       },
+      "dynamic_tariff_operation_time": {
+        "name": "Ore ottimizzate per tariffa al giorno"
+      },
+      "dynamic_tariff_capacity": {
+        "name": "Energia di carica in modalità tariffaria"
+      },
+      "dynamic_tariff_target_state_of_charge": {
+        "name": "Stato di carica obiettivo in modalità tariffaria"
+      },
       "target_time_capacity": {
         "name": "Energia di ricarica desiderata"
       }
@@ -671,6 +680,7 @@
         "state": {
           "not_optimized": "Non ottimizzato",
           "pv_excess": "Ottimizzato FV",
+          "dynamic_tariff": "Tariffa dinamica",
           "departure_time": "Ora di partenza"
         }
       }

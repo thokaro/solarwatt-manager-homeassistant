@@ -12,7 +12,7 @@ This custom integration connects a **SOLARWATT Manager** like FLEX or Rail to **
 
 The minimum supported Home Assistant version is **2024.12.0**.
 
-Note for users with **vision** components: If you need write/control functions such as work mode, maximum charge current, discharge current, or battery SoC via Modbus, try [nathanmarlor/foxess_modbus](https://github.com/nathanmarlor/foxess_modbus). For SOLARWATT Vision battery setups, the fork [WiIIiam278:feat/ivo-and-ivt](https://github.com/WiIIiam278/foxess_modbus/tree/feat/ivo-and-ivt) may be the better fit.
+Note for users with **SOLARWATT Vision** components: [nathanmarlor/foxess_modbus](https://github.com/nathanmarlor/foxess_modbus) now officially supports Solarwatt Vision. Use its documentation for direct Modbus setup and supported monitoring/control functions; a separate fork is no longer required for Vision support. See the [2026.11.2 release notes](https://github.com/thokaro/solarwatt-manager-homeassistant/releases/tag/2026.11.2).
 
 ⚠️ **EnergyManager pro** is not supported through the local Manager API in this integration. You can still use the optional **KiwiGrid HEMS** / SOLARWATT Manager Portal connection for supported HEMS devices, analytics, and controls. If you need direct local EnergyManager pro support, use https://github.com/Mas2112/solarwatt-energymanager-homeassistant instead.
 
@@ -26,7 +26,7 @@ Note for users with **vision** components: If you need write/control functions s
 * KiwiGrid HEMS devices, including smart-heater temperature, diagnostics, today values, month totals, year totals, and finance values
 * Separate `KiwiGrid Flow` device for live SOLARWATT Manager Portal energy-flow values
 * KiwiGrid HEMS controls for supported devices:
-  * `select` entity for optimization mode (`Not optimized`, `PV optimized`, `Departure time`)
+  * `select` entity for optimization mode (`Not optimized`, `PV optimized`, `Departure time`, `Dynamic tariff`)
   * `switch` entity for supported plug/EV station switching
 * Energy Dashboard ready (correct `device_class` & `state_class`)
 * Separate polling intervals for local values, cloud Flow, devices, and statistics; HEMS devices default to 30 seconds
@@ -423,12 +423,21 @@ Selected portal devices expose only the settings listed in their API
 | Minimum rest time | min | `min_resttime` |
 | Minimum runtime per day | min | `must_runtime` |
 | Desired charging energy | kWh | `target_time.capacity` (Wh) |
+| Tariff-optimized hours per day | h (0–24) | `dynamic_tariff.operation_time` |
+| Charging energy in tariff mode | kWh | `dynamic_tariff.capacity` (Wh) |
+| Target state of charge in tariff mode | % (0–100) | `dynamic_tariff.target_state_of_charge` |
 | Departure time | Local clock time, minute precision | `target_time.target_time` (milliseconds since midnight) |
 
 For example, setting **35.5 kWh** sends `35500` Wh; **15:30** sends `55800000`
 milliseconds. The clock value follows the portal's local departure time and is
 not converted to UTC. Daily runtime is distinct from the separate manual override
 duration setting below.
+
+Select **Dynamic tariff** before editing tariff settings; tariff controls are unavailable in other modes. For example, changing
+charging energy from **12 to 9 kWh** sends `dynamic_tariff.capacity: 9000`.
+Tariff hours are separate from minimum runtime per day. Only fields advertised
+by the device are created; writes are rejected if advertised tariff values are missing. Battery and heat-pump mode selection does not require
+on/off switching support. Departure settings require **Departure time** mode.
 
 Each change reads the current optimization configuration, changes the selected
 field, and sends a PATCH while preserving the optimization mode and other values.
@@ -437,7 +446,8 @@ clear existing schedules. The refreshed configuration supplies entity state;
 failed writes are reported and are not treated as successful changes.
 
 Numeric controls use text input with non-negative integer API values (energy is
-converted from kWh). The technical upper limit is a signed 32-bit integer, not a
+converted from kWh). Tariff hours are limited to 0–24 and target SoC to 0–100 %.
+For other fields, the technical upper limit is a signed 32-bit integer, not a
 manufacturer rating; device-specific limits remain enforced by the portal API.
 Missing or incomplete configuration leaves the affected control unavailable or
 rejects the write rather than inventing default values. Reload the integration
@@ -449,8 +459,10 @@ entity unique IDs are unchanged; no migration is required.
 Devices advertising configuration defaults expose a separate **Reset optimization
 settings** button. It reads fresh `config_defaults` and `supported_configs` from
 the portal and restores defaults for the active mode. **PV excess** resets its
-supported settings without sending departure-time fields; **Departure time** also
-restores the advertised charging energy and clock time. The current mode is kept,
+supported settings without sending departure or tariff fields; **Departure time**
+also restores the advertised departure charging energy and clock time.
+**Dynamic tariff** restores advertised tariff defaults, including hours, charging
+energy or target SoC, without sending departure settings. The current mode is kept,
 even when `config_defaults.optimization_mode` says `NOT_OPTIMIZED`.
 
 The button is unavailable for **Not optimized**, unknown modes, or incomplete
@@ -579,7 +591,7 @@ The `SOLARWATT Flow` device must be enabled in the integration options/device se
 Firmware must provide both HEMS configurator endpoints. The former `/rest/things`
 metadata fallback and legacy item aliases are no longer supported.
 
-For SOLARWATT Vision battery SoC, use the FoxESS integration [nathanmarlor/foxess_modbus](https://github.com/nathanmarlor/foxess_modbus/) or preferably the fork [WiIIiam278:feat/ivo-and-ivt](https://github.com/WiIIiam278/foxess_modbus/tree/feat/ivo-and-ivt). You can then create a SOLARWATT-adjusted SoC as a template sensor.
+For SOLARWATT Vision battery SoC, use [nathanmarlor/foxess_modbus](https://github.com/nathanmarlor/foxess_modbus/), which now officially supports Solarwatt Vision. You can then create a SOLARWATT-adjusted SoC as a template sensor. The [German guide](docs/anleitung-de.md#solarwatt-vision-über-modbus-und-angepasster-speicher-soc) also includes this example.
 
 In `configuration.yaml`:
 

@@ -723,3 +723,94 @@ def test_config_reset_reads_fresh_defaults_and_only_updates_after_success(monkey
     getter.assert_awaited_once()
     setter.assert_awaited_once_with("device", {"optimization_mode": "PV_EXCESS", "min_runtime": 0})
     assert payload[0]["config"]["min_runtime"] == (5 if fail else 0)
+
+
+@pytest.mark.parametrize("mode", ["PV_EXCESS", "DEPARTURE_TIME", "DYNAMIC_TARIFF"])
+def test_tariff_write_preserves_siblings_and_uses_active_mode(monkeypatch, mode):
+    from unittest.mock import AsyncMock
+    from copy import deepcopy
+
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    current = {"optimization_mode": mode, "lowest_power": 15,
+               "dynamic_tariff": {"capacity": 12000, "target_state_of_charge": 80},
+               "target_time": {"capacity": 30000, "target_time": 28800000},
+               "user_importance": {"value": 1}}
+    original = deepcopy(current)
+    monkeypatch.setattr(hems, "async_get_device_optimizations", AsyncMock(return_value=[{
+        "id": "device", "supported_configs": ["LOWEST_POWER", "DYNAMIC_TARIFF.CAPACITY"],
+        "config": current,
+    }]))
+    update = AsyncMock()
+    monkeypatch.setattr(hems, "async_update_device_optimization_config", update)
+    asyncio.run(client.async_update_hems_device_optimization_config(
+        "device", "lowest_power", 1600, username="user", password="password",
+    ))
+    sent = update.call_args.args[1]
+    assert ("dynamic_tariff" in sent) == (mode == "DYNAMIC_TARIFF")
+    assert ("target_time" in sent) == (mode == "DEPARTURE_TIME")
+    assert "user_importance" not in sent
+    update.reset_mock()
+    if mode == "DYNAMIC_TARIFF":
+        asyncio.run(client.async_update_hems_device_optimization_config(
+            "device", "dynamic_tariff.capacity", 9000, username="user", password="password",
+        ))
+        assert update.call_args.args[1]["dynamic_tariff"] == {"capacity": 9000, "target_state_of_charge": 80}
+        assert "dynamic_tariff.capacity" not in update.call_args.args[1]
+    else:
+        with pytest.raises(client_module.SolarwattError, match="dynamic tariff optimization mode"):
+            asyncio.run(client.async_update_hems_device_optimization_config(
+                "device", "dynamic_tariff.capacity", 9000, username="user", password="password",
+            ))
+        update.assert_not_awaited()
+    assert current == original
+
+
+def test_concurrent_tariff_updates_preserve_other_settings(monkeypatch):
+    from copy import deepcopy
+
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    remote = [{"id": "device", "supported_configs": ["DYNAMIC_TARIFF.CAPACITY", "DYNAMIC_TARIFF.TARGET_STATE_OF_CHARGE"],
+               "config": {"optimization_mode": "DYNAMIC_TARIFF",
+                          "dynamic_tariff": {"capacity": 12000, "target_state_of_charge": 80}}}]
+
+    async def get():
+        result = deepcopy(remote)
+        await asyncio.sleep(0)
+        return result
+
+    async def update(device_id, config):
+        remote[0]["config"] = deepcopy(config)
+
+    monkeypatch.setattr(hems, "async_get_device_optimizations", get)
+    monkeypatch.setattr(hems, "async_update_device_optimization_config", update)
+
+    async def run():
+        await asyncio.gather(
+            client.async_update_hems_device_optimization_config("device", "dynamic_tariff.capacity", 9000, username="user", password="password"),
+            client.async_update_hems_device_optimization_config("device", "dynamic_tariff.target_state_of_charge", 90, username="user", password="password"),
+        )
+
+    asyncio.run(run())
+    assert remote[0]["config"]["dynamic_tariff"] == {"capacity": 9000, "target_state_of_charge": 90}
+
+
+@pytest.mark.parametrize("tariff", [None, {}, {"capacity": 12000}, {"capacity": 12000, "target_state_of_charge": None}])
+@pytest.mark.parametrize("field", ["lowest_power", "dynamic_tariff.capacity"])
+def test_incomplete_tariff_prevents_any_config_write(monkeypatch, tariff, field):
+    from unittest.mock import AsyncMock
+
+    client = _client()
+    hems = client._get_hems_client("user", "password")
+    payload = [{"id": "device", "supported_configs": ["LOWEST_POWER", "DYNAMIC_TARIFF.CAPACITY", "DYNAMIC_TARIFF.TARGET_STATE_OF_CHARGE"],
+                "config": {"optimization_mode": "DYNAMIC_TARIFF", "dynamic_tariff": tariff}}]
+    monkeypatch.setattr(hems, "async_get_device_optimizations", AsyncMock(return_value=payload))
+    update = AsyncMock()
+    monkeypatch.setattr(hems, "async_update_device_optimization_config", update)
+    with pytest.raises(client_module.SolarwattError, match="incomplete"):
+        asyncio.run(client.async_update_hems_device_optimization_config(
+            "device", field, 9000, username="user", password="password",
+        ))
+    update.assert_not_awaited()
+    assert payload[0]["config"]["dynamic_tariff"] is tariff

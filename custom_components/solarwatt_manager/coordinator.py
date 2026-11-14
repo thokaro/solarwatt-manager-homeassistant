@@ -438,7 +438,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         if not hems_enabled or not (hems_username and hems_password):
             raise SolarwattError("KiwiGrid HEMS is not configured")
 
-        if optimization_mode not in {"PV_EXCESS", "NOT_OPTIMIZED", "DEPARTURE_TIME"}:
+        if optimization_mode not in {"PV_EXCESS", "NOT_OPTIMIZED", "DEPARTURE_TIME", "DYNAMIC_TARIFF"}:
             raise SolarwattError(
                 f"Unsupported KiwiGrid HEMS optimization mode: {optimization_mode}"
             )
@@ -466,6 +466,10 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
             raise SolarwattError("Unknown optimization setting")
         if isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > 2_147_483_647:
             raise SolarwattError("Optimization value must be a non-negative 32-bit integer")
+        if field == "dynamic_tariff.target_state_of_charge" and value > 100:
+            raise SolarwattError("Target state of charge must be between 0 and 100")
+        if field == "dynamic_tariff.operation_time" and value > 24:
+            raise SolarwattError("Daily tariff operation time must be between 0 and 24 hours")
         if field == "target_time.target_time" and (value >= 86_400_000 or value % 60_000):
             raise SolarwattError("Departure time must be a minute within the day")
         enabled, username, password = self._hems_credentials()

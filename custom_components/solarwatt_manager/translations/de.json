@@ -194,6 +194,15 @@
       "must_runtime": {
         "name": "Mindestlaufzeit pro Tag"
       },
+      "dynamic_tariff_operation_time": {
+        "name": "Tarifoptimierte Stunden pro Tag"
+      },
+      "dynamic_tariff_capacity": {
+        "name": "Ladeenergie im Tarifmodus"
+      },
+      "dynamic_tariff_target_state_of_charge": {
+        "name": "Ziel-Ladezustand im Tarifmodus"
+      },
       "target_time_capacity": {
         "name": "Gewünschte Ladeenergie"
       }
@@ -671,6 +680,7 @@
         "state": {
           "not_optimized": "Nicht optimiert",
           "pv_excess": "PV-optimiert",
+          "dynamic_tariff": "Dynamischer Tarif",
           "departure_time": "Abfahrtszeit"
         }
       }

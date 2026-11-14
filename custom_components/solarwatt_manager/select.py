@@ -28,6 +28,7 @@ _OPTION_TO_MODE = {
     OPTION_NOT_OPTIMIZED: "NOT_OPTIMIZED",
     OPTION_PV_OPTIMIZED: "PV_EXCESS",
     OPTION_DEPARTURE_TIME: "DEPARTURE_TIME",
+    "dynamic_tariff": "DYNAMIC_TARIFF",
 }
 _MODE_TO_OPTION = {mode: option for option, mode in _OPTION_TO_MODE.items()}
 
@@ -114,7 +115,8 @@ class SOLARWATTHEMSOptimizationSelect(CoordinatorEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         mode = _OPTION_TO_MODE.get(option)
-        if mode is None:
+        thing = self.coordinator.things.get(self._thing_uid, {})
+        if mode is None or option not in _options_from_thing(thing):
             raise HomeAssistantError(f"Unsupported KiwiGrid HEMS optimization option: {option}")
         try:
             await self.coordinator.async_set_hems_device_optimization_mode(

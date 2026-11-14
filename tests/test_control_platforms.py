@@ -10,6 +10,8 @@ from .module_loader import load_component_module_with_stubs, make_homeassistant_
 
 
 class FakeCoordinatorEntity:
+    available = True
+
     def __init__(self, coordinator):
         self.coordinator = coordinator
 
@@ -24,7 +26,7 @@ def platforms():
         "homeassistant.components.number": make_module(
             "homeassistant.components.number", NumberEntity=type("NumberEntity", (), {}),
             NumberEntityDescription=SimpleNamespace,
-            NumberDeviceClass=SimpleNamespace(POWER="power", DURATION="duration", ENERGY="energy"),
+            NumberDeviceClass=SimpleNamespace(POWER="power", DURATION="duration", ENERGY="energy", BATTERY="battery"),
             NumberMode=SimpleNamespace(BOX="box"),
         ),
         "homeassistant.components.time": make_module(
@@ -109,7 +111,7 @@ def _setup(platform, things, options=None, entry_id="entry"):
         ({"optimizationSupportedModes": "NOT_OPTIMIZED"}, {"switch"}),
         ({"optimizationSupportedModes": "NOT_OPTIMIZED,NOT_OPTIMIZED"}, {"switch"}),
         ({"optimizationSupportedModes": ""}, {"switch"}),
-        ({"optimizationSupportsSwitching": "false"}, set()),
+        ({"optimizationSupportsSwitching": "false"}, {"select"}),
         ({"optimizationSupportsSwitching": " TRUE "}, {"select", "switch"}),
     ],
 )
@@ -154,7 +156,7 @@ def test_discovery_selection_updates_and_unload(platforms, platform):
 @pytest.mark.parametrize("platform", ["select", "switch"])
 def test_skipped_devices_can_be_discovered_when_metadata_arrives(platforms, platform):
     things = {
-        "unsupported": _thing("unsupported", optimizationSupportsSwitching="false"),
+        "unsupported": _thing("unsupported", optimizationSupportsSwitching="false", optimizationSupportedModes=""),
         "no-id": _thing("no-id", identifier=" "),
         "no-properties": {"UID": "no-properties", "properties": []},
     }
@@ -238,6 +240,9 @@ def test_reset_button_discovery_command_and_errors(platforms):
     ("number", "lowest_power", "3500", 3500, 4000, 4000),
     ("number", "min_runtime", "5", 5, 3, 3),
     ("number", "must_runtime", "3", 3, 4, 4),
+    ("number", "dynamic_tariff.operation_time", "2", 2, 4, 4),
+    ("number", "dynamic_tariff.capacity", "12000", 12, 9, 9000),
+    ("number", "dynamic_tariff.target_state_of_charge", "80", 80, 90, 90),
     ("number", "target_time.capacity", "30000", 30, 35.5, 35500),
     ("time", "target_time.target_time", "50400000", "14:00", "15:30", 55800000),
 ])
@@ -323,3 +328,53 @@ def test_config_reset_button_is_distinct_and_respects_selection(platforms):
     rig.coordinator.async_clear_hems_device_optimization_state.assert_not_awaited()
     ids = platforms.entity_helpers._selected_entity_unique_ids(rig.entry, {}, {}, {"thing"}, rig.coordinator.things)
     assert button._attr_unique_id in ids
+
+
+def test_tariff_mode_without_switching(platforms):
+    thing = _thing(optimizationSupportsSwitching="false",
+                   optimizationSupportedModes="NOT_OPTIMIZED,DYNAMIC_TARIFF",
+                   optimizationMode="DYNAMIC_TARIFF")
+    rig = _setup(platforms.select, {"thing": thing})
+    entity = rig.batches[0][0]
+    assert entity.options == ["not_optimized", "dynamic_tariff"]
+    assert entity.current_option == "dynamic_tariff"
+    asyncio.run(entity.async_select_option("dynamic_tariff"))
+    rig.coordinator.async_set_hems_device_optimization_mode.assert_awaited_once_with(
+        "12345678-1234-1234-1234-123456789abc", "DYNAMIC_TARIFF",
+    )
+    assert not _setup(platforms.switch, {"thing": thing}).batches
+    ids = platforms.entity_helpers._selected_entity_unique_ids(
+        rig.entry, {}, {}, {"thing"}, rig.coordinator.things,
+    )
+    assert entity._attr_unique_id in ids
+
+
+@pytest.mark.parametrize("field,value", [
+    ("dynamic_tariff.operation_time", 25),
+    ("dynamic_tariff.target_state_of_charge", 101),
+])
+def test_tariff_control_limits(platforms, field, value):
+    rig = _setup(platforms.number, {"thing": _thing(optimizationSupportedConfigs=field.upper())})
+    with pytest.raises(RuntimeError):
+        asyncio.run(rig.batches[0][0].async_set_native_value(value))
+    rig.coordinator.async_update_hems_device_optimization_config.assert_not_awaited()
+
+
+@pytest.mark.parametrize("mode,expected", [("DYNAMIC_TARIFF", True), ("PV_EXCESS", False), ("NOT_OPTIMIZED", False), (None, False)])
+def test_tariff_control_availability_tracks_mode(platforms, mode, expected):
+    rig = _setup(platforms.number, {"thing": _thing(
+        optimizationSupportedConfigs="DYNAMIC_TARIFF.CAPACITY",
+        **{"optimizationConfig_dynamic_tariff.capacity": "9000"},
+    )})
+    entity = rig.batches[0][0]
+    rig.coordinator.things["thing"]["properties"]["optimizationMode"] = mode
+    assert entity.available is expected
+
+
+def test_select_rejects_mode_no_longer_supported(platforms):
+    rig = _setup(platforms.select, {"thing": _thing()})
+    entity = rig.batches[0][0]
+    rig.coordinator.things["thing"]["properties"]["optimizationSupportedModes"] = "NOT_OPTIMIZED"
+    with pytest.raises(RuntimeError):
+        asyncio.run(entity.async_select_option("pv_excess"))
+    rig.coordinator.async_set_hems_device_optimization_mode.assert_not_awaited()

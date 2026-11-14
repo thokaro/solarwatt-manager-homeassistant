@@ -25,8 +25,11 @@ DESCRIPTIONS = tuple(
         native_unit_of_measurement=unit,
         device_class=device_class,
         native_min_value=0,
-        # Technical integer limit only; device-specific limits are enforced by the API.
-        native_max_value=2_147_483_647 / (1000 if unit == "kWh" else 1),
+        # Bound daily hours and percentages; other device limits are enforced by the API.
+        native_max_value=(
+            100 if unit == "%" else 24 if unit == "h" else
+            2_147_483_647 / (1000 if unit == "kWh" else 1)
+        ),
         native_step=0.001 if unit == "kWh" else 1,
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
@@ -38,6 +41,9 @@ DESCRIPTIONS = tuple(
         ("min_resttime", "min", NumberDeviceClass.DURATION),
         ("must_runtime", "min", NumberDeviceClass.DURATION),
         ("target_time.capacity", "kWh", NumberDeviceClass.ENERGY),
+        ("dynamic_tariff.capacity", "kWh", NumberDeviceClass.ENERGY),
+        ("dynamic_tariff.operation_time", "h", NumberDeviceClass.DURATION),
+        ("dynamic_tariff.target_state_of_charge", "%", NumberDeviceClass.BATTERY),
     )
 )
 
@@ -81,16 +87,22 @@ class SOLARWATTOptimizationNumber(CoordinatorEntity, NumberEntity):
         )
         if value is None or not isfinite(value):
             return None
-        return value / 1000 if self.entity_description.key == "target_time.capacity" else value
+        return value / 1000 if self.entity_description.key in {"target_time.capacity", "dynamic_tariff.capacity"} else value
 
     @property
     def available(self) -> bool:
+        thing = self.coordinator.things.get(self._thing_uid, {})
+        if self.entity_description.key.startswith("dynamic_tariff."):
+            if thing.get("properties", {}).get("optimizationMode") != "DYNAMIC_TARIFF":
+                return False
         return super().available and supports_optimization_config(
             self.coordinator.things.get(self._thing_uid, {}), self.entity_description.key,
         ) and self.native_value is not None
 
     async def async_set_native_value(self, value: float) -> None:
-        scale = 1000 if self.entity_description.key == "target_time.capacity" else 1
+        scale = 1000 if self.entity_description.key in {"target_time.capacity", "dynamic_tariff.capacity"} else 1
+        if not self.entity_description.native_min_value <= value <= self.entity_description.native_max_value:
+            raise HomeAssistantError("Optimization value is outside the allowed range")
         raw = value * scale
         if isinstance(value, bool) or not isfinite(raw) or raw < 0 or not isclose(raw, round(raw), rel_tol=0, abs_tol=1e-6):
             raise HomeAssistantError("Invalid optimization value")

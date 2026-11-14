@@ -1973,7 +1973,7 @@ def optimization_reset_config(optimization: Mapping[str, Any]) -> dict[str, Any]
     """Build a mode-specific reset from advertised defaults, never schedules."""
     current = optimization.get("config")
     mode = current.get("optimization_mode") if isinstance(current, Mapping) else None
-    if mode not in {"PV_EXCESS", "DEPARTURE_TIME"}:
+    if mode not in {"PV_EXCESS", "DEPARTURE_TIME", "DYNAMIC_TARIFF"}:
         raise KiwiGridHEMSProtocolError("Reset requires an active supported optimization mode")
     defaults = optimization.get("config_defaults")
     supported = optimization.get("supported_configs")
@@ -1985,7 +1985,7 @@ def optimization_reset_config(optimization: Mapping[str, Any]) -> dict[str, Any]
             raise KiwiGridHEMSProtocolError("Invalid supported optimization setting")
         path = field.lower().split(".")
         # User importance has a dedicated endpoint; the config endpoint rejects it.
-        if path[0] in {"optimization_mode", "user_importance"} or (path[0] == "target_time" and mode != "DEPARTURE_TIME"):
+        if path[0] in {"optimization_mode", "user_importance"} or (path[0] == "target_time" and mode != "DEPARTURE_TIME") or (path[0] == "dynamic_tariff" and mode != "DYNAMIC_TARIFF"):
             continue
         value: Any = defaults
         for part in path:
@@ -2040,6 +2040,13 @@ def _hems_optimization_properties(payload: dict[str, Any]) -> dict[str, str]:
             value = _finite_number(target_time.get(key))
             if value is not None:
                 props[f"optimizationConfig_target_time.{key}"] = str(value)
+
+    dynamic_tariff = config.get("dynamic_tariff")
+    if isinstance(dynamic_tariff, dict):
+        for key in ("capacity", "operation_time", "target_state_of_charge"):
+            value = _finite_number(dynamic_tariff.get(key))
+            if value is not None:
+                props[f"optimizationConfig_dynamic_tariff.{key}"] = str(value)
 
     supported_modes = optimization.get("supported_optimization_modes")
     if isinstance(supported_modes, list):

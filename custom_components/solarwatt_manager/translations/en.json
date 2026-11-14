@@ -194,6 +194,15 @@
       "must_runtime": {
         "name": "Minimum runtime per day"
       },
+      "dynamic_tariff_operation_time": {
+        "name": "Tariff-optimized hours per day"
+      },
+      "dynamic_tariff_capacity": {
+        "name": "Charging energy in tariff mode"
+      },
+      "dynamic_tariff_target_state_of_charge": {
+        "name": "Target state of charge in tariff mode"
+      },
       "target_time_capacity": {
         "name": "Desired charging energy"
       }
@@ -671,6 +680,7 @@
         "state": {
           "not_optimized": "Not optimized",
           "pv_excess": "PV optimized",
+          "dynamic_tariff": "Dynamic tariff",
           "departure_time": "Departure time"
         }
       }

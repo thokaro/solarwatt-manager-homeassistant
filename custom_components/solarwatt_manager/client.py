@@ -1084,7 +1084,27 @@ class SOLARWATTClient:
                         raise SolarwattError("Departure settings require the departure time optimization mode")
                 elif isinstance(target, dict) and {"capacity", "target_time"} <= target.keys():
                     config["target_time"] = {"capacity": target["capacity"], "target_time": target["target_time"]}
-                if field.startswith("target_time."):
+                tariff = current.get("dynamic_tariff")
+                if current["optimization_mode"] == "DYNAMIC_TARIFF" and isinstance(tariff, dict):
+                    config["dynamic_tariff"] = {
+                        key: tariff[key] for key in ("capacity", "operation_time", "target_state_of_charge")
+                        if tariff.get(key) is not None
+                    }
+                if current["optimization_mode"] == "DYNAMIC_TARIFF":
+                    required_tariff_fields = {
+                        key.split(".", 1)[1].lower()
+                        for key in optimization.get("supported_configs", [])
+                        if key.upper().startswith("DYNAMIC_TARIFF.")
+                    }
+                    if not required_tariff_fields or not required_tariff_fields <= config.get("dynamic_tariff", {}).keys():
+                        raise SolarwattError("Current tariff configuration is incomplete")
+                if field.startswith("dynamic_tariff."):
+                    if current["optimization_mode"] != "DYNAMIC_TARIFF":
+                        raise SolarwattError("Tariff settings require the dynamic tariff optimization mode")
+                    if not config.get("dynamic_tariff"):
+                        raise SolarwattError("Current tariff configuration is incomplete")
+                    config["dynamic_tariff"][field.split(".", 1)[1]] = value
+                elif field.startswith("target_time."):
                     if "target_time" not in config:
                         raise SolarwattError("Current departure configuration is incomplete")
                     config["target_time"][field.split(".", 1)[1]] = value

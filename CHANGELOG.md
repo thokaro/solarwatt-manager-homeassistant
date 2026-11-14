@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026.11.2
+
+### ☀️ Solarwatt Vision: official foxess_modbus support
+
+- **[nathanmarlor/foxess_modbus](https://github.com/nathanmarlor/foxess_modbus) now officially lists Solarwatt Vision as supported.** Use the upstream integration for direct Modbus monitoring and the control functions supported by your hardware. The previously recommended Vision fork is no longer needed for this support.
+- The German guide now includes the reserve-adjusted SOLARWATT battery SoC template and setup notes. Follow the foxess_modbus documentation for connection requirements and supported functions.
+
+### ✨ Features
+
+- Add the advertised Dynamic tariff optimization mode and capability-driven controls for tariff hours per day, charging energy (kWh converted to Wh), and target battery SoC. Reuse existing polling, devices and configuration-write serialization.
+- Reset advertised defaults for the active tariff mode while preserving the mode and schedules. Send tariff and departure fields only in their respective modes.
+
+### 🐛 Fixes
+
+- Discover optimization mode selection independently of on/off switching support, including portal devices such as batteries and heat pumps that advertise modes but cannot be switched.
+
+- Reject configuration writes when advertised tariff values are missing, disable tariff controls outside Dynamic tariff mode, and reject mode selections no longer advertised by the device.
+
+### ⬆️ Upgrade notes
+
+- Reload the integration after updating. Select Dynamic tariff before editing tariff settings. Existing entity IDs and unique IDs remain unchanged; no migration or breaking changes. Schedule editing is not included.
+
+
+### ✅ Validation
+
+- 484 tests passed; Ruff, MyPy and diff whitespace checks passed. Regression coverage includes tariff units and bounds, mode discovery without switching, mode-specific writes/resets and concurrent updates.
+
+### 📚 Documentation
+
+- Update both guides to recommend upstream foxess_modbus instead of the previously suggested Vision fork.
+- Add the reserve-adjusted SOLARWATT battery SoC template sensor example to the German guide, including entity ID and reserve configuration instructions.
+
 ## 2026.11.1
 
 ### 🐛 Fixes

@@ -194,6 +194,15 @@
       "must_runtime": {
         "name": "Minimale looptijd per dag"
       },
+      "dynamic_tariff_operation_time": {
+        "name": "Tariefgeoptimaliseerde uren per dag"
+      },
+      "dynamic_tariff_capacity": {
+        "name": "Laadenergie in tariefmodus"
+      },
+      "dynamic_tariff_target_state_of_charge": {
+        "name": "Doellaadniveau in tariefmodus"
+      },
       "target_time_capacity": {
         "name": "Gewenste laadenergie"
       }
@@ -671,6 +680,7 @@
         "state": {
           "not_optimized": "Niet geoptimaliseerd",
           "pv_excess": "PV-geoptimaliseerd",
+          "dynamic_tariff": "Dynamisch tarief",
           "departure_time": "Vertrektijd"
         }
       }

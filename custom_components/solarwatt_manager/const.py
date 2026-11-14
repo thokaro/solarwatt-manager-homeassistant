@@ -353,4 +353,5 @@ def is_unused_default_local_connection(
 OPTIMIZATION_CONFIG_FIELDS = (
     "lowest_power", "max_power", "min_runtime", "min_resttime", "must_runtime",
     "target_time.capacity", "target_time.target_time",
+    "dynamic_tariff.operation_time", "dynamic_tariff.capacity", "dynamic_tariff.target_state_of_charge",
 )

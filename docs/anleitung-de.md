@@ -2,7 +2,7 @@
 
 [English README](../README.md) | **Deutsche Anleitung**
 
-Die Integration verbindet einen SOLARWATT Manager Flex oder Rail mit Home Assistant. Du kannst lokale Live-Daten, Daten aus dem SOLARWATT Manager Portal oder beide Quellen gemeinsam verwenden. Diese Anleitung beschreibt Installation, Einrichtung und Nutzung für die Version 2026.10.0.
+Die Integration verbindet einen SOLARWATT Manager Flex oder Rail mit Home Assistant. Du kannst lokale Live-Daten, Daten aus dem SOLARWATT Manager Portal oder beide Quellen gemeinsam verwenden. Diese Anleitung beschreibt Installation, Einrichtung und Nutzung einschließlich der Tarif-Erweiterungen in Version 2026.11.2.
 
 ## Voraussetzungen und Datenquellen
 
@@ -99,7 +99,23 @@ Die Einzelwerte für Bezug, Einspeisung, Ladung und Entladung sind nicht vorzeic
 
 ### Portalgeräte und Steuerung
 
-Je nach API-Daten erscheinen Batterien, Wechselrichter, PV-Anlagen, Zähler, Wallboxen, Schaltsteckdosen und Heizgeräte mit ihren Sensoren. Unterstützte Geräte erhalten zusätzlich einen Schalter oder eine Auswahl für den Optimierungsmodus: **Nicht optimiert**, **PV-optimiert** oder **Abfahrtszeit**.
+Je nach API-Daten erscheinen Batterien, Wechselrichter, PV-Anlagen, Zähler, Wallboxen, Schaltsteckdosen und Heizgeräte mit ihren Sensoren. Unterstützte Geräte erhalten zusätzlich einen Schalter oder eine Auswahl für den Optimierungsmodus: **Nicht optimiert**, **PV-optimiert**, **Abfahrtszeit** oder **Dynamischer Tarif**. Die Modusauswahl hängt von den gemeldeten Optimierungsmodi ab und ist auch ohne Ein-/Aus-Schaltfunktion verfügbar.
+
+### Dynamischer Tarif
+
+Ab Version 2026.11.2 erscheinen bei ausgewählten Portalgeräten automatisch die von der API unterstützten Tarifeinstellungen:
+
+| Einstellung | Einheit | Bedeutung |
+| --- | --- | --- |
+| Tarifoptimierte Stunden pro Tag | h | Tägliche tarifoptimierte Betriebsdauer, 0 bis 24 Stunden |
+| Ladeenergie im Tarifmodus | kWh | Energiewert für die Tarifoptimierung; 9 kWh werden als 9000 Wh übertragen |
+| Ziel-Ladezustand im Tarifmodus | % | Ziel-SoC des Speichers, 0 bis 100 Prozent |
+
+Wähle am Gerät zuerst **Dynamischer Tarif** und ändere danach die gewünschten Tarifwerte. In anderen Modi sind diese Eingaben nicht verfügbar. Fehlen von der API unterstützte Tarifwerte, wird das Schreiben abgelehnt. Nicht jedes Gerät unterstützt alle Felder. Tarifoptimierte Stunden sind eine eigene Einstellung und nicht die Mindestlaufzeit pro Tag. Für Ladeenergie und Uhrzeit im Abfahrtsmodus wähle weiterhin **Abfahrtszeit**.
+
+Beispiel: Wähle an einer unterstützten Wallbox **Dynamischer Tarif** und setze **Ladeenergie im Tarifmodus** von `12` auf `9` kWh. Die Integration liest vor dem Schreiben die aktuelle Konfiguration und erhält die übrigen Einstellungen. **Optimierungseinstellungen zurücksetzen** stellt die vom Gerät gemeldeten Standardwerte für den aktiven Modus wieder her; der Modus bleibt erhalten. Im Tarifmodus werden keine Abfahrtswerte mitgesendet.
+
+Nach dem Update die Integration neu laden. Vorhandene Entity-IDs und Unique IDs bleiben erhalten. Bestehende Zeitpläne werden nicht geändert; ihre Bearbeitung ist nicht Bestandteil dieser Erweiterung. Die neuen Werte verwenden die vorhandene Geräteabfrage und verursachen keine zusätzlichen regelmäßigen API-Aufrufe.
 
 ### Batterie und Notstrom
 
@@ -133,6 +149,30 @@ mode: single
 ```
 
 Durch `from: "false"` wird beim erstmaligen Verfügbarwerden mit Zustand `"true"` keine Meldung ausgelöst.
+
+### SOLARWATT Vision über Modbus und angepasster Speicher-SoC
+
+Die Integration [nathanmarlor/foxess_modbus](https://github.com/nathanmarlor/foxess_modbus) unterstützt SOLARWATT Vision inzwischen offiziell. Für die direkte Modbus-Anbindung und unterstützte Steuerfunktionen verwende die Einrichtungshinweise dieses Projekts. Ein separater Fork ist für die Vision-Unterstützung nicht mehr erforderlich. Diese Unterstützung stellen wir in den [Release-Hinweisen zu 2026.11.2](https://github.com/thokaro/solarwatt-manager-homeassistant/releases/tag/2026.11.2) besonders vor.
+
+Aus dem FoxESS-SoC kannst du mit folgendem Template-Sensor einen um die Speicherreserve angepassten SOLARWATT-SoC berechnen. Füge das Beispiel in deine `configuration.yaml` ein. Falls bereits ein `template:`-Abschnitt vorhanden ist, ergänze dort den Sensor, statt einen zweiten gleichnamigen Abschnitt anzulegen.
+
+```yaml
+template:
+  - sensor:
+      - name: "SOLARWATT Speicher SoC"
+        unique_id: solarwatt_speicher_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        availability: "{{ is_number(states('sensor.foxess_battery_soc')) }}"
+        state: >
+          {% set reserve = 10 %}
+          {% set fox = states('sensor.foxess_battery_soc') | float %}
+          {% set solarwatt = ((fox - reserve) / (100 - reserve)) * 100 %}
+          {{ solarwatt | clamp(0, 100) | round(0) }}
+```
+
+Ersetze `sensor.foxess_battery_soc` an beiden Stellen durch die tatsächliche Entity-ID deines FoxESS-SoC-Sensors. Passe `reserve` an die im EnergyManager konfigurierte Speicherreserve an; im Beispiel sind es `10` Prozent. Der Wert muss mindestens `0` und kleiner als `100` sein. Das Beispiel bildet somit 10 % auf 0 % und 100 % auf 100 % ab und begrenzt das Ergebnis auf 0 bis 100 %. Liefert der Quellsensor keinen numerischen Wert, ist der Template-Sensor nicht verfügbar.
 
 ## Statistiken und Energie-Dashboard
 
