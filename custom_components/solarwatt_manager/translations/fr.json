@@ -179,6 +179,9 @@
   },
   "entity": {
     "number": {
+      "backup_state_of_charge": {
+        "name": "Réserve de secours"
+      },
       "lowest_power": {
         "name": "Seuil de commutation"
       },

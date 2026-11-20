@@ -179,6 +179,9 @@
   },
   "entity": {
     "number": {
+      "backup_state_of_charge": {
+        "name": "Backup reserve"
+      },
       "lowest_power": {
         "name": "Switching threshold"
       },

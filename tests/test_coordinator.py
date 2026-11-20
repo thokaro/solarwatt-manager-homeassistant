@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 import logging
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -48,6 +49,7 @@ def _load_coordinator_module():
         category: str | None
 
     constants = {
+        "DOMAIN": "solarwatt_manager",
         "OPTIMIZATION_CONFIG_FIELDS": ("lowest_power", "max_power", "min_runtime", "min_resttime", "must_runtime", "target_time.capacity", "target_time.target_time", "dynamic_tariff.capacity", "dynamic_tariff.operation_time", "dynamic_tariff.target_state_of_charge"),
         "CONF_KIWIGRID_OVERRIDE_DURATION": "kiwigrid_override_duration",
         "CONF_KIWIGRID_HEMS_SCAN_INTERVAL": "kiwigrid_hems_scan_interval",
@@ -71,6 +73,11 @@ def _load_coordinator_module():
         package_name=package_name,
         stubs={
             "homeassistant": make_module("homeassistant"),
+            "homeassistant.components": make_module("homeassistant.components"),
+            "homeassistant.components.logbook": make_module(
+                "homeassistant.components.logbook",
+                async_log_entry=Mock(),
+            ),
             "homeassistant.core": make_module(
                 "homeassistant.core",
                 HomeAssistant=object,
@@ -126,6 +133,7 @@ def _load_coordinator_module():
 coordinator_module, SolarwattError, SolarwattAuthError, ConfigEntryAuthFailed = (
     _load_coordinator_module()
 )
+coordinator_module.async_log_entry = Mock()
 
 
 class FakeEntry:

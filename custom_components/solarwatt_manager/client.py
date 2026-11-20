@@ -1153,6 +1153,27 @@ class SOLARWATTClient:
         except KiwiGridHEMSError as err:
             raise SolarwattConnectionError(f"KiwiGrid HEMS override reset failed: {err}") from err
 
+    async def async_set_hems_battery_backup_state_of_charge(
+        self,
+        device_id: str,
+        value: float,
+        *,
+        username: str = "",
+        password: str = "",
+    ) -> None:
+        """Set a KiwiGrid battery backup state-of-charge target."""
+        hems = self._get_hems_client(username, password)
+        if not hems.enabled:
+            raise SolarwattAuthError("KiwiGrid HEMS credentials are missing")
+        try:
+            async with self._hems_config_lock:
+                await hems.async_set_battery_backup_state_of_charge(device_id, value)
+            self._hems_payload_cache.pop("batteries", None)
+        except KiwiGridHEMSAuthError as err:
+            raise SolarwattAuthError(f"KiwiGrid HEMS authentication failed: {err}") from err
+        except KiwiGridHEMSError as err:
+            raise SolarwattConnectionError(f"KiwiGrid battery update failed: {err}") from err
+
     async def async_get_things(self) -> list[dict[str, Any]]:
         """Fetch local thing metadata from the HEMS configurator endpoint."""
         return await self.async_get_hems_configurator_things()
