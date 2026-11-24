@@ -77,6 +77,19 @@ def build_thing_config_reset_unique_id(entry_id: str, thing_uid: str) -> str:
     return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_optimization_config_reset"
 
 
+def is_hems_battery_thing(thing: Mapping[str, Any]) -> bool:
+    """Return True for a KiwiGrid HEMS battery thing."""
+    properties = thing.get("properties")
+    props = properties if isinstance(properties, Mapping) else {}
+    kind = str(props.get("kiwigridKind") or "").strip().lower()
+    thing_type = str(thing.get("thingTypeUID") or thing.get("thingTypeUid") or "")
+    return kind == "battery" or thing_type == "kiwigrid-hems:battery"
+
+
+def build_thing_backup_state_of_charge_unique_id(entry_id: str, thing_uid: str) -> str:
+    return f"{build_thing_sensor_unique_id(entry_id, thing_uid)}_backup_state_of_charge"
+
+
 def has_optimization_defaults(thing: Mapping[str, Any]) -> bool:
     props = thing.get("properties")
     return isinstance(props, Mapping) and props.get("optimizationHasDefaults") == "true" and bool(props.get("optimizationSupportedConfigs"))
@@ -260,6 +273,10 @@ def _selected_entity_unique_ids(
             continue
         expected_unique_ids.update(_thing_entity_unique_ids(entry.entry_id, thing_uid))
         if isinstance(thing, Mapping):
+            if is_hems_battery_thing(thing):
+                expected_unique_ids.add(
+                    build_thing_backup_state_of_charge_unique_id(entry.entry_id, thing_uid)
+                )
             if has_optimization_defaults(thing):
                 expected_unique_ids.add(build_thing_config_reset_unique_id(entry.entry_id, thing_uid))
             for field in OPTIMIZATION_CONFIG_FIELDS:

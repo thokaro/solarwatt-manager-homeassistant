@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable, Mapping
 from datetime import timedelta
 import logging
+from math import isfinite
 import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.core import HomeAssistant
+from homeassistant.components.logbook import async_log_entry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .client import SOLARWATTClient, SolarwattAuthError, SolarwattError
@@ -22,6 +25,7 @@ from .const import (
     DEFAULT_KIWIGRID_HEMS_SCAN_INTERVAL,
     DEFAULT_KIWIGRID_PROFILE_CACHE_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
     get_kiwigrid_hems_credentials,
@@ -42,6 +46,10 @@ if TYPE_CHECKING:
     from .stats_total import StatsTotalStore
 
 
+BACKUP_STATE_OF_CHARGE_UPDATE_DELAY = 10
+BACKUP_STATE_OF_CHARGE_REFRESH_DELAY = 5
+
+
 class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
     def __init__(self, hass: HomeAssistant, entry, client: SOLARWATTClient):
         self.entry = entry
@@ -59,6 +67,8 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.local_last_error: str | None = None
         self._hems_items_cache: list[dict[str, Any]] = []
         self._hems_energy_flow_cache: list[dict[str, Any]] = []
+        self.hems_backup_state_of_charge: dict[str, float] = {}
+        self._hems_backup_state_of_charge_tasks: dict[str, asyncio.Task[None]] = {}
         self._hems_items_error: SolarwattError | None = None
         self._hems_energy_flow_error: SolarwattError | None = None
         self._hems_last_attempt: float | None = None
@@ -483,6 +493,77 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
         self.async_update_listeners()
         await self.async_request_refresh()
 
+    async def async_update_hems_battery_backup_state_of_charge(
+        self,
+        device_id: str,
+        value: float,
+        *,
+        entity_id: str | None = None,
+        entity_name: str = "",
+    ) -> None:
+        """Debounce battery reserve edits and send the last value after inactivity."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) or not 0 <= value <= 100:
+            raise SolarwattError("Backup state of charge must be between 0 and 100 percent")
+        enabled, username, password = self._hems_credentials()
+        if not enabled or not (username and password):
+            raise SolarwattError("KiwiGrid HEMS is not configured")
+        self.hems_backup_state_of_charge[device_id] = float(value)
+        self.async_update_listeners()
+        if task := self._hems_backup_state_of_charge_tasks.pop(device_id, None):
+            task.cancel()
+        self._hems_backup_state_of_charge_tasks[device_id] = self.hass.async_create_task(
+            self._async_send_battery_backup_state_of_charge(
+                device_id, username, password, entity_id, entity_name,
+            ),
+        )
+
+    async def _async_send_battery_backup_state_of_charge(
+        self,
+        device_id: str,
+        username: str,
+        password: str,
+        entity_id: str | None,
+        entity_name: str,
+    ) -> None:
+        try:
+            await asyncio.sleep(BACKUP_STATE_OF_CHARGE_UPDATE_DELAY)
+            value = self.hems_backup_state_of_charge[device_id]
+            self._hems_backup_state_of_charge_tasks.pop(device_id, None)
+            await self.client.async_set_hems_battery_backup_state_of_charge(
+                device_id,
+                value / 100,
+                username=username,
+                password=password,
+            )
+            await asyncio.sleep(BACKUP_STATE_OF_CHARGE_REFRESH_DELAY)
+            async_log_entry(
+                self.hass,
+                entity_name or DOMAIN,
+                f"{value:g}%",
+                domain=DOMAIN,
+                entity_id=entity_id,
+            )
+            self.invalidate_hems_cache()
+            await self.async_request_refresh()
+            if self.hems_backup_state_of_charge.get(device_id) == value:
+                self.hems_backup_state_of_charge.pop(device_id, None)
+                self.async_update_listeners()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.logger.exception("Unable to update battery backup state of charge")
+        finally:
+            current_task = asyncio.current_task()
+            if self._hems_backup_state_of_charge_tasks.get(device_id) is current_task:
+                self._hems_backup_state_of_charge_tasks.pop(device_id, None)
+
+    def cancel_pending_battery_backup_updates(self) -> None:
+        """Cancel delayed battery updates when the config entry unloads."""
+        for task in self._hems_backup_state_of_charge_tasks.values():
+            task.cancel()
+        self._hems_backup_state_of_charge_tasks.clear()
+        self.hems_backup_state_of_charge.clear()
+
     async def async_reset_hems_device_optimization_config(self, device_id: str) -> None:
         """Reset defaults for the active mode and refresh device metadata."""
         enabled, username, password = self._hems_credentials()
@@ -762,6 +843,8 @@ def _validated_scan_interval(value: Any, *, default: int) -> int:
     if not isinstance(value, int) or value < MIN_SCAN_INTERVAL:
         return default
     return min(value, MAX_SCAN_INTERVAL)
+
+
 def _channel_item_metadata(channel: dict[str, Any]) -> dict[str, str]:
     """Extract item-relevant metadata from a thing channel."""
     properties = channel.get("properties")

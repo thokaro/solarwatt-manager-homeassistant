@@ -614,6 +614,27 @@ class KiwiGridHEMSClient:
             payload=config, where="PATCH /v12/device/{id}/optimization/config",
         )
 
+    async def async_set_battery_backup_state_of_charge(
+        self, device_id: str, backup_state_of_charge: float,
+    ) -> None:
+        """Set a battery's backup state-of-charge target."""
+        safe_device_id = quote(str(device_id or "").strip(), safe="")
+        if not safe_device_id:
+            raise KiwiGridHEMSProtocolError("KiwiGrid HEMS device id is missing")
+        path = f"/battery/{safe_device_id}"
+        payload = {"backup_state_of_charge": backup_state_of_charge}
+        _LOGGER.debug(
+            "Sending KiwiGrid request PATCH %s with JSON: %s",
+            path,
+            json.dumps(payload, separators=(",", ":")),
+        )
+        await self._async_send_json(
+            "PATCH",
+            path,
+            payload=payload,
+            where="PATCH /v12/battery/{id}",
+        )
+
     async def async_set_device_optimization_state(
         self,
         device_id: str,

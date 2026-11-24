@@ -12,7 +12,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import SOLARWATTConfigEntry, build_thing_device_info, get_device_registry_anchor
 from .entity_helpers import (
+    build_thing_backup_state_of_charge_unique_id,
     build_thing_optimization_config_unique_id,
+    is_hems_battery_thing,
     optimization_config_value,
     setup_hems_control_entities,
     supports_optimization_config,
@@ -60,6 +62,14 @@ async def async_setup_entry(
                 description=description,
             ),
         )
+    setup_hems_control_entities(
+        entry,
+        async_add_entities,
+        is_hems_battery_thing,
+        lambda uid, thing, device_id, selected: SOLARWATTBackupStateOfChargeNumber(
+            entry.runtime_data, entry.entry_id, uid, thing, device_id, selected,
+        ),
+    )
 
 
 class SOLARWATTOptimizationNumber(CoordinatorEntity, NumberEntity):
@@ -112,3 +122,66 @@ class SOLARWATTOptimizationNumber(CoordinatorEntity, NumberEntity):
             )
         except Exception as err:
             raise HomeAssistantError(f"Unable to update optimization setting: {err}") from err
+
+
+class SOLARWATTBackupStateOfChargeNumber(CoordinatorEntity, NumberEntity):
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = "%"
+    _attr_native_min_value = 0
+    _attr_native_max_value = 100
+    _attr_native_step = 5
+    _attr_mode = NumberMode.BOX
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "backup_state_of_charge"
+
+    def __init__(self, coordinator, entry_id: str, thing_uid: str, thing: dict,
+                 device_id: str, selected: set[str] | None) -> None:
+        super().__init__(coordinator)
+        self._thing_uid = thing_uid
+        self._device_id = device_id
+        self._attr_unique_id = build_thing_backup_state_of_charge_unique_id(entry_id, thing_uid)
+        self._attr_device_info = build_thing_device_info(
+            coordinator.hass, get_device_registry_anchor(coordinator.entry),
+            thing, coordinator.things, selected, str(coordinator.client.host or ""),
+            config_entry_id=entry_id,
+        )
+
+    def _current_value(self) -> float | None:
+        for item_name, thing_uid in self.coordinator.item_to_thing_uid.items():
+            if thing_uid != self._thing_uid or not item_name.endswith("_backup_state_of_charge"):
+                continue
+            item = (self.coordinator.data or {}).get(item_name)
+            if item is None:
+                continue
+            try:
+                raw_value = item.parsed.value
+                if isinstance(raw_value, bool):
+                    continue
+                value = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            if isfinite(value):
+                return value
+        return None
+
+    @property
+    def native_value(self) -> float | None:
+        pending = self.coordinator.hems_backup_state_of_charge.get(self._device_id)
+        return pending if pending is not None else self._current_value()
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._current_value() is not None
+
+    async def async_set_native_value(self, value: float) -> None:
+        if isinstance(value, bool) or not isfinite(value) or not 0 <= value <= 100:
+            raise HomeAssistantError("Backup state of charge must be between 0 and 100 percent")
+        try:
+            await self.coordinator.async_update_hems_battery_backup_state_of_charge(
+                self._device_id,
+                value,
+                entity_id=getattr(self, "entity_id", None),
+                entity_name=getattr(self, "name", None) or self._attr_translation_key,
+            )
+        except Exception as err:
+            raise HomeAssistantError(f"Unable to update battery backup state of charge: {err}") from err

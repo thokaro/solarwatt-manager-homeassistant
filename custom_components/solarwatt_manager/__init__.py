@@ -99,6 +99,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: SOLARWATTConfigEntry) -
     if unload_ok:
         coordinator = entry.runtime_data
         if coordinator:
+            coordinator.cancel_pending_battery_backup_updates()
             if coordinator.stats_total_store is not None:
                 await coordinator.stats_total_store.async_save()
             await coordinator.client.async_close()
