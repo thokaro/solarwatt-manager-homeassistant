@@ -177,6 +177,7 @@ class FakeClient:
         self.flow_calls += 1
         return _result_or_raise(self.flow_result)
 
+
 def _item(name: str, state: str) -> dict[str, Any]:
     return {
         "name": name,
@@ -507,7 +508,6 @@ def test_failed_statistics_do_not_retry_on_device_only_polls(monkeypatch):
     ]
 
 
-
 @pytest.mark.parametrize("duration", [0, 15])
 def test_switch_duration_and_override_reset_refresh(duration):
     from unittest.mock import AsyncMock
@@ -562,6 +562,45 @@ def test_config_update_refreshes_device_metadata(field, value):
     coordinator.async_refresh_things.assert_awaited_once()
     coordinator.async_request_refresh.assert_awaited_once()
 
+
+def test_backup_state_of_charge_refresh_waits_after_successful_update(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    coordinator, _, client = _coordinator()
+    calls = []
+
+    async def record_sleep(delay):
+        calls.append(("sleep", delay))
+
+    async def record_update(*args, **kwargs):
+        calls.append(("update", args, kwargs))
+
+    async def record_refresh():
+        calls.append(("refresh",))
+
+    monkeypatch.setattr(coordinator_module.asyncio, "sleep", record_sleep)
+    monkeypatch.setattr(coordinator_module, "BACKUP_STATE_OF_CHARGE_UPDATE_DELAY", 0)
+    monkeypatch.setattr(coordinator_module, "BACKUP_STATE_OF_CHARGE_REFRESH_DELAY", 5)
+    coordinator.hass = type(
+        "Hass", (), {"async_create_task": staticmethod(asyncio.create_task)}
+    )()
+    client.async_set_hems_battery_backup_state_of_charge = AsyncMock(
+        side_effect=record_update
+    )
+    coordinator.async_request_refresh = AsyncMock(side_effect=record_refresh)
+
+    async def run_update():
+        await coordinator.async_update_hems_battery_backup_state_of_charge(
+            "battery-id", 15
+        )
+        await coordinator._hems_backup_state_of_charge_tasks["battery-id"]
+
+    asyncio.run(run_update())
+
+    assert calls[0] == ("sleep", 0)
+    assert calls[1][0] == "update"
+    assert calls[2] == ("sleep", 5)
+    assert calls[3] == ("refresh",)
 
 
 def test_config_reset_refreshes_metadata_without_assuming_state():

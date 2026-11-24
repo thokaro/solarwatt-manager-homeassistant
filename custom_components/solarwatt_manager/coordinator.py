@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 
 
 BACKUP_STATE_OF_CHARGE_UPDATE_DELAY = 10
+BACKUP_STATE_OF_CHARGE_REFRESH_DELAY = 5
 
 
 class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
@@ -534,6 +535,7 @@ class SOLARWATTCoordinator(DataUpdateCoordinator[dict[str, SOLARWATTItem]]):
                 username=username,
                 password=password,
             )
+            await asyncio.sleep(BACKUP_STATE_OF_CHARGE_REFRESH_DELAY)
             async_log_entry(
                 self.hass,
                 entity_name or DOMAIN,
@@ -841,6 +843,8 @@ def _validated_scan_interval(value: Any, *, default: int) -> int:
     if not isinstance(value, int) or value < MIN_SCAN_INTERVAL:
         return default
     return min(value, MAX_SCAN_INTERVAL)
+
+
 def _channel_item_metadata(channel: dict[str, Any]) -> dict[str, str]:
     """Extract item-relevant metadata from a thing channel."""
     properties = channel.get("properties")
